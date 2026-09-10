@@ -1,0 +1,28 @@
+==================================================================
+firstmate parent-channel phantom-log fix — live evidence transcript
+branch fm/firstmate-selfwake-parent-replies  (target 570651f vs base 300137d)
+==================================================================
+
+[1] SIGNAL SCAN (per-poll) — base vs target
+    base   surfaces parent-replies.status (phantom signal) AND t1.status
+    target surfaces t1.status ONLY
+
+[2] HEARTBEAT backstop — base vs target
+    base   surfaces parent-replies.status row AND t1.status
+    target surfaces t1.status ONLY
+
+[3] DRAIN (OPEN DECISIONS) — base vs target
+    base:  OPEN DECISIONS listed 'parent-replies [key=captain-hold-x-1] needs-decision: captain hold x: pick one'
+           plus 'parent-replies note: ...' under UNREAD STATUS
+    target: OPEN DECISIONS lists 't1 blocked: waiting on creds' only
+
+[4] DIGEST / orphan listing — target (fm-session-start.sh)
+    parent-replies occurrences in real digest: 0
+    task-orphan occurrences (real orphan still reported): 2
+
+[5] SCOPING — which homes exclude state/parent-replies.status
+    main  home: surfaces parent-replies.status AND t1.status  (NOT excluded — main has no channel)
+    local home: surfaces parent-replies.status AND t1.status  (NOT excluded — local route publishes to parent's state/<id>.status)
+    remote home: surfaces t1.status ONLY  (excluded — remote route owns state/parent-replies.status)
+
+==================================================================

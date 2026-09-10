@@ -1,0 +1,15 @@
+===== SIGNAL SCAN — base (phantom present) =====
+parent-replies.status
+t1.status
+
+===== SIGNAL SCAN — target (phantom gone) =====
+t1.status
+
+===== HEARTBEAT — base (phantom present) =====
+parent-replies.status
+t1.status
+
+
+===== HEARTBEAT — target (phantom gone) =====
+t1.status
+

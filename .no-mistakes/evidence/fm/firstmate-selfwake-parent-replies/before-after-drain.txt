@@ -1,0 +1,12 @@
+===== DRAIN — base (phantom OPEN DECISION present) =====
+UNREAD STATUS (new since last drain, not re-printed after this presentation):
+parent-replies note: judgement the mate appended itself
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+parent-replies [key=captain-hold-x-1] needs-decision: captain hold x: pick one
+t1 blocked: waiting on creds
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+
+===== DRAIN — target (phantom gone) =====
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+t1 blocked: waiting on creds
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'

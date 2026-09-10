@@ -1,0 +1,49 @@
+===== parent-channel phantom-log fix — live before/after (re-driven 2026-09-10T13:13:52Z) =====
+
+----- SIGNAL SCAN (per-poll), remote mate home -----
+base:
+    parent-replies.status
+    t1.status
+target:
+    t1.status
+
+----- HEARTBEAT backstop, remote mate home -----
+base:
+    parent-replies.status	150	strong:16777229:84460144:1789046032.875781546
+    t1.status	56	strong:16777229:84460145:1789046032.875883587
+    
+target:
+    t1.status	56	strong:16777229:84460139:1789046032.872508386
+    
+
+----- DRAIN (OPEN DECISIONS + UNREAD STATUS), remote mate home -----
+base:
+    UNREAD STATUS (new since last drain, not re-printed after this presentation):
+    parent-replies note: judgement the mate appended itself
+    t1 note: read me
+    OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+    parent-replies [key=captain-hold-x-1] needs-decision: captain hold x: pick one
+    t1 blocked: waiting on creds
+    OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+target:
+    UNREAD STATUS (new since last drain, not re-printed after this presentation):
+    t1 note: read me
+    OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+    t1 blocked: waiting on creds
+    OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+
+----- SCOPING (target bin): which homes exclude state/parent-replies.status -----
+  main home:
+    parent-replies.status
+    t1.status
+  local home:
+    parent-replies.status
+    t1.status
+  remote home:
+    t1.status
+
+----- PREDICATE fm_parent_channel_is_own_log scope (target bin) -----
+  main home parent-replies.status -> SCANNED
+  local home parent-replies.status -> SCANNED
+  remote home parent-replies.status -> EXCLUDED
+  remote home t1.status (ordinary task) -> SCANNED
