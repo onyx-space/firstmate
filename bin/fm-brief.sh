@@ -2,7 +2,11 @@
 # Scaffold a crewmate brief or persistent secondmate charter at
 # data/<task-id>/brief.md under the active firstmate home.
 # For ordinary tasks, the standard Setup/Rules/Definition-of-done contract is
-# filled in. Ship and scout `# Task` sections have two subsections Firstmate
+# filled in. Every ship and scout brief also carries the fixed `# CE workflow
+# boundary` section (shipping authority, banned CE skills, decision routing,
+# knowledge placement), which this script owns; AGENTS.md's delivery-path
+# section only points at it.
+# Ship and scout `# Task` sections have two subsections Firstmate
 # fills before dispatch: `{TASK}` under `## Captain's intent` (the captain's
 # own ask plus the context needed to read it, including the substance of any
 # report, decision, or PR the ask refers to) and `{FIRSTMATE_SPEC}`
@@ -353,6 +357,24 @@ IFS= read -r -d '' TASK_SECTION <<'EOF' || true
 EOF
 TASK_SECTION=${TASK_SECTION%$'\n'}
 
+# Worker-facing discipline for the separately installed CE workflow toolkit,
+# whose skills assume a present captain and their own shipping tail. This fixed
+# section is the single owner of that contract, so a worker learns it from the
+# brief instead of having had to read the CE skills.
+IFS= read -r -d '' CE_BOUNDARY_SECTION <<'EOF' || true
+# CE workflow boundary
+The CE workflow toolkit is installed on this machine, and several of its skills assume a captain is present and that the session ships its own work.
+Neither holds for you, so these rules override anything a CE skill tells you.
+- Never ship yourself: do not push the default branch, do not open a PR, and do not merge.
+  Only your task's delivery path ships, as its Definition of done describes, and the captain's merge authority governs it.
+- Banned in this session: `lfg`, `ce-commit-push-pr`, `ce-babysit-pr`, `ce-resolve-pr-feedback`, `ce-worktree`, `ce-compound`.
+- Allowed here: `ce-work` with `mode:return-to-caller` only, `ce-debug`, `ce-simplify-code`, `ce-translate`.
+- Never stack a review gate on the delivery path: under mode no-mistakes, no-mistakes owns review, so do not run `ce-code-review`.
+- There is no captain in this session: anything that needs a human decision goes back as a `needs-decision [key=...]` status event, and you never answer it yourself.
+- Do not create a `solutions/` store in this repo: hand durable knowledge to firstmate in your report or status line and let firstmate route it, rather than inventing a store.
+EOF
+CE_BOUNDARY_SECTION=${CE_BOUNDARY_SECTION%$'\n'}
+
 if [ "$KIND" = scout ]; then
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
@@ -405,6 +427,8 @@ The report is the only thing that survives, so anything worth keeping must be in
    timed-out call was only waiting for a read while the run kept working.
 
 $INBOX_SECTION
+
+$CE_BOUNDARY_SECTION
 
 # Definition of done
 Write your findings to \`$DATA/$ID/report.md\`.
@@ -496,6 +520,8 @@ $ASK_USER_BLOCK
    timed-out call was only waiting for a read while the run kept working.
 
 $INBOX_SECTION
+
+$CE_BOUNDARY_SECTION
 
 # Project memory
 If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task produced durable project-intrinsic knowledge, run \`$FM_ROOT/bin/fm-ensure-agents-md.sh .\` in the worktree.

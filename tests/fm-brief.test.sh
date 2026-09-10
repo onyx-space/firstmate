@@ -817,6 +817,57 @@ test_scout_and_secondmate_load_decision_hold_policy() {
   pass "fm-brief.sh: investigation and visual-review completions load the shared decision policy"
 }
 
+# The CE workflow toolkit is a separate orchestrator that assumes a captain is
+# present and that the session ships its own work. Every worker brief must state
+# the fleet boundary itself, so a worker learns the shipping ban, the decision
+# route, and the knowledge-placement rule from the brief rather than from having
+# read the CE skills. Secondmate charters are supervisor contracts, not worker
+# briefs, and stay out of scope.
+test_ce_workflow_boundary_section() {
+  local home id mode brief name
+  home="$TMP_ROOT/ce-boundary"
+  mkdir -p "$home/data"
+  for mode in no-mistakes direct-PR local-only; do
+    id="brief-ce-$mode"
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" >/dev/null 2>&1 \
+      || fail "$mode: scaffold failed"
+    brief="$home/data/$id/brief.md"
+    assert_grep "# CE workflow boundary" "$brief" "$mode brief is missing the CE boundary section"
+    assert_grep "Never ship yourself" "$brief" "$mode brief lost the shipping ban"
+    assert_grep "Banned in this session:" "$brief" "$mode brief lost the banned-list lead-in"
+    for name in lfg ce-commit-push-pr ce-babysit-pr ce-resolve-pr-feedback ce-worktree ce-compound; do
+      assert_grep "$name" "$brief" "$mode brief lost banned skill $name"
+    done
+    assert_grep "Allowed here:" "$brief" "$mode brief lost the allowed-list lead-in"
+    for name in mode:return-to-caller ce-debug ce-simplify-code ce-translate; do
+      assert_grep "$name" "$brief" "$mode brief lost allowed entry $name"
+    done
+    assert_grep "ce-code-review" "$brief" "$mode brief lost the review-gate rule"
+    assert_grep "no-mistakes owns review" "$brief" "$mode brief lost the review-ownership reason"
+    assert_grep "There is no captain in this session" "$brief" "$mode brief lost the no-captain statement"
+    assert_grep "needs-decision [key=...]" "$brief" "$mode brief lost the decision-return route"
+    assert_grep "solutions/" "$brief" "$mode brief lost the knowledge-placement rule"
+    # The pre-existing worker contract must survive the addition.
+    assert_grep "# Setup" "$brief" "$mode brief lost its Setup section"
+    assert_grep "# Rules" "$brief" "$mode brief lost its Rules section"
+    assert_grep "# Definition of done" "$brief" "$mode brief lost its Definition of done section"
+    assert_grep "{TASK}" "$brief" "$mode brief lost the {TASK} placeholder"
+    assert_grep "{FIRSTMATE_SPEC}" "$brief" "$mode brief lost the {FIRSTMATE_SPEC} placeholder"
+  done
+  id="brief-ce-scout"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --scout >/dev/null 2>&1 || fail "scout: scaffold failed"
+  brief="$home/data/$id/brief.md"
+  assert_grep "# CE workflow boundary" "$brief" "scout brief is missing the CE boundary section"
+  assert_grep "Banned in this session:" "$brief" "scout brief lost the banned CE skill list"
+  assert_grep "needs-decision [key=...]" "$brief" "scout brief lost the decision-return route"
+  FM_SECONDMATE_CHARTER='Supervise assigned work.' \
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-ce-sm --secondmate --no-projects >/dev/null 2>&1 \
+    || fail "secondmate: scaffold failed"
+  assert_no_grep "# CE workflow boundary" "$home/data/brief-ce-sm/brief.md" \
+    "secondmate charter must not carry the worker CE boundary section"
+  pass "fm-brief.sh: worker briefs carry the CE workflow boundary section"
+}
+
 # Scout and secondmate paths still scaffold well-formed briefs.
 test_scout_and_secondmate_scaffold() {
   local brief
@@ -890,4 +941,5 @@ test_secondmate_marked_request_reporting_contract
 test_secondmate_directory_paths_are_absolute_and_output_is_stable
 test_pause_verb_override_renders_all_brief_scaffolds
 test_scout_and_secondmate_load_decision_hold_policy
+test_ce_workflow_boundary_section
 test_scout_and_secondmate_scaffold
