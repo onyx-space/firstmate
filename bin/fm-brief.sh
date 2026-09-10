@@ -3,9 +3,9 @@
 # data/<task-id>/brief.md under the active firstmate home.
 # For ordinary tasks, the standard Setup/Rules/Definition-of-done contract is
 # filled in. Every ship and scout brief also carries the fixed `# CE workflow
-# boundary` section (shipping authority, banned CE skills, decision routing,
-# knowledge placement), which this script owns; AGENTS.md's delivery-path
-# section only points at it.
+# boundary` section (shipping authority, banned and allowed CE skills, review
+# ownership, decision routing, knowledge placement), which this script owns;
+# AGENTS.md's delivery-path section only points at it.
 # Ship and scout `# Task` sections have two subsections Firstmate
 # fills before dispatch: `{TASK}` under `## Captain's intent` (the captain's
 # own ask plus the context needed to read it, including the substance of any
