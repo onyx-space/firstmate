@@ -105,6 +105,42 @@ SH
   printf '%s\n' "$fb"
 }
 
+# make_herdr_server_parent_fakebin: a stateful server stub that records who
+# parented the long-lived server launch and then stays alive like a real server,
+# so a caller can tell whether a forked shell was left waiting on it.
+make_herdr_server_parent_fakebin() {  # <dir> -> echoes fakebin dir
+  local dir=$1 fb="$1/fakebin"
+  mkdir -p "$fb"
+  cat > "$fb/herdr" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  status)
+    if [ -e "$FM_HERDR_SERVER_MARKER" ]; then
+      printf '{"server":{"running":true}}\n'
+    else
+      printf '{"server":{"running":false}}\n'
+    fi
+    ;;
+  server)
+    {
+      printf 'ppid=%s\n' "$PPID"
+      printf 'parent_comm=%s\n' "$(ps -o comm= -p "$PPID" 2>/dev/null)"
+    } > "$FM_HERDR_SERVER_PARENT_LOG"
+    : > "$FM_HERDR_SERVER_MARKER"
+    # Keep running like a real server so anything still waiting on it stays
+    # observable, bounded like every other blocking stub in the suite.
+    while [ ! -e "$FM_HERDR_SERVER_RELEASE" ] \
+      && [ "$SECONDS" -lt "${FM_TEST_STUB_MAX_BLOCK_SECONDS:-120}" ]; do
+      sleep 0.05
+    done
+    ;;
+esac
+SH
+  chmod +x "$fb/herdr"
+  printf '%s\n' "$fb"
+}
+
 # make_herdr_statefake: a STATEFUL `herdr` stub that models the parts of herdr's
 # real container behavior the workspace-leak fix (and the default-tab-prune
 # safety fix) depend on, so a full spawn->teardown cycle can be replayed
@@ -814,6 +850,35 @@ test_server_ensure_scrubs_home_and_harness_identity() {
   assert_contains "$output" "HERDR_SESSION=fmtest" "server_ensure lost explicit Herdr session routing"
   assert_contains "$output" "args=server --session fmtest" "server_ensure lost the trailing Herdr session flag"
   pass "fm_backend_herdr_server_ensure: scrubs home and harness identity without disturbing unrelated environment or session routing"
+}
+
+test_server_ensure_leaves_no_forked_shell_waiting_on_the_server() {
+  local dir fb log marker release parent_pid parent_comm i
+  dir="$TMP_ROOT/server-parent"; mkdir -p "$dir"; fb=$(make_herdr_server_parent_fakebin "$dir")
+  log="$dir/parent"; marker="$dir/running"; release="$dir/release"
+  PATH="$fb:$PATH" FM_HERDR_SERVER_PARENT_LOG="$log" FM_HERDR_SERVER_MARKER="$marker" \
+    FM_HERDR_SERVER_RELEASE="$release" HERDR_SESSION=fmtest \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_server_ensure fmtest' "$ROOT" \
+    || fail "server_ensure should report running once the parent-observing fake starts"
+  parent_pid=$(sed -n 's/^ppid=//p' "$log" | head -1)
+  [ -n "$parent_pid" ] || fail "the server stub never recorded its parent"
+  # The server must not be left parented to a shell the launch forked and that
+  # now waits on it for the server's whole lifetime. Poll, because that shell is
+  # forked moments before the server starts and the kernel reparents the server
+  # to init once the launching subshell is gone: a bounded iteration count,
+  # never a wall-clock budget. pid 1 means the reparent already happened, which
+  # is the state this case wants - whatever init is called on the host.
+  parent_comm=
+  for i in $(seq 1 20); do
+    if [ "$parent_pid" = 1 ]; then parent_comm=; break; fi
+    parent_comm=$(ps -o comm= -p "$parent_pid" 2>/dev/null)
+    case "$parent_comm" in *bash|sh|*/sh) sleep 0.05 ;; *) break ;; esac
+  done
+  : > "$release"
+  case "$parent_comm" in
+    *bash|sh|*/sh) fail "the herdr server is left parented to a forked shell ('$parent_comm') that waits on it indefinitely" ;;
+  esac
+  pass "fm_backend_herdr_server_ensure: exec's the server, so no forked shell outlives the call waiting on it"
 }
 
 test_container_ensure_reuses_existing_workspace() {
@@ -4746,6 +4811,7 @@ test_workspace_ensure_other_home_ignores_the_launcher_identity
 test_container_ensure_refuses_an_ambiguous_home_label
 test_container_ensure_starts_server_and_workspace
 test_server_ensure_scrubs_home_and_harness_identity
+test_server_ensure_leaves_no_forked_shell_waiting_on_the_server
 test_container_ensure_reuses_existing_workspace
 test_container_ensure_creates_with_no_focus_flag
 test_container_ensure_uses_secondmate_home_label
