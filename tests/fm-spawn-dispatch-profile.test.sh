@@ -19,11 +19,18 @@ make_spawn_pi_probe() {
 #!/usr/bin/env bash
 set -u
 if [ "${1:-}" = --help ]; then
-  if [ "${FM_FAKE_PI_VERSION:-0.84.0}" = 0.82.0 ]; then
-    printf '%s\n' 'Pi 0.82.0' 'Options: --help'
-  else
-    printf '%s\n' "Pi ${FM_FAKE_PI_VERSION:-0.84.0}" 'Options: --help --tui-mode <mode>'
-  fi
+  case "${FM_FAKE_PI_VERSION:-0.84.0}" in
+    0.78.1) printf '%s\n' 'Pi 0.78.1' '  --help                         Show help' ;;
+    0.82.0)
+      printf '%s\n' 'Pi 0.82.0' '  --help                         Show help' \
+        '  --approve, -a                  Trust project-local files for this run'
+      ;;
+    *)
+      printf '%s\n' "Pi ${FM_FAKE_PI_VERSION:-0.84.0}" '  --help                         Show help' \
+        '  --tui-mode <mode>              TUI mode: regular (default) or fullscreen' \
+        '  --approve, -a                  Trust project-local files for this run'
+      ;;
+  esac
 fi
 exit 0
 SH
@@ -699,12 +706,12 @@ test_pi_signed_threads_shared_pi_profile_and_preserves_identity() {
   pass "pi-signed shares Pi launch semantics while preserving its configured and recorded identity"
 }
 
-test_pi_tui_mode_probe_is_safe_for_old_and_new_pi() {
+test_pi_launch_probes_are_safe_for_old_and_new_pi() {
   local harness version rec id out status launch
   for harness in pi pi-signed; do
-    for version in 0.82.0 0.84.0; do
-      id="profile-${harness}-tui-${version//./}-z8d"
-      rec=$(make_spawn_case "profile-__MODELFLAG__-${harness}-tui-${version//./}" "$harness" "$id")
+    for version in 0.78.1 0.82.0 0.84.0; do
+      id="profile-${harness}-probe-${version//./}-z8d"
+      rec=$(make_spawn_case "profile-__MODELFLAG__-${harness}-probe-${version//./}" "$harness" "$id")
       read_case_record "$rec"
 
       out=$(FM_TEST_PI_VERSION="$version" \
@@ -717,16 +724,27 @@ test_pi_tui_mode_probe_is_safe_for_old_and_new_pi() {
         "$harness $version launch must use the executable selected for probing"
       assert_not_contains "$launch" "FM_PI_HARNESS=$harness $harness" \
         "$harness $version launch must not re-resolve a bare executable in the worker"
-      if [ "$version" = 0.82.0 ]; then
-        assert_not_contains "$launch" "--tui-mode" \
-          "$harness $version launch must omit unsupported --tui-mode"
-      else
-        assert_contains "$launch" "'$FAKEBIN_DIR/$harness' --tui-mode regular" \
-          "$harness $version launch must preserve the regular TUI"
-      fi
+      case "$version" in
+        0.78.1)
+          assert_not_contains "$launch" "--tui-mode" \
+            "$harness $version launch must omit unsupported --tui-mode"
+          assert_not_contains "$launch" "--approve" \
+            "$harness $version launch must omit --approve, which that executable rejects as an unknown option"
+          ;;
+        0.82.0)
+          assert_not_contains "$launch" "--tui-mode" \
+            "$harness $version launch must omit unsupported --tui-mode"
+          assert_contains "$launch" "'$FAKEBIN_DIR/$harness' --approve" \
+            "$harness $version launch must keep the project-trust grant its executable advertises"
+          ;;
+        *)
+          assert_contains "$launch" "'$FAKEBIN_DIR/$harness' --tui-mode regular --approve" \
+            "$harness $version launch must preserve the regular TUI and the project-trust grant"
+          ;;
+      esac
     done
   done
-  pass "Pi launch probing omits --tui-mode on older Pi and preserves it on supporting Pi"
+  pass "Pi launch probing follows the resolved executable's advertised flags"
 }
 
 test_pi_launch_pre_answers_the_project_trust_gate() {
@@ -1261,7 +1279,7 @@ test_native_effort_validator_keeps_axes_separate
 test_native_pi_ultra_is_explicit_and_model_scoped
 test_batch_preserves_native_ultra
 test_pi_threads_model_and_max_effort
-test_pi_tui_mode_probe_is_safe_for_old_and_new_pi
+test_pi_launch_probes_are_safe_for_old_and_new_pi
 test_pi_launch_pre_answers_the_project_trust_gate
 test_pi_signed_threads_shared_pi_profile_and_preserves_identity
 test_pi_signed_missing_binary_refuses_before_endpoint_or_metadata

@@ -27,8 +27,8 @@ That kind guard is the whole exclusion, because a treehouse-leased secondmate ho
 The consequence is that a claude secondmate whose home Claude has never trusted meets the workspace-trust dialog itself, and firstmate cannot answer it any more than it can for a crewmate.
 This is rarely seen because a secondmate home is persistent and reused, so its trust decision is made once and survives, unlike a per-task worktree that is new every time.
 
-A dialog parked in front of a worker also blocks the control plane: the modal selector absorbs the exit keys, so `bin/fm-control.sh <task> relaunch` reports that the agent did not stop rather than replacing it.
-Answer the dialog first - `bin/fm-send.sh <task> --key <key>`, where the running harness's tool reference owns the key that selects its trust choice - then reconcile the task at the next supervision review.
+A dialog parked in front of a worker also blocks the control plane: the modal selector absorbs the exit keys, so `../../../bin/fm-control.sh <task> relaunch` reports that the agent did not stop rather than replacing it.
+Answer the dialog first - `../../../bin/fm-send.sh <task> --key <key>`, where the running harness's tool reference owns the key that selects its trust choice - then reconcile the task at the next supervision review.
 
 Use the tool's exact skill form, or natural language only when no separate command is verified or the form remains uncertain.
 A successful send or key return is not proof of submission; require the tool-specific postcondition.

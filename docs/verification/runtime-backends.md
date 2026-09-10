@@ -359,8 +359,8 @@ args=['--approve'] dialog_seen=False
 The control arm rendered `Trust project folder?` with the worktree path and stayed parked on it for the whole window.
 The treatment arm never rendered it and reached the composer.
 Neither arm produced a `trust.json` in the throwaway agent directory, which is the point: `--approve` is Pi's per-run grant, so it authorizes project-local resources without writing the operator's `~/.pi/agent/trust.json` and without any store lock, backup, or merge.
-The flag is safe to pass unconditionally because Pi shipped it in the same release as the gate itself (0.78.1), so no Pi that can show this dialog lacks it.
-[`bin/fm-spawn.sh`](../../bin/fm-spawn.sh) therefore carries `--approve` on every pi and pi-signed launch.
+[`bin/fm-spawn.sh`](../../bin/fm-spawn.sh) therefore carries `--approve` on every pi and pi-signed launch whose resolved executable advertises it, probing that executable's `--help` exactly like its `--tui-mode` probe.
+The flag and the gate shipped together in Pi 0.79.0, but a pre-0.79 Pi has neither and rejects `--approve` as an unknown option before its TUI starts, so an older install keeps spawning without it.
 `tests/fm-spawn-dispatch-profile.test.sh` pins the launch line and is what CI reruns; the arms above are what establish that the flag actually suppresses the dialog.
 
 ## Composer classification matrix

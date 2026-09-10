@@ -30,7 +30,7 @@ The router's Detection section owns how launch markers and ancestry select betwe
 Keep the instructions as one positional argument.
 Multiple positional arguments become separate queued messages; the spawn template already preserves the one-argument shape.
 
-`../../../bin/fm-spawn.sh` pre-answers Pi's project-trust selector on every pi and pi-signed launch with `--approve`, Pi's own per-run grant, so a worker reaches its brief with no human and the pane never parks on a modal dialog that emits no agent event.
+`../../../bin/fm-spawn.sh` pre-answers Pi's project-trust selector on every pi and pi-signed launch whose executable advertises `--approve` (from Pi 0.79.0, the same release as the gate), Pi's own per-run grant, so a worker reaches its brief with no human and the pane never parks on a modal dialog that emits no agent event.
 That grant authorizes project-local resources for that one run in that one worktree and writes nothing to `~/.pi/agent/trust.json`, so there is no trust-store write, lock, backup, or merge to get wrong.
 A Pi started by hand outside the spawn still meets the selector, and there Enter accepts the highlighted `Trust` choice; that path persists the decision per path in `~/.pi/agent/trust.json`, so later spawns in the same pooled slot skip it.
 `../../../docs/verification/runtime-backends.md#pi-project-trust` owns the live control-and-treatment verification of both.
