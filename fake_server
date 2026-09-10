@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-printf 'ppid=%s parent_comm=%s\n' "$PPID" "$(ps -o comm= -p "$PPID" 2>/dev/null)" > "$LOG_FILE"
-sleep 15
