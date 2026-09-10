@@ -1,0 +1,6 @@
+$ pi --version
+0.85.1
+
+$ pi --help | grep -A 1 -- '--approve'
+  --approve, -a                  Trust project-local files for this run
+  --no-approve, -na              Ignore project-local files for this run

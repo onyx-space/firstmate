@@ -1,0 +1,6 @@
+warning: /tmp/fm-trust-live/capture-39938/home/data/profile-pi-trustcapture-z9c/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+/tmp/fm-trust-live/capture-39938/fakebin/timeout: line 3: exec: 1: not found
+/tmp/fm-trust-live/capture-39938/fakebin/timeout: line 3: exec: 1: not found
+spawned profile-pi-trustcapture-z9c harness=pi kind=ship mode=no-mistakes yolo=off window=firstmate:fm-profile-pi-trustcapture-z9c worktree=/tmp/fm-trust-live/capture-39938/wt
+spawn_exit=0
+resolved_pi=/opt/homebrew/bin/pi

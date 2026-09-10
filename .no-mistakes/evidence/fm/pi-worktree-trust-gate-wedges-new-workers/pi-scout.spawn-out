@@ -1,0 +1,5 @@
+/tmp/fm-trust-live/capture-41622/fakebin/timeout: line 3: exec: 1: not found
+/tmp/fm-trust-live/capture-41622/fakebin/timeout: line 3: exec: 1: not found
+spawned profile-pi-trustcapture-z9c harness=pi kind=scout window=firstmate:fm-profile-pi-trustcapture-z9c worktree=/tmp/fm-trust-live/capture-41622/wt
+spawn_exit=0
+resolved_pi=/opt/homebrew/bin/pi

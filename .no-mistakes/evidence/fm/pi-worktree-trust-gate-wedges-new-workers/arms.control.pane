@@ -1,0 +1,24 @@
+PI_CODING_AGENT_DIR='/tmp/fm-trust-live/arms/agent' PI_OFFLINE=1 env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI FM_PI_HARNESS=pi '/o
+pt/homebrew/bin/pi' --tui-mode regular -e '/tmp/fm-trust-live/capture-39938/home/state/profile-pi-trustcapture-z9c.pi-ext.ts' "$('/Users/ony
+x/.no-mistakes/worktrees/9573b29b9316/01M26R7BYW6ZWBR8TCR1EQTYG1/bin/fm-operational-input.sh' encode launch-brief < '/tmp/fm-trust-live/capt
+ure-39938/home/data/profile-pi-trustcapture-z9c/launch-brief.md')"%
+onyx@OnyxdeMac-mini wt % PI_CODING_AGENT_DIR='/tmp/fm-trust-live/arms/agent' PI_OFFLINE=1 env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI
+_CLI FM_PI_HARNESS=pi '/opt/homebrew/bin/pi' --tui-mode regular -e '/tmp/fm-trust-live/capture-39938/home/state/profile-pi-trustcapture-z9c.
+pi-ext.ts' "$('/Users/onyx/.no-mistakes/worktrees/9573b29b9316/01M26R7BYW6ZWBR8TCR1EQTYG1/bin/fm-operational-input.sh' encode launch-brief <
+ '/tmp/fm-trust-live/capture-39938/home/data/profile-pi-trustcapture-z9c/launch-brief.md')"
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ Trust project folder?
+ /private/tmp/fm-trust-live/arms/wt
+
+ This allows pi to load .pi settings and resources, install missing project packages, and execute project extensions.
+
+ → Trust
+   Trust parent folder (/private/tmp/fm-trust-live/arms)
+   Trust (this session only)
+   Do not trust
+   Do not trust (this session only)
+
+ ↑↓ navigate  enter select  escape/ctrl+c cancel
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
