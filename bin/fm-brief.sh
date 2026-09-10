@@ -365,8 +365,7 @@ IFS= read -r -d '' CE_BOUNDARY_SECTION <<'EOF' || true
 # CE workflow boundary
 The CE workflow toolkit is installed on this machine, and several of its skills assume a captain is present and that the session ships its own work.
 Neither holds for you, so these rules override anything a CE skill tells you.
-- Never ship yourself: do not push the default branch, do not open a PR, and do not merge.
-  Only your task's delivery path ships, as its Definition of done describes, and the captain's merge authority governs it.
+- Never ship on your own authority. Do not push the default branch and do not merge. Open a PR only where your task's own Definition of done requires it (a `direct-PR` task requires pushing your branch and opening a PR; that is the only shipping you do). The captain owns merge authority.
 - Banned in this session: `lfg`, `ce-commit-push-pr`, `ce-babysit-pr`, `ce-resolve-pr-feedback`, `ce-worktree`, `ce-compound`.
 - Allowed here: `ce-work` with `mode:return-to-caller` only, `ce-debug`, `ce-simplify-code`, `ce-translate`.
 - Never stack a review gate on the delivery path: under mode no-mistakes, no-mistakes owns review, so do not run `ce-code-review`.

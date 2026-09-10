@@ -833,7 +833,13 @@ test_ce_workflow_boundary_section() {
       || fail "$mode: scaffold failed"
     brief="$home/data/$id/brief.md"
     assert_grep "# CE workflow boundary" "$brief" "$mode brief is missing the CE boundary section"
-    assert_grep "Never ship yourself" "$brief" "$mode brief lost the shipping ban"
+    assert_grep "Never ship on your own authority" "$brief" "$mode brief lost the shipping ban"
+    # The ban must yield the delivery path's own shipping step, so a direct-PR
+    # worker is not told both 'do not open a PR' and 'open a PR'.
+    assert_grep "only where your task's own Definition of done requires it" "$brief" \
+      "$mode brief lost the delivery-path carve-out in the shipping ban"
+    assert_no_grep "do not open a PR" "$brief" \
+      "$mode brief regressed to an absolute PR ban that contradicts the delivery path's own shipping step"
     assert_grep "Banned in this session:" "$brief" "$mode brief lost the banned-list lead-in"
     for name in lfg ce-commit-push-pr ce-babysit-pr ce-resolve-pr-feedback ce-worktree ce-compound; do
       assert_grep "$name" "$brief" "$mode brief lost banned skill $name"
