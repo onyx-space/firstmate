@@ -367,8 +367,9 @@ The CE workflow toolkit is installed on this machine, and several of its skills 
 Neither holds for you, so these rules override anything a CE skill tells you.
 - Never ship on your own authority. Do not push the default branch and do not merge. Open a PR only where your task's own Definition of done requires it (a `direct-PR` task requires pushing your branch and opening a PR; that is the only shipping you do). The captain owns merge authority.
 - Banned in this session: `lfg`, `ce-commit-push-pr`, `ce-babysit-pr`, `ce-resolve-pr-feedback`, `ce-worktree`, `ce-compound`.
+- Everything not allowed below is denied: any CE skill this brief does not list is unavailable in this session, including `ce-plan`, `ce-ideate`, `ce-brainstorm`, `ce-explain`, `ce-handoff`, `ce-doc-review`, `ce-pov`, `ce-strategy`, `ce-proof`, `ce-test-browser`, `ce-update`, `ce-compound-refresh`, `ce-commit`, `ce-optimize`, and `ce-riffrec-feedback-analysis`; the banned list above only names the ones most likely to ship work or overrule firstmate.
 - Allowed here: `ce-work` with `mode:return-to-caller` only, `ce-debug`, `ce-simplify-code`, `ce-translate`.
-- Never stack a review gate on the delivery path: under mode no-mistakes, no-mistakes owns review, so do not run `ce-code-review`.
+- Review belongs to the delivery path: under mode no-mistakes, no-mistakes owns review, so do not run `ce-code-review`; where the delivery path leaves review to you, it is allowed.
 - There is no captain in this session: anything that needs a human decision goes back as a `needs-decision [key=...]` status event, and you never answer it yourself.
 - Do not create a `solutions/` store in this repo: hand durable knowledge to firstmate in your report or status line and let firstmate route it, rather than inventing a store.
 EOF
