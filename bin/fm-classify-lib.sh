@@ -64,6 +64,13 @@ case $- in *u*) _fm_classify_nounset=on ;; *) _fm_classify_nounset=off ;; esac
 [ "$_fm_classify_nounset" = on ] || set +u
 unset _fm_classify_nounset
 
+# fm_parent_channel_is_own_log, the predicate that keeps a mate home's own
+# parent-channel outbound log out of the task-state walks below. The channel and
+# its location stay owned by bin/fm-parent-channel-lib.sh; this library sources
+# it so every scan owner (watcher, drain, daemon, digest) gets the same answer.
+# shellcheck source=bin/fm-parent-channel-lib.sh
+. "$_FM_CLASSIFY_LIB_DIR/fm-parent-channel-lib.sh"
+
 # Captain-relevant status verbs. A status line carrying any of these is work
 # firstmate must see. Lines without these verbs are no-verb signals: the watcher
 # absorbs them only with positive provably-working evidence, while the daemon uses
@@ -598,6 +605,7 @@ scan_open_decisions() {  # <state>
   local state=$1 f task open line
   for f in "$state"/*.status; do
     [ -e "$f" ] || continue
+    fm_parent_channel_is_own_log "$state" "$f" && continue
     task=$(basename "$f"); task="${task%.status}"
     open=$(status_open_decisions "$f") || continue
     [ -n "$open" ] || continue
@@ -875,6 +883,7 @@ scan_open_decisions_incremental() {  # <state>
   local state=$1 f task open line
   for f in "$state"/*.status; do
     [ -e "$f" ] || continue
+    fm_parent_channel_is_own_log "$state" "$f" && continue
     task=$(basename "$f"); task="${task%.status}"
     open=$(status_open_decisions_incremental "$f") || continue
     [ -n "$open" ] || continue
@@ -892,6 +901,7 @@ status_presentation_snapshot() {  # <state>
   local state=$1 f task size ident
   for f in "$state"/*.status; do
     [ -e "$f" ] || continue
+    fm_parent_channel_is_own_log "$state" "$f" && continue
     [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || continue
     task=$(basename "$f"); task="${task%.status}"
     size=$(_fm_status_file_size "$f") || return 1
@@ -1500,6 +1510,7 @@ scan_unread_surface_lines() {  # <state>
   local state=$1 f task lines line
   for f in "$state"/*.status; do
     [ -e "$f" ] || continue
+    fm_parent_channel_is_own_log "$state" "$f" && continue
     task=$(basename "$f"); task="${task%.status}"
     lines=$(status_new_lines_since_cursor "$f") || return 1
     [ -n "$lines" ] || continue

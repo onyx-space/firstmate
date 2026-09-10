@@ -115,6 +115,11 @@ _FM_PENDING_REPLY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/n
 . "$_FM_PENDING_REPLY_LIB_DIR/fm-tmux-lib.sh"
 # shellcheck source=bin/fm-classify-lib.sh
 . "$_FM_PENDING_REPLY_LIB_DIR/fm-classify-lib.sh"
+# The parent-channel library supplies fm_parent_channel_is_own_log, which keeps a
+# mate home's own outbound channel out of the wrong-home sighting scan below, and
+# fm_parent_channel_append_once for the parent-side escalation line.
+# shellcheck source=bin/fm-parent-channel-lib.sh
+. "$_FM_PENDING_REPLY_LIB_DIR/fm-parent-channel-lib.sh"
 
 FM_PENDING_REPLY_SCHEMA='fm-pending-reply.v1'
 FM_PENDING_REPLY_CORR_RE='corr=[A-Fa-f0-9]{16}'
@@ -1275,7 +1280,6 @@ _fm_pending_reply_maybe_escalate_locked() {  # <state-dir> <corr_id>
 fm_pending_reply_detect_wrong_home() {  # <state-dir> <corr_id> <secondmate-home>
   local state=$1 corr=$2 sm_home=$3
   local rec delivered hits first sightings snapshot previous status_file line line_no sighting_base sighting_id phase changed=0
-  local remote_parent_channel=0
   rec=$(fm_pending_reply_path "$state" "$corr")
   [ -f "$rec" ] || return 1
   [ -n "$sm_home" ] && [ -d "$sm_home" ] || return 0
@@ -1292,18 +1296,9 @@ fm_pending_reply_detect_wrong_home() {  # <state-dir> <corr_id> <secondmate-home
     return 0
   fi
   sightings=$(fm_pending_reply_get "$rec" wrong_home_sightings)
-  # shellcheck source=bin/fm-parent-channel-lib.sh
-  . "$_FM_PENDING_REPLY_LIB_DIR/fm-parent-channel-lib.sh"
-  if fm_parent_channel_destination "$sm_home" "$sm_home/state" >/dev/null 2>&1 \
-    && [ "$FM_PARENT_CHANNEL_ROUTE" = remote ]; then
-    remote_parent_channel=1
-  fi
   for status_file in "$sm_home"/state/*.status; do
     [ -e "$status_file" ] || continue
-    if [ "$remote_parent_channel" = 1 ] \
-      && [ "$(basename "$status_file")" = parent-replies.status ]; then
-      continue
-    fi
+    fm_parent_channel_is_own_log "$sm_home/state" "$status_file" && continue
     sighting_base=$(fm_pending_reply_sighting_encode "$status_file" 0) || continue
     sighting_base=${sighting_base%:0}
     line_no=0
