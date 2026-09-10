@@ -1755,6 +1755,7 @@ command_diverged() {
   resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
   for f in "$STATE"/*.status; do
     [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || continue
+    fm_parent_channel_is_own_log "$STATE" "$f" && continue
     origin=$(basename "$f"); origin=${origin%.status}
     tokens=$(status_log_key_tokens "$f")
     [ -n "$tokens" ] || continue

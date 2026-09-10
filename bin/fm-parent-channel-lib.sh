@@ -40,6 +40,9 @@
 #     (docs/remote-secondmates.md).
 # The parent watcher classifies lines there exactly as it classifies any
 # crewmate's status stream, so a captain-relevant line becomes a parent wake.
+# The mate's OWN task-state scans skip that log through
+# fm_parent_channel_is_own_log, the single predicate that tells the outbound
+# channel apart from a task supervision log in the home that publishes on it.
 #
 # Lines follow the charter's "<state> [key=<slug>]: <note>" shape and are
 # appended at most once by exact content, so a retried publication cannot
@@ -121,6 +124,55 @@ fm_parent_channel_destination() {  # <home> <state>
       ;;
     *) return 3 ;;
   esac
+}
+
+# Memo for the ownership test below. One state/*.status walk asks about every
+# file in one home and a full resolution costs a subshell chain, so the answer
+# is computed once per state dir and reused for the rest of that walk. Seeding
+# writes .fm-secondmate-parent before .fm-secondmate-home and nothing rewrites
+# it for the life of a home, so a memoized answer cannot go stale inside one
+# process.
+# shellcheck disable=SC2034 # Read by the predicate below across calls.
+_FM_PARENT_CHANNEL_OWN_LOG_STATE=
+# shellcheck disable=SC2034 # Read by the predicate below across calls.
+_FM_PARENT_CHANNEL_OWN_LOG_IS_CHANNEL=0
+
+# 0 when <path> is <state>'s own parent-channel outbound log rather than one of
+# that home's task supervision logs.
+#
+# On the remote route the channel is exactly <state>/parent-replies.status. It is
+# a stream the mate PUBLISHES on, so a task-state scan inside the mate home must
+# skip it: every published line would otherwise be classified as a task named
+# parent-replies, which is a phantom signal wake, a phantom open decision the
+# drain offers to answer, and a phantom heartbeat-backstop row. Classifying that
+# stream as a crewmate's status is the PARENT home's job, on the parent's own
+# state/<mate-id>.status file.
+# A main home has no marker and no remote route, so its scans and every ordinary
+# <task>.status log are untouched.
+# <state> is a home's state directory, which is how the scans below already
+# address their files.
+#
+# Callers guard a state/*.status walk with it, so it never prints and answers
+# only through its exit status:
+#   for f in "$state"/*.status; do ...; fm_parent_channel_is_own_log "$state" "$f" && continue; ...; done
+fm_parent_channel_is_own_log() {  # <state> <path>
+  local state=$1 path=$2 home
+  state=${state%/}
+  [ "$path" = "$state/parent-replies.status" ] || return 1
+  if [ "$_FM_PARENT_CHANNEL_OWN_LOG_STATE" != "$state" ]; then
+    _FM_PARENT_CHANNEL_OWN_LOG_STATE=$state
+    _FM_PARENT_CHANNEL_OWN_LOG_IS_CHANNEL=0
+    # The resolver's own output is not captured: a command substitution would
+    # run it in a subshell and lose the route global it sets. The route alone
+    # settles ownership, because the remote route's destination is this path by
+    # the channel contract in the header above.
+    home=${state%/state}
+    if fm_parent_channel_destination "$home" "$state" >/dev/null 2>&1 \
+      && [ "$FM_PARENT_CHANNEL_ROUTE" = remote ]; then
+      _FM_PARENT_CHANNEL_OWN_LOG_IS_CHANNEL=1
+    fi
+  fi
+  [ "$_FM_PARENT_CHANNEL_OWN_LOG_IS_CHANNEL" = 1 ]
 }
 
 # Fold <text> onto one bounded line, so a note copied from a child ledger or a

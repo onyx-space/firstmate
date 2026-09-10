@@ -1176,6 +1176,7 @@ housekeeping() {  # <state>
     local event record rest endpoint ident rc
     for f in "$state"/*.status; do
       [ -e "$f" ] || [ -L "$f" ] || continue
+      fm_parent_channel_is_own_log "$state" "$f" && continue
       task=$(basename "$f"); task="${task%.status}"
       record=$(status_span_first_actionable_record "$f" \
         "$(status_seen_offset "$state" "$task")")

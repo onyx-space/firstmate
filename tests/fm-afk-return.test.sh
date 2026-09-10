@@ -23,6 +23,11 @@ install_runner() {  # <case-dir>
   cp "$ROOT/bin/fm-afk-return.sh" "$dir/bin/"
   cp "$ROOT/bin/fm-wake-lib.sh" "$dir/bin/"
   cp "$ROOT/bin/fm-classify-lib.sh" "$dir/bin/"
+  # fm-parent-channel-lib.sh (and fm-secondmate-parent-lib.sh): fm-classify-lib.sh
+  # sources the parent-channel predicate to keep a mate home's own outbound log
+  # out of task-state walks.
+  cp "$ROOT/bin/fm-parent-channel-lib.sh" "$dir/bin/"
+  cp "$ROOT/bin/fm-secondmate-parent-lib.sh" "$dir/bin/"
   # fm-timeout-lib.sh: the shared hard bound fm-classify-lib.sh sources for the
   # wedge detector's bounded worktree write probe.
   cp "$ROOT/bin/fm-timeout-lib.sh" "$dir/bin/"

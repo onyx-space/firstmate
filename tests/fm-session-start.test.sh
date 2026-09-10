@@ -18,7 +18,8 @@
 #   - startup backlog composition: done rows dropped, every in-flight/held/
 #     blocked row kept whole, the dispatchable queued listing bounded with an
 #     exact disclosed remainder
-#   - orphan status logs whose task meta has already disappeared
+#   - orphan status logs whose task meta has already disappeared, and a remote
+#     mate home's own parent-channel outbound log, which is not a task log at all
 #   - per-task endpoint-liveness lines for a live and a dead recorded target,
 #     tmux and herdr both
 #   - composition: the script invokes the real fm-lock.sh/fm-bootstrap.sh/
@@ -1181,6 +1182,40 @@ EOF
   [ "$orphan_count" -eq 1 ] || fail "orphan status log was printed $orphan_count times: $out"
 
   pass "orphan status logs are printed once with bounded tails"
+}
+
+# A remote mate home's OWN parent-channel log (state/parent-replies.status) is the
+# stream it publishes captain-facing outcomes on, not one of its task logs, so the
+# digest must not print it as a task - neither as a task row nor as an orphan log
+# with a tail of its outbound reports. Only a REMOTE-route mate home owns one; the
+# predicate that decides this is bin/fm-parent-channel-lib.sh's
+# fm_parent_channel_is_own_log (docs/secondmate-parent-channel.md).
+test_mate_home_parent_channel_is_not_a_task_log() {
+  local rec root home fakebin out
+  rec=$(new_world mate-parent-channel)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+
+  printf 'sm-a1\n' > "$home/.fm-secondmate-home"
+  printf 'schema=fm-secondmate-parent.v1\nroute=remote\nparent_host=host-a\n' \
+    > "$home/.fm-secondmate-parent"
+  printf 'done [corr=c44897ee2db4326b]: child finished\n' \
+    > "$home/state/parent-replies.status"
+  # A real orphan log beside it, so this case cannot pass by printing no
+  # orphan section at all.
+  printf 'orphan: real work log\n' > "$home/state/task-orphan.status"
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+  assert_not_contains "$out" "parent-replies" \
+    "the digest presented the mate home's own parent-channel log as a task"
+  assert_contains "$out" "--- task-orphan ---" \
+    "the orphan section stopped reporting a real orphan log beside the parent channel"
+
+  pass "the digest skips a mate home's own parent-channel log and still reports a real orphan log"
 }
 
 # --- session-start secondmate recovery boundary -----------------------------
@@ -2645,6 +2680,7 @@ test_session_start_relaunches_herdr_husk_secondmate
 test_status_tail_bounding
 test_status_tail_line_cap
 test_orphan_status_logs_are_printed
+test_mate_home_parent_channel_is_not_a_task_log
 test_endpoint_liveness_tmux
 test_endpoint_liveness_herdr
 test_composition_invokes_real_scripts

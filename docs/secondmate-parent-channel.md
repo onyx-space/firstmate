@@ -15,6 +15,11 @@ A PR-ready report was the observed symptom, but a finding, a decision, a blocker
 
 The design goal is therefore: the parent channel must not depend on the model remembering to write to it.
 
+No task-state scan inside the mate home may read the channel as a task log.
+`bin/fm-parent-channel-lib.sh`'s `fm_parent_channel_is_own_log` is the single predicate that tells the home's own outbound log apart from a task supervision log, and every `state/*.status` walk consults it: the per-wake signal scan, the heartbeat backstop, the daemon's catch-all scan, the fleet-wide open-decision and unread folds, the presentation snapshot, the digest's orphan listing, and the task-record divergence report.
+Without it each published line was classified as a task named `parent-replies`: a phantom `signal parent-replies.status` wake on every append, a phantom open decision the drain offered to close with `fm-send --resolve-key`, and a phantom heartbeat row.
+The exclusion is scoped to the home that owns the log: only a remote-route mate home resolves a channel at that path, so a main home's same-named file and every ordinary `state/<task>.status` log are scanned exactly as before.
+
 ## The design
 
 The delivery rule has one sentence: the scripts report facts, the mate reports judgement.
@@ -55,6 +60,8 @@ A missed-reply escalation includes the complete first sighting path and line num
 `tests/fm-teardown.test.sh` covers teardown delivering a child's final line and refusing when the channel cannot be written.
 `tests/fm-brief.test.sh` pins the charter's channel rule.
 `tests/fm-pending-reply.test.sh` covers helper-selected local routing, remote-channel classification, same-basename restatement before false escalation, readable wrong-home diagnostics, and the rule that arbitrary mate-home sightings never acknowledge a reply.
+`tests/fm-parent-channel.test.sh` covers the ownership predicate's scope (remote mate home recognized, main home and local-route mate home not) and, in a remote mate home, that the per-wake signal scan, the heartbeat backstop, the open-decision folds, the unread scan, the presentation snapshot, and the real wake drain all skip the channel log while still reporting a real task log beside it.
+`tests/fm-session-start.test.sh` covers the digest leaving a mate home's parent-channel log out of its task and orphan listings.
 
 ## Live verification
 
