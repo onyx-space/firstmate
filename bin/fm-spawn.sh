@@ -292,6 +292,16 @@
 # and every refusal; a failed registration stops this spawn rather than launching
 # a worker that would wedge on the dialog. A --secondmate launch never runs it,
 # so a claude secondmate home keeps its own one-time trust decision.
+# Pi needs the same gate pre-answered, and needs no store write to do it: every
+# pi and pi-signed launch carries --approve, the vendor's own per-run grant. A
+# worker parked on Pi's project-trust selector emits no agent event at all, so
+# the pane reads alive while producing nothing. --approve authorizes
+# project-local resources for that one run in that one worktree and leaves the
+# captain's ~/.pi/agent/trust.json untouched, so there is no store to lock, back
+# up, or merge - strictly narrower authority than a registered path, and no
+# concurrent-write hazard against Pi's own locked writes. It is safe to pass
+# unconditionally because Pi shipped the flag in the same release as the gate
+# itself (0.78.1), so no Pi that can show this dialog lacks it.
 # Every claude launch also carries the attribution-off policy in its per-launch
 # --settings JSON, so a spawned worker never writes a Co-Authored-By trailer,
 # Claude-Session link, or generated-with line into a commit or PR body;
@@ -1447,7 +1457,11 @@ launch_template() {
       ;;
     opencode) printf '%s' 'OPENCODE_CONFIG_CONTENT='\''{"permission":{"*":"allow"}}'\'' opencode __MODELFLAG__--prompt "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
     pi|pi-signed)
-      printf '%s' '__PIBIN____PITUIMODE__'
+      # --approve pre-answers Pi's project-trust selector, which would otherwise
+      # park the worker on a modal dialog before it reads its brief and emit no
+      # agent event at all; the header above owns the contract and why no trust
+      # store write or lock is needed.
+      printf '%s' '__PIBIN____PITUIMODE__ --approve'
       if [ "$kind" = secondmate ]; then
         printf '%s' ' __MODELFLAG____EFFORTFLAG__-e __PITURNEND__ -e __PIWATCH__ "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
       else

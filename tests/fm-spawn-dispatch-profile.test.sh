@@ -657,7 +657,7 @@ test_pi_threads_model_and_max_effort() {
   expect_code 0 "$status" "pi spawn with max effort should succeed"
   assert_meta_profile "$HOME_DIR/state/$id.meta" pi openai-codex/gpt-5.6-sol max
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "FM_PI_HARNESS=pi '$FAKEBIN_DIR/pi' --tui-mode regular --model 'openai-codex/gpt-5.6-sol' --thinking 'max' -e" \
+  assert_contains "$launch" "FM_PI_HARNESS=pi '$FAKEBIN_DIR/pi' --tui-mode regular --approve --model 'openai-codex/gpt-5.6-sol' --thinking 'max' -e" \
     "pi launch did not force the regular TUI while threading the requested model and max thinking level"
   assert_not_contains "$launch" "FM_FIRSTMATE_PI_LAUNCH_BRIEF=" \
     "pi launch still exports the removed Calm input-reroute binding"
@@ -679,7 +679,7 @@ test_pi_signed_threads_shared_pi_profile_and_preserves_identity() {
   assert_contains "$out" "spawned $id harness=pi-signed" "pi-signed spawn did not preserve its visible identity"
   assert_meta_profile "$HOME_DIR/state/$id.meta" pi-signed openai-codex/gpt-5.6-sol max
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "FM_PI_HARNESS=pi-signed '$FAKEBIN_DIR/pi-signed' --tui-mode regular --model 'openai-codex/gpt-5.6-sol' --thinking 'max' -e" \
+  assert_contains "$launch" "FM_PI_HARNESS=pi-signed '$FAKEBIN_DIR/pi-signed' --tui-mode regular --approve --model 'openai-codex/gpt-5.6-sol' --thinking 'max' -e" \
     "pi-signed launch did not force the regular TUI with Pi's model, thinking, and extension semantics"
   assert_contains "$launch" "fm-operational-input.sh' encode launch-brief" \
     "pi-signed launch lost the canonical typed launch-brief envelope"
@@ -729,6 +729,38 @@ test_pi_tui_mode_probe_is_safe_for_old_and_new_pi() {
   pass "Pi launch probing omits --tui-mode on older Pi and preserves it on supporting Pi"
 }
 
+test_pi_launch_pre_answers_the_project_trust_gate() {
+  local rec id out status launch harness
+  # Pi's project-trust selector gates a fresh worktree, and a worker parked on it
+  # emits no agent event at all, so the pane reads alive while producing nothing.
+  # Every Pi-family launch must therefore pre-answer it with --approve, the
+  # vendor's own per-run grant. No other harness has that flag, so none may
+  # receive it. This pins the crewmate launch verb, which ship and scout share;
+  # the --secondmate shape is pinned by the pi-signed secondmate test below.
+  for harness in pi pi-signed; do
+    id="profile-${harness}-trust-gate-z9a"
+    rec=$(make_spawn_case "profile-${harness}-trust-gate" "$harness" "$id")
+    read_case_record "$rec"
+
+    out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+    status=$?
+    expect_code 0 "$status" "$harness spawn should succeed"
+    launch=$(cat "$LAUNCH_LOG")
+    assert_contains "$launch" "'$FAKEBIN_DIR/$harness' --tui-mode regular --approve" \
+      "$harness launch must pre-answer Pi's project-trust selector with --approve"
+  done
+
+  id=profile-claude-trust-gate-z9b
+  rec=$(make_spawn_case profile-claude-trust-gate claude "$id")
+  read_case_record "$rec"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 0 "$status" "claude spawn should succeed"
+  assert_not_contains "$(cat "$LAUNCH_LOG")" "--approve" \
+    "a non-Pi harness must not receive Pi's project-trust grant"
+  pass "Pi and pi-signed launches pre-answer the project-trust gate; non-Pi launches do not"
+}
+
 test_pi_signed_missing_binary_refuses_before_endpoint_or_metadata() {
   local rec id out status
   id=profile-pi-signed-missing-z8c
@@ -775,7 +807,7 @@ test_pi_signed_persistent_secondmate_uses_pi_extensions_and_identity() {
   assert_absent "$HOME_DIR/data/$id/launch-brief.md" "secondmate launch received a worker overlay"
   launch=$(cat "$LAUNCH_LOG")
   assert_contains "$launch" "< '$sm/data/charter.md'" "secondmate launch lost its original charter"
-  assert_contains "$launch" "FM_PI_HARNESS=pi-signed '$FAKEBIN_DIR/pi-signed' --tui-mode regular -e '$sm/.pi/extensions/fm-primary-turnend-guard.ts' -e '$sm/.pi/extensions/fm-primary-pi-watch.ts'" \
+  assert_contains "$launch" "FM_PI_HARNESS=pi-signed '$FAKEBIN_DIR/pi-signed' --tui-mode regular --approve -e '$sm/.pi/extensions/fm-primary-turnend-guard.ts' -e '$sm/.pi/extensions/fm-primary-pi-watch.ts'" \
     "pi-signed secondmate did not force the regular TUI with Pi's primary extension launch shape"
   if [ "${FM_TEST_EVIDENCE:-0}" = 1 ]; then
     printf '# evidence begin: persistent secondmate\n%s\n' "$out"
@@ -1230,6 +1262,7 @@ test_native_pi_ultra_is_explicit_and_model_scoped
 test_batch_preserves_native_ultra
 test_pi_threads_model_and_max_effort
 test_pi_tui_mode_probe_is_safe_for_old_and_new_pi
+test_pi_launch_pre_answers_the_project_trust_gate
 test_pi_signed_threads_shared_pi_profile_and_preserves_identity
 test_pi_signed_missing_binary_refuses_before_endpoint_or_metadata
 test_pi_signed_persistent_secondmate_uses_pi_extensions_and_identity
