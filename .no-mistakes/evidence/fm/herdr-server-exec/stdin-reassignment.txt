@@ -1,0 +1,1 @@
+async cmd fd0: CHR ino=336 /dev/null

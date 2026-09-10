@@ -1,0 +1,7 @@
+### OLD launch shape (fm_backend_herdr_cli ... server &)
+  server pid=73574  parent pid=73573  parent_comm=bash
+  => stray forked bash (pid 73573) is the server's parent and stays alive waiting on it
+
+### NEW launch shape (fm_backend_herdr_server_exec ... &)
+  server pid=73616  parent pid=1  parent_comm=/sbin/launchd
+  => server reparented to init (pid 1); no forked bash is left behind

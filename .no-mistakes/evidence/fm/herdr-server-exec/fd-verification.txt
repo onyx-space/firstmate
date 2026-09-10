@@ -1,0 +1,4 @@
+backgrounded subshell fds after `cmd >/dev/null 2>&1 &`:
+  fd0=CHR ino=336 /dev/null
+  fd1=CHR ino=336 /dev/null
+  fd2=CHR ino=336 /dev/null
