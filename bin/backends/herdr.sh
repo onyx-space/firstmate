@@ -386,8 +386,10 @@ fm_backend_herdr_cli() {  # <session> <herdr-subcommand-and-args...>
   # stderr is buffered (stdout streams untouched) so a protocol_mismatch
   # refusal can be recognized and retried once on a compatible client; see
   # "client selection" below. A failed command's stderr is replayed verbatim.
-  # The long-lived `server` launch is exec'd straight through: buffering its
-  # stderr would hold this call open for the server's whole lifetime.
+  # The long-lived `server` launch bypasses the capture below and stays
+  # returnable for in-process callers: buffering its stderr would hold this call
+  # open for the server's whole lifetime. A caller that must not leave a forked
+  # shell behind uses fm_backend_herdr_server_exec instead.
   if [ "${1:-}" = server ]; then
     HERDR_SESSION="$session" "$client_bin" "$@" --session "$session"
     return $?
@@ -408,6 +410,24 @@ fm_backend_herdr_cli() {  # <session> <herdr-subcommand-and-args...>
   fi
   [ -z "$err" ] || printf '%s\n' "$err" >&2
   return "$rc"
+}
+
+# fm_backend_herdr_server_exec: replace this shell with the session's herdr
+# server process. Backgrounding the launch through fm_backend_herdr_cli forks a
+# shell that then does nothing but wait on the server, so every session carries
+# a stray `bash` as the server's parent for the server's whole lifetime;
+# exec'ing leaves none, which is what this exists for. It is process hygiene,
+# not a file-descriptor fix: bash assigns a non-interactive asynchronous
+# command's stdin from /dev/null and the caller redirects stdout/stderr, so the
+# forked shell holds no caller descriptor to begin with.
+# The client choice mirrors fm_backend_herdr_cli's, so the same session keeps
+# using the client already selected for it.
+fm_backend_herdr_server_exec() {  # <session>; never returns
+  local session=$1 client_bin=herdr
+  if [ "${FM_BACKEND_HERDR_CLIENT_SESSION:-}" = "$session" ]; then
+    client_bin=$(fm_backend_herdr_bin)
+  fi
+  HERDR_SESSION="$session" exec "$client_bin" server --session "$session"
 }
 
 # --- client selection --------------------------------------------------------
@@ -1574,7 +1594,7 @@ fm_backend_herdr_server_ensure() {  # <session>
   (
     unset FM_HOME FM_ROOT_OVERRIDE FM_STATE_OVERRIDE FM_DATA_OVERRIDE FM_PROJECTS_OVERRIDE FM_CONFIG_OVERRIDE \
       CURSOR_AGENT CURSOR_INVOKED_AS CLAUDECODE PI_CODING_AGENT FM_PI_HARNESS GROK_AGENT FM_SUPERVISION_MODEL
-    fm_backend_herdr_cli "$session" server >/dev/null 2>&1 &
+    fm_backend_herdr_server_exec "$session" >/dev/null 2>&1 &
   ) || return 1
   for i in $(seq 1 20); do
     running=$(fm_backend_herdr_cli "$session" status --json 2>/dev/null | jq -r '.server.running // false' 2>/dev/null)
