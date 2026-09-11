@@ -63,6 +63,13 @@
 # Every scaffold also carries the steering-inbox receive-and-ack section:
 # process state/<id>.inbox/*.msg in order and acknowledge each by moving it to
 # handled/ (record, doorbell, and ladder owned by bin/fm-task-inbox-lib.sh).
+# Every scaffold also carries the artifact-placement contract (this file is its
+# single owner): untracked work is not a deliverable, experiment artifacts go to
+# a tracked experiments/<topic>/ path with a status marker until something
+# depends on them, production artifacts go through the delivery path, and build
+# output is ignored rather than delivered. It sits here because the brief is the
+# only surface every worker actually reads; AGENTS.md section 7 states only the
+# firstmate-side gate (verify a report's artifact paths with ls).
 # Ship tasks include a project-memory section so durable project-intrinsic
 # learnings can be committed to AGENTS.md through the project's delivery path;
 # it carries the AGENTS.md authoring bar (widely useful knowledge only, pointers
@@ -375,6 +382,23 @@ Neither holds for you, so these rules override anything a CE skill tells you.
 EOF
 CE_BOUNDARY_SECTION=${CE_BOUNDARY_SECTION%$'\n'}
 
+# Worker-facing artifact-placement contract. This file is its single owner: the
+# brief is the only surface every worker reads, whereas firstmate states only the
+# acceptance-side gate in AGENTS.md section 7. Built with a quoted heredoc so no
+# backtick in the prose needs escaping.
+IFS= read -r -d '' ARTIFACT_PLACEMENT_SECTION <<'EOF' || true
+# Artifact placement
+Untracked files are not a deliverable: this worktree is discarded at teardown, and so is every untracked file in it.
+Anything another person or a later task needs - proof-of-concept source, scripts, probe harnesses, generated data - must land in a git-tracked path in the repo or in firstmate's per-task data directory (`data/<task-id>/`), and must be rebuildable from what is tracked.
+- Experiment artifacts (probe, proof of concept, spike): a tracked `experiments/<topic>/` path, or the repo's existing equivalent, opening with a status marker saying it is experimental and may be rewritten or deleted.
+  Once anything depends on it, promote it to production maintenance - tracked, documented, verified - rather than leaving it "just an experiment".
+- Production artifacts: the repo's normal path, with tests and docs, shipped through this task's delivery path.
+- Build output (`obj/`, `bin/`, `*.user`, and the like) is ignored, never delivered.
+  Because it is ignored, `obj/` or `bin/` surviving with no source beside it means something was cleaned, not that no source was ever written.
+- Every path your report names is a claim: `ls` it before you write the path down.
+EOF
+ARTIFACT_PLACEMENT_SECTION=${ARTIFACT_PLACEMENT_SECTION%$'\n'}
+
 if [ "$KIND" = scout ]; then
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
@@ -388,6 +412,8 @@ You are in a disposable git worktree of $REPO, at a detached HEAD on a clean def
 This is a SCOUT task: the deliverable is a written report, not a PR.
 The worktree is your laboratory - install, run, edit, and make scratch commits freely; all of it is discarded at teardown.
 The report is the only thing that survives, so anything worth keeping must be in it.
+
+$ARTIFACT_PLACEMENT_SECTION
 
 # Rules
 1. Never push to any remote and never open a PR.
@@ -479,6 +505,8 @@ The path check is authoritative: \`git rev-parse --git-dir\` and \`git rev-parse
 If the top-level path is the primary checkout or not the worktree you were launched in, STOP - do not branch or commit here - append \`blocked: launched in primary checkout, not an isolated worktree\` to the status file and stop.
 
 1. First action: create your branch: \`git checkout -b fm/$ID\`$SETUP2
+
+$ARTIFACT_PLACEMENT_SECTION
 
 # Rules
 $RULE1

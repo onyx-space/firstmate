@@ -911,6 +911,41 @@ test_scout_and_secondmate_scaffold() {
   pass "fm-brief: scout and secondmate code paths still scaffold well-formed briefs"
 }
 
+test_artifact_placement_contract() {
+  local home kind brief
+  home="$TMP_ROOT/artifact-placement"
+  mkdir -p "$home/data"
+  # Both worker kinds create artifacts, so both scaffolds must carry the
+  # contract: a scout's PoC source dies with its scratch worktree just as a ship
+  # task's untracked helper does. The secondmate charter is a supervisor
+  # contract and must not grow a worker section.
+  for kind in no-mistakes direct-PR local-only scout; do
+    if [ "$kind" = scout ]; then
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "brief-artifact-$kind" some-proj --scout >/dev/null 2>&1 \
+        || fail "$kind: scaffold failed"
+    else
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "brief-artifact-$kind" some-proj --mode "$kind" >/dev/null 2>&1 \
+        || fail "$kind: scaffold failed"
+    fi
+    brief="$home/data/brief-artifact-$kind/brief.md"
+    assert_grep "# Artifact placement" "$brief" "$kind brief is missing the artifact-placement section"
+    assert_grep "Untracked files are not a deliverable" "$brief" \
+      "$kind brief lost the untracked-work rule"
+    assert_grep "experiments/<topic>/" "$brief" "$kind brief lost the experiment home"
+    assert_grep "experimental and may be rewritten or deleted" "$brief" \
+      "$kind brief lost the experiment status marker"
+    assert_grep "ignored, never delivered" "$brief" "$kind brief lost the build-output rule"
+    assert_grep "it before you write the path down" "$brief" \
+      "$kind brief lost the report-path verification rule"
+  done
+  FM_HOME="$home" FM_SECONDMATE_CHARTER='Supervise assigned work.' \
+    "$ROOT/bin/fm-brief.sh" supervisor-placement --secondmate --no-projects >/dev/null \
+    || fail "secondmate scaffold failed"
+  assert_no_grep "# Artifact placement" "$home/data/supervisor-placement/brief.md" \
+    "secondmate charter grew a worker artifact-placement section"
+  pass "fm-brief: every worker scaffold states the artifact-placement contract and the charter stays free of it"
+}
+
 test_worker_role_scope() {
   local kind home brief
   home="$TMP_ROOT/worker-role"
@@ -956,4 +991,5 @@ test_secondmate_directory_paths_are_absolute_and_output_is_stable
 test_pause_verb_override_renders_all_brief_scaffolds
 test_scout_and_secondmate_load_decision_hold_policy
 test_ce_workflow_boundary_section
+test_artifact_placement_contract
 test_scout_and_secondmate_scaffold
