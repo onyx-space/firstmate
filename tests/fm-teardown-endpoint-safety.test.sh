@@ -48,6 +48,15 @@ mark_case_as_treehouse_pool() {  # <case>
   : > "$dir/worktree/sentinel"
 }
 
+# Reach a case's home through a symlink: the spelling an operator's home is
+# reached with is not always the physical one (a symlinked home, or a /tmp root
+# that resolves to /private/tmp), and the slot guard compares record identity.
+alias_case_home() {  # <case>
+  local dir=$1
+  mv "$dir/home" "$dir/real-home"
+  ln -s real-home "$dir/home"
+}
+
 run_case() {  # <case> <id>
   local dir=$1 id=$2
   FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" \
@@ -647,6 +656,67 @@ test_shared_pool_slot_releases_to_its_surviving_owner() {
   pass "fm-teardown: a pool slot is released to the live record once the other record's endpoint is provably gone"
 }
 
+# The same two readings, reached through an aliased home. The guard's self-skip
+# compared path spellings while the state walk reaches this record's own
+# directory under the physical spelling too, so the record read as a SECOND
+# record claiming its own slot: every release refused against itself, naming the
+# record as its own co-claimant and telling the operator to reconcile it with
+# itself. The aliased reading must behave exactly like the plain one.
+test_aliased_home_slot_guard_reads_physical_identity() {
+  local dir id=surviving-task other=departed-task worker rc
+
+  dir=$(make_case slot-release-aliased-home)
+  mark_case_as_treehouse_pool "$dir"
+  make_slot_copy_landed "$dir"
+  alias_case_home "$dir"
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=main:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  write_tmux_agent_stub "$dir" "main:fm-$id=alive" "other:fm-$other=missing"
+  ( cd "$dir/worktree" && exec sleep 30 ) &
+  worker=$!
+
+  rc=0
+  FM_FAKE_TMUX_PANE_PID=$worker run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr" || rc=$?
+  kill "$worker" 2>/dev/null || true
+  wait "$worker" 2>/dev/null || true
+  [ "$rc" -eq 0 ] \
+    || fail "an aliased home refused to release a slot whose co-claimant is gone: $(cat "$dir/stderr")"
+  assert_absent "$dir/home/state/$id.meta" "aliased-home release left the surviving record"
+  assert_present "$dir/home/state/$other.meta" "aliased-home release removed the gone record"
+  grep -Fq "treehouse <return>" "$dir/runtime.log" \
+    || fail "the aliased-home release never returned the slot: $(cat "$dir/runtime.log")"
+  [ "$(grep -cF 'is the surviving claimant' "$dir/stderr")" = 1 ] \
+    || fail "the aliased home proved the same co-claimant claim more than once: $(cat "$dir/stderr")"
+
+  # A live co-claimant is still a live co-claimant through the alias.
+  other=running-task
+  dir=$(make_case slot-contested-aliased-home)
+  mark_case_as_treehouse_pool "$dir"
+  alias_case_home "$dir"
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=main:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  write_tmux_agent_stub "$dir" "main:fm-$id=alive" "other:fm-$other=alive"
+
+  set +e
+  run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "an aliased home released a slot while the record sharing it was still running"
+  assert_shared_slot_refused "$dir" "$id" "$other" "aliased home, live co-claimant"
+  assert_contains "$(cat "$dir/stderr")" "$other" \
+    "the aliased-home refusal must name the other task holding the slot"
+
+  pass "fm-teardown: an aliased fm home resolves the shared-slot guard by physical path, never against itself"
+}
+
 # The same reading as above, with one live-work proof removed at a time. Each
 # one must refuse on its own: endpoint liveness never stands in for a proven
 # copy or a proven process set.
@@ -1197,6 +1267,7 @@ test_isolated_tmux_invalid_and_valid_cleanup
 test_bare_relative_origin_shares_project_lock_with_clone
 test_reused_pool_slot_refuses_before_touching_the_other_task
 test_shared_pool_slot_releases_to_its_surviving_owner
+test_aliased_home_slot_guard_reads_physical_identity
 test_shared_pool_slot_still_refuses_while_the_co_claimant_runs
 test_shared_pool_slot_still_refuses_an_unprovable_co_claimant
 test_shared_pool_slot_still_refuses_when_neither_record_is_live

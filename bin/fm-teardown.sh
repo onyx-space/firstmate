@@ -2281,13 +2281,30 @@ teardown_slot_claim_is_uncontested() {  # <record-meta> <other-meta> <slot>
 
 require_exclusive_worktree_slot_record() {
   local record_meta=$1 record_id=$2 record_state=$3 worktree=$4
-  local slot state_dir other other_id field other_path other_slot
+  local slot state_dir other_dir other other_id field other_path other_slot own_dir own_name
   slot=$(canonical_existing_dir "$worktree") || return 0
-  collect_local_firstmate_states "$record_state" || return 1
+  # Identity is the physical path, not the spelling. record_state is this
+  # record's own state directory, where record_meta lives; an aliased fm home (a
+  # symlinked home, or a /tmp root that resolves to /private/tmp) reaches it
+  # under a second spelling, and comparing record paths as strings then read
+  # this record as a SECOND record naming its own slot - every teardown refused
+  # against itself and named the record to reconcile as itself. The guard
+  # resolves a collision with an OTHER record only, so "other" is a physical
+  # question, and the walk receives the physical spelling so it enumerates each
+  # state directory once instead of proving the same claim twice.
+  own_dir=$(canonical_existing_dir "$record_state") || {
+    echo "REFUSED: cannot resolve this record's state directory; nothing was changed" >&2
+    return 1
+  }
+  own_name=$(basename "$record_meta")
+  collect_local_firstmate_states "$own_dir" || return 1
   for state_dir in "${TREEHOUSE_OWNER_STATES[@]}"; do
+    # A state directory the walk listed but cannot resolve holds no meta files,
+    # exactly like the unexpanded glob it would otherwise iterate.
+    other_dir=$(canonical_existing_dir "$state_dir" 2>/dev/null) || continue
     for other in "$state_dir"/*.meta; do
       [ -f "$other" ] && [ ! -L "$other" ] || continue
-      [ "$other" != "$record_meta" ] || continue
+      [ "$other_dir" != "$own_dir" ] || [ "$(basename "$other")" != "$own_name" ] || continue
       other_id=$(basename "$other" .meta)
       for field in worktree home; do
         other_path=$(fm_meta_get "$other" "$field")
