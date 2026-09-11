@@ -13,6 +13,9 @@
 # mode is refused rather than silently rendered as the pipeline contract.
 # The block opens with the fixed machine-readable "Delivery contract: mode=<mode>"
 # line that bin/fm-spawn.sh checks a ship brief against.
+# The no-mistakes branch owns the mode's completion signal: that block opens by
+# naming the pipeline's PR as the completion and saying outright that a commit is
+# not one, because workers were reading a commit as "done" and stopping there.
 # This file is the one owner of the no-mistakes `--intent` contract: only the
 # brief's `## Captain's intent` subsection plus later captain words, never
 # `## Firstmate spec` and never the worker's own tradeoffs.
@@ -238,9 +241,13 @@ EOF
       cat <<EOF
 # Definition of done
 Delivery contract: mode=no-mistakes
-The task is complete only when committed on your branch.
-When you believe it is complete, append \`done: {summary}\` to the status file and stop.
-Firstmate will then instruct you to run /no-mistakes to validate and ship a PR.
+**Completion for mode=no-mistakes is a PR the no-mistakes pipeline pushed and opened, never a commit.**
+A commit, a clean branch, or "ready for the run" is NOT completion; stopping there leaves the task unfinished and firstmate has to chase it.
+The one completion claim is \`done: PR {url} checks green\`, written with the PR's full \`https://\` URL once the run reports CI green (state the honest real result instead of "checks green" when the repo has no CI).
+Running the pipeline belongs to this task, not to a later instruction: invoke /no-mistakes yourself as soon as your implementation is committed, and keep driving its gates until that green result or a terminal failure.
+First run in a repo the pipeline has never seen: run \`no-mistakes doctor\`, then \`no-mistakes init\` if it reports the repo is not initialized here, before the first run.
+When you claim completion, report all three: the PR's full \`https://\` URL, the head commit it validated, and the CI result.
+The completion line is the LAST line in the status log: put any supplementary explanation before it, or in \`data/<task-id>/\`, never after it.
 
 You drive no-mistakes by responding to its gates, not by implementing fixes.
 Follow the guidance no-mistakes itself provides for the mechanics: it loads when you invoke /no-mistakes, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
