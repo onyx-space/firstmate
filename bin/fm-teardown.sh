@@ -80,23 +80,30 @@
 # this home or any locally registered Firstmate home may name the same live path
 # in its worktree= or home=. One live path with two task records is the reuse
 # collision itself, whichever record is stale. The guard asks which record
-# genuinely owns the live slot, and exactly one reading resolves it: the
-# co-claimant's recorded endpoint is provably gone while this record's recorded
-# endpoint is provably alive (both read through the shared recovery-grade
-# classifier, bin/fm-backend.sh's fm_backend_agent_state), the shared copy holds
-# no unlanded work, and nothing is left running in the slot that this record's
-# own endpoint does not own (bin/fm-backend.sh's fm_backend_endpoint_root_pid
-# names the ancestor those processes descend from). Endpoint liveness alone is
-# never enough, because the return below kills every process rooted in the slot
-# and hard-resets the copy; a gone endpoint says nothing about either. The alive
-# owner plus the other three proofs is what makes returning the slot safe, and
-# it resolves a deadlock in which two records each waited for the other. Every
-# other combination keeps the refusal: a live, ambiguous, unreadable,
-# unverified, or endpoint-less co-claimant; an unprovable own endpoint; an
-# unprovable process or copy proof; and two gone records, where nothing proves
-# which claim is current. A secondmate co-claimant always keeps it, on either
-# field, because that path may hold its durable home rather than a disposable
-# pool slot. The recorded endpoint's exact
+# genuinely owns the live slot, and two readings resolve it, both requiring the
+# same two destruction proofs: the shared copy holds no unlanded work, and
+# nothing is left running in the slot that this record's own endpoint does not
+# own (bin/fm-backend.sh's fm_backend_endpoint_root_pid names the ancestor those
+# processes descend from). Those proofs are never optional, because the return
+# below kills every process rooted in the slot and hard-resets the copy. The
+# first reading is endpoint liveness: the co-claimant's recorded endpoint is
+# provably gone while this record's recorded endpoint is provably alive (both
+# read through the shared recovery-grade classifier, bin/fm-backend.sh's
+# fm_backend_agent_state). A gone endpoint says nothing about the copy or the
+# processes, so liveness alone is never enough. The second reading is the pool's
+# own allocation record: Treehouse stamps when the slot's current owner started,
+# so a claim begun before that instant belongs to an earlier allocation of the
+# slot and is superseded, while the claim that did not begin before it is the
+# slot's true occupant. That reading is what resolves the deadlock in which two
+# records still exist, neither endpoint proves the other gone, and each refused
+# on the other's claim; it is evidence about the slot, never about which record
+# merely looks older. Every other combination keeps the refusal: a co-claimant
+# with no readable pool owner record for the slot; an unprovable own endpoint;
+# an unprovable process or copy proof; two gone records with no owner record;
+# and two claims that do not fall on opposite sides of the current owner's start
+# instant, where nothing proves which claim is current. A secondmate co-claimant
+# always keeps it, on either field, because that path may hold its durable home
+# rather than a disposable pool slot. The recorded endpoint's exact
 # task identity and the record's spawn incarnation are validated separately
 # before cleanup. Its current working directory is only incidental process
 # state: the same worker remains the owner after changing directory, so cwd can
@@ -111,9 +118,10 @@
 # gap; forced secondmate teardown takes it and runs the same checks for every
 # descendant Treehouse slot before touching any child.
 # This refusal is not relaxed by --force: --force authorizes discarding THIS
-# task's unlanded work, never another task's live work. The single uncontested
-# reading above is not a relaxation of it - a co-claimant proven gone is not
-# live work - so --force still changes nothing about a live co-claimant.
+# task's unlanded work, never another task's live work. The release readings
+# above are not a relaxation of it - a co-claimant proven gone, or one whose
+# claim the pool's own owner record shows superseded, is not live work - so
+# --force still changes nothing about a live co-claimant.
 # Reconcile whichever record is wrong and re-run. Orca is not a pool slot and
 # proves its path through require_orca_worktree_path_match instead.
 # Orca tasks use the same safety checks, then close the recorded terminal and
@@ -316,15 +324,20 @@ if [ "$FORCE" = --force ] && [ "$(fm_lease_actor)" = branch ]; then
 fi
 fm_lease_guard "$ID" "teardown (fm-teardown)"
 
+# The pool state file Treehouse keeps beside every slot it manages, from the
+# <pool>/<slot>/<repo> layout that file's own worktree records describe.
+teardown_treehouse_state_path() {  # <slot>
+  printf '%s\n' "$(dirname "$(dirname "$1")")/treehouse-state.json"
+}
+
 # A Treehouse slot has the managed pool's fixed <pool>/<slot>/<repo> layout.
 # Require both its pool state and the same Git common directory as the recorded
 # project; an ordinary linked worktree is not evidence that Treehouse owns it.
 is_treehouse_pool_slot() {  # <project> <worktree>
-  local project=$1 worktree=$2 slot pool state project_common slot_common
+  local project=$1 worktree=$2 slot state project_common slot_common
   [ -d "$project" ] && [ -d "$worktree" ] || return 1
   slot=$(CDPATH='' cd -- "$worktree" 2>/dev/null && pwd -P) || return 1
-  pool=$(dirname "$(dirname "$slot")")
-  state="$pool/treehouse-state.json"
+  state=$(teardown_treehouse_state_path "$slot")
   [ -f "$state" ] && [ ! -L "$state" ] || return 1
   project_common=$(git -C "$project" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
   slot_common=$(git -C "$slot" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
@@ -2225,6 +2238,100 @@ $pids
 EOF
 }
 
+# The epoch second the slot's CURRENT owner started, exactly as Treehouse's
+# own pool state records it. Treehouse stamps this when it hands the slot to an
+# owner, so it is the one fact separating a claim that belongs to the live
+# allocation from a claim merely older than it. Nothing is printed and the exit
+# is non-zero when the pool state names no owner start for this slot, because
+# an absent, unreadable, or ownerless record proves nothing about who holds it.
+# The field is milliseconds on the versions that write it that way and seconds
+# on others, so anything longer than an epoch second is read as milliseconds.
+teardown_slot_owner_started_at() {  # <slot>
+  local slot=$1 state started
+  state=$(teardown_treehouse_state_path "$slot")
+  [ -f "$state" ] && [ ! -L "$state" ] || return 1
+  started=$(SLOT_PATH=$slot LC_ALL=C awk '
+    BEGIN { RS = "}" ; slot = ENVIRON["SLOT_PATH"] }
+    {
+      path = "" ; started = ""
+      if (match($0, /"path"[[:space:]]*:[[:space:]]*"[^"]*"/)) {
+        path = substr($0, RSTART, RLENGTH)
+        sub(/^"path"[[:space:]]*:[[:space:]]*"/, "", path)
+        sub(/"$/, "", path)
+      }
+      if (match($0, /"owner_started_at"[[:space:]]*:[[:space:]]*[0-9]+/)) {
+        started = substr($0, RSTART, RLENGTH)
+        sub(/^"owner_started_at"[[:space:]]*:[[:space:]]*/, "", started)
+      }
+      if (path == slot && started != "") { print started ; exit }
+    }
+  ' "$state") || return 1
+  case "$started" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  if [ "${#started}" -gt 10 ]; then
+    started=$((started / 1000))
+  fi
+  printf '%s\n' "$started"
+}
+
+# The epoch second a task record's own claim on its slot began, read from the
+# spawn incarnation bin/fm-spawn.sh stamps at launch (s<epoch>.<pid>.<random>).
+# Non-zero when the record carries no readable incarnation, which is exactly
+# the record whose claim instant cannot be compared.
+teardown_meta_slot_claim_epoch() {  # <meta>
+  local meta=$1 gen
+  gen=$(fm_meta_get "$meta" spawn_gen)
+  case "$gen" in
+    s*.*.*) ;;
+    *) return 1 ;;
+  esac
+  gen=${gen#s}
+  gen=${gen%%.*}
+  case "$gen" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  printf '%s\n' "$gen"
+}
+
+# The process half of a slot release, resolved from one record's own endpoint:
+# every process still rooted in the slot must belong to that record's recorded
+# endpoint. A backend that cannot name the pane leader, or an unreadable
+# process scan, proves nothing and refuses.
+teardown_slot_processes_belong_to() {  # <record-meta> <slot>
+  local record_meta=$1 slot=$2 backend target
+  backend=$(fm_backend_of_meta "$record_meta")
+  target=$(fm_backend_target_of_meta "$record_meta")
+  [ -n "$target" ] || return 1
+  fm_backend_is_known "$backend" || return 1
+  teardown_slot_processes_are_owned "$backend" "$target" "$slot"
+}
+
+# Which of two records naming one slot Treehouse's own pool state shows as that
+# slot's CURRENT occupant, as `record` or `other`. A claim that began before the
+# current owner's start instant belongs to an earlier allocation of the slot,
+# so it is superseded; the claim that did not begin before it is the one
+# Treehouse last handed the slot to, and only that side may return the slot.
+# Nothing is printed and the exit is non-zero when the pool state names no owner
+# start, either record carries no claim instant, or the claims do not fall on
+# opposite sides of that instant: then no single occupant is proven.
+teardown_slot_current_occupant() {  # <record-meta> <other-meta> <slot>
+  local record_meta=$1 other=$2 slot=$3 owner_started own_claim other_claim
+  [ "$(fm_meta_get "$other" kind)" != secondmate ] || return 1
+  owner_started=$(teardown_slot_owner_started_at "$slot") || return 1
+  own_claim=$(teardown_meta_slot_claim_epoch "$record_meta") || return 1
+  other_claim=$(teardown_meta_slot_claim_epoch "$other") || return 1
+  if [ "$other_claim" -lt "$owner_started" ] && [ "$own_claim" -ge "$owner_started" ]; then
+    printf 'record\n'
+    return 0
+  fi
+  if [ "$own_claim" -lt "$owner_started" ] && [ "$other_claim" -ge "$owner_started" ]; then
+    printf 'other\n'
+    return 0
+  fi
+  return 1
+}
+
 # True only in the reading where the refusal may still name the sanctioned
 # release order: a co-claimant that is not a secondmate home reads a live
 # agent while this record's own endpoint does not. Every other reading - both
@@ -2269,24 +2376,20 @@ teardown_slot_copy_proof() {  # <slot>
 # resets the copy. A secondmate co-claimant is never one: its durable home, not
 # a pool slot, may be what that path holds.
 teardown_slot_claim_is_uncontested() {  # <record-meta> <other-meta> <slot>
-  local record_meta=$1 other=$2 slot=$3 backend target
+  local record_meta=$1 other=$2 slot=$3
   [ "$(fm_meta_get "$other" kind)" != secondmate ] || return 1
   case "$(teardown_record_agent_state "$other")" in
     dead|missing) ;;
     *) return 1 ;;
   esac
-  backend=$(fm_backend_of_meta "$record_meta")
-  target=$(fm_backend_target_of_meta "$record_meta")
-  [ -n "$target" ] || return 1
-  fm_backend_is_known "$backend" || return 1
   [ "$(teardown_record_agent_state "$record_meta")" = alive ] || return 1
   teardown_slot_copy_is_landed "$slot" || return 1
-  teardown_slot_processes_are_owned "$backend" "$target" "$slot"
+  teardown_slot_processes_belong_to "$record_meta" "$slot"
 }
 
 require_exclusive_worktree_slot_record() {
   local record_meta=$1 record_id=$2 record_state=$3 worktree=$4
-  local slot state_dir other_dir other other_id field other_path other_slot own_dir own_name
+  local slot state_dir other_dir other other_id field other_path other_slot own_dir own_name occupied
   slot=$(canonical_existing_dir "$worktree") || return 0
   # Identity is the physical path, not the spelling. record_state is this
   # record's own state directory, where record_meta lives; an aliased fm home (a
@@ -2320,10 +2423,23 @@ require_exclusive_worktree_slot_record() {
           echo "teardown: task $other_id also records $slot, but its endpoint reads no live agent, the shared copy holds no unlanded work, and nothing rooted in the slot belongs to anyone else; task $record_id is the surviving claimant, so cleanup continues" >&2
           continue
         fi
+        occupied=
+        if [ "$field" = worktree ]; then
+          occupied=$(teardown_slot_current_occupant "$record_meta" "$other" "$slot") || occupied=
+        fi
+        if [ "$occupied" = record ] \
+           && teardown_slot_copy_is_landed "$slot" \
+           && teardown_slot_processes_belong_to "$record_meta" "$slot"; then
+          echo "teardown: task $other_id also records $slot, but its claim began before the pool's current owner took the slot, so that claim is superseded; task $record_id is the slot's true occupant and cleanup continues" >&2
+          continue
+        fi
         echo "REFUSED: task $record_id's recorded worktree $slot is also task $other_id's recorded $field." >&2
         echo "Returning that pool slot would kill $other_id's processes and reset its copy, so nothing was changed - not even with --force." >&2
         if teardown_slot_release_order_applies "$record_meta" "$other"; then
           echo "One record can release it: task $other_id's recorded endpoint is still alive. Tear down task $other_id first, then re-run this one." >&2
+        fi
+        if [ "$occupied" = other ]; then
+          echo "Treehouse's pool state names task $other_id as the slot's current occupant: tear down task $other_id first, then re-run this one." >&2
         fi
         echo "Reconcile whichever record is wrong (bin/fm-crew-state.sh $record_id; bin/fm-crew-state.sh $other_id), then re-run teardown." >&2
         return 1
