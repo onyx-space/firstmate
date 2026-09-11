@@ -382,12 +382,32 @@ Neither holds for you, so these rules override anything a CE skill tells you.
 - Never ship on your own authority. Do not push the default branch and do not merge. Open a PR only where your task's own Definition of done requires it (a `direct-PR` task requires pushing your branch and opening a PR; that is the only shipping you do). The captain owns merge authority.
 - Banned in this session: `lfg`, `ce-commit-push-pr`, `ce-babysit-pr`, `ce-resolve-pr-feedback`, `ce-worktree`, `ce-compound`.
 - Everything not allowed below is denied: any CE skill this brief does not list is unavailable in this session, including `ce-plan`, `ce-ideate`, `ce-brainstorm`, `ce-explain`, `ce-handoff`, `ce-doc-review`, `ce-pov`, `ce-strategy`, `ce-proof`, `ce-test-browser`, `ce-update`, `ce-compound-refresh`, `ce-commit`, `ce-optimize`, and `ce-riffrec-feedback-analysis`; the banned list above only names the ones most likely to ship work or overrule firstmate.
-- Allowed here: `ce-work` with `mode:return-to-caller` only, `ce-debug`, `ce-simplify-code`, `ce-translate`.
+- Allowed here: `ce-work` with `mode:return-to-caller` only, `ce-debug`, `ce-simplify-code`.
 - Review belongs to the delivery path: under mode no-mistakes, no-mistakes owns review, so do not run `ce-code-review`; where the delivery path leaves review to you, it is allowed.
 - There is no captain in this session: anything that needs a human decision goes back as a `needs-decision [key=...]` status event, and you never answer it yourself.
 - Do not create a `solutions/` store in this repo: hand durable knowledge to firstmate in your report or status line and let firstmate route it, rather than inventing a store.
 EOF
 CE_BOUNDARY_SECTION=${CE_BOUNDARY_SECTION%$'\n'}
+
+# Worker-facing PR-description language discipline. The separately installed
+# `pr-description` skill is the single owner, so this section points at it and
+# carries only the policy a worker must not miss.
+# Emitted for the ship modes that can open a PR and blanked for `local-only`,
+# which opens none, and for a scout (this file exits before the ship scaffold).
+# The retired ce-translate route for PR text is deliberately absent, and the
+# CE boundary above no longer lists it either.
+IFS= read -r -d '' PR_DESCRIPTION_SECTION <<'EOF' || true
+# PR description
+Before you write or edit a pull request description, read the `pr-description` skill (`~/.agents/skills/pr-description/SKILL.md`); it is the single owner of this contract, so follow it rather than this summary.
+- Write the Chinese version first and keep it visible; fold the English version below it inside `<details><summary>English</summary>...</details>`.
+- Every full English sentence in the body needs a matching Chinese sentence.
+- Keep only code, commands, paths, file, function, and variable names, repository and branch names, commit shas, protocol and API names, proper nouns, and machine output (test logs, evidence transcripts, self-check reports) in English exactly as they are.
+- Keep the conventional-commit English prefix in the title; the rest of the title may be Chinese or English.
+- This applies to own repositories: GitHub `onyx-space/*`, and internal Gitea `admin/*` and `AI.Buddy/*`.
+- Third-party upstream repositories follow upstream norms and stay in English.
+- When you edit an existing pull request description, read the current body first, keep the `<!-- no-mistakes-pipeline-attestation:v1 ... -->` comment byte-for-byte, change only the intended part, then read it back and confirm the attestation `head_sha` still equals the current head.
+EOF
+PR_DESCRIPTION_SECTION=${PR_DESCRIPTION_SECTION%$'\n'}
 
 # Worker-facing artifact-placement contract. This file is its single owner: the
 # brief is the only surface every worker reads, whereas firstmate states only the
@@ -516,6 +536,7 @@ case "$MODE" in
     ;;
   local-only)
     SETUP2=""
+    PR_DESCRIPTION_SECTION=""
     RULE1="1. Never push to any remote and never open a PR. Work only on your \`fm/$ID\` branch; firstmate handles the merge into local \`main\`."
     ;;
   *)  # no-mistakes
@@ -593,6 +614,8 @@ Record only project knowledge useful to almost every future session.
 For anything the codebase already shows, prefer a pointer to the authoritative file, command, or doc over copying the detail.
 If you touch a project \`AGENTS.md\`, follow \`$FM_ROOT/bin/fm-ensure-agents-md.sh\`'s self-governance contract in the same pass.
 Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced no durable project knowledge.
+
+$PR_DESCRIPTION_SECTION
 
 $DOD
 EOF

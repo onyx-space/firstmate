@@ -847,7 +847,7 @@ test_ce_workflow_boundary_section() {
     assert_grep "Everything not allowed below is denied" "$brief" "$mode brief lost the default-deny lead-in"
     assert_grep "ce-plan" "$brief" "$mode brief lost a newly named denied skill"
     assert_grep "Allowed here:" "$brief" "$mode brief lost the allowed-list lead-in"
-    for name in mode:return-to-caller ce-debug ce-simplify-code ce-translate; do
+    for name in mode:return-to-caller ce-debug ce-simplify-code; do
       assert_grep "$name" "$brief" "$mode brief lost allowed entry $name"
     done
     assert_grep "ce-code-review" "$brief" "$mode brief lost the review-gate rule"
@@ -880,6 +880,48 @@ test_ce_workflow_boundary_section() {
   assert_no_grep "# CE workflow boundary" "$home/data/brief-ce-sm/brief.md" \
     "secondmate charter must not carry the worker CE boundary section"
   pass "fm-brief.sh: worker briefs carry the CE workflow boundary section"
+}
+
+# The captain's PR-language discipline (2026-09-11) must reach every worker that
+# can open a pull request, and it is owned by the separately installed
+# `pr-description` skill, so the brief points at that skill instead of restating
+# its full format. Ship modes that can open a PR carry it; local-only opens none
+# and must not, because there the discipline describes work the task cannot do.
+# The retired ce-translate route for PR text must not survive anywhere in the
+# generated brief; AGENTS.md's one-owner rule keeps this brief a wiring-up only.
+test_pr_description_discipline_section() {
+  local home id mode brief
+  home="$TMP_ROOT/pr-description-home"
+  mkdir -p "$home/data"
+  for mode in no-mistakes direct-PR; do
+    id="brief-prdesc-$mode"
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" >/dev/null 2>&1 \
+      || fail "$mode: scaffold failed"
+    brief="$home/data/$id/brief.md"
+    assert_grep "# PR description" "$brief" "$mode brief is missing the PR description section"
+    assert_grep "pr-description" "$brief" "$mode brief does not point at the pr-description skill"
+    assert_grep '<details><summary>English</summary>' "$brief" "$mode brief lost the English-fold format"
+    assert_grep "Write the Chinese version first and keep it visible" "$brief" \
+      "$mode brief lost the Chinese-first rule"
+    assert_grep "Every full English sentence in the body needs a matching Chinese sentence" "$brief" \
+      "$mode brief lost the strict bilingual rule"
+    assert_grep "machine output (test logs, evidence transcripts, self-check reports)" "$brief" \
+      "$mode brief lost the machine-output exception"
+    assert_grep "conventional-commit English prefix" "$brief" "$mode brief lost the title rule"
+    assert_grep "onyx-space" "$brief" "$mode brief lost the own-repository scope"
+    assert_grep "AI.Buddy" "$brief" "$mode brief lost the internal Gitea scope"
+    assert_grep "no-mistakes-pipeline-attestation:v1" "$brief" \
+      "$mode brief lost the existing-description attestation rule"
+    assert_grep "byte-for-byte" "$brief" "$mode brief lost the attestation-preservation rule"
+    assert_no_grep "ce-translate" "$brief" \
+      "$mode brief still routes PR text through the retired ce-translate pipeline"
+  done
+  id="brief-prdesc-local-only"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode local-only >/dev/null 2>&1 \
+    || fail "local-only: scaffold failed"
+  assert_no_grep "# PR description" "$home/data/$id/brief.md" \
+    "local-only brief carries a PR description discipline for a path it cannot take"
+  pass "fm-brief.sh: PR-opening briefs carry the bilingual PR description discipline"
 }
 
 # Scout and secondmate paths still scaffold well-formed briefs.
@@ -1026,5 +1068,6 @@ test_secondmate_directory_paths_are_absolute_and_output_is_stable
 test_pause_verb_override_renders_all_brief_scaffolds
 test_scout_and_secondmate_load_decision_hold_policy
 test_ce_workflow_boundary_section
+test_pr_description_discipline_section
 test_artifact_placement_contract
 test_scout_and_secondmate_scaffold
