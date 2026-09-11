@@ -596,6 +596,56 @@ SH
   pass "herdr client status: .server.compatible, legacy protocol equality, unknown, and stopped shapes all normalize"
 }
 
+# --- fm_backend_herdr_endpoint_root_pid: the pane shell a slot release trusts --
+#
+# The shared-pool-slot release proof counts a process rooted in the slot as the
+# record's own only when it is this pid or a live descendant of it, so this read
+# decides whether that slot can be returned at all - and both real deadlock
+# reproductions record backend=herdr. A pane process-info that disagrees on the
+# pane id, or a shell_pid that is absent or not a real process, must prove
+# nothing: otherwise a stale or reused pane id could name another pane's shell
+# and a foreign process in the slot would read as owned.
+test_endpoint_root_pid_proves_only_the_exact_recorded_pane() {
+  local dir log resp fb out name payload
+
+  for name in agreeing disagreeing shell_pid_absent shell_pid_is_init; do
+    case "$name" in
+      agreeing) payload=$(death_process_info_fixture w1:p2 4242) ;;
+      disagreeing) payload=$(death_process_info_fixture w1:p9 4242) ;;
+      shell_pid_absent) payload='{"result":{"type":"pane_process_info","process_info":{"pane_id":"w1:p2"}}}' ;;
+      shell_pid_is_init) payload=$(death_process_info_fixture w1:p2 1) ;;
+    esac
+    dir="$TMP_ROOT/endpoint-root-$name"; mkdir -p "$dir/responses"
+    log="$dir/log"; resp="$dir/responses"; : > "$log"
+    printf '%s\n' "$payload" > "$resp/1.out"
+    fb=$(make_herdr_fakebin "$dir")
+    out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+      bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_endpoint_root_pid fmtest:w1:p2' "$ROOT")
+    case "$name" in
+      agreeing)
+        [ "$out" = 4242 ] || fail "the recorded pane's shell pid is the endpoint root, got '$out'"
+        ;;
+      *)
+        [ -z "$out" ] || fail "an endpoint root read that cannot prove $name must print nothing, got '$out'"
+        ;;
+    esac
+    assert_contains "$(cat "$log")" $'pane\x1fprocess-info' \
+      "the endpoint root read never asked for pane process-info ($name)"
+  done
+
+  # A target that names no pane cannot be proven at all, and must not even
+  # reach the CLI for one.
+  dir="$TMP_ROOT/endpoint-root-no-pane"; mkdir -p "$dir/responses"
+  log="$dir/log"; resp="$dir/responses"; : > "$log"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_endpoint_root_pid fmtest' "$ROOT")
+  [ -z "$out" ] || fail "a target that names no pane must prove nothing, got '$out'"
+  [ ! -s "$log" ] || fail "a target that names no pane must not reach the CLI: $(cat "$log")"
+
+  pass "fm_backend_herdr_endpoint_root_pid: only a pane read agreeing on the exact pane and naming a real shell proves the endpoint root"
+}
+
 # --- launcher_identity: the exact workspace a worker must be placed in -------
 #
 # Herdr injects HERDR_ENV/HERDR_PANE_ID/HERDR_SESSION/HERDR_SOCKET_PATH into
@@ -4792,6 +4842,7 @@ test_cli_helper_sets_env_and_appends_trailing_session_flag
 test_agent_state_bypasses_a_stale_client_shadowing_a_compatible_one
 test_recovery_grade_read_widens_only_at_its_own_boundary
 test_cli_caches_the_selected_client_within_a_process
+test_endpoint_root_pid_proves_only_the_exact_recorded_pane
 test_cli_scopes_the_selected_client_to_its_session
 test_cli_unrelated_failure_never_triggers_reselection
 test_cli_single_client_pays_no_selection_read

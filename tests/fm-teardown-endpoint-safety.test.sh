@@ -48,11 +48,128 @@ mark_case_as_treehouse_pool() {  # <case>
   : > "$dir/worktree/sentinel"
 }
 
+# Reach a case's home through a symlink: the spelling an operator's home is
+# reached with is not always the physical one (a symlinked home, or a /tmp root
+# that resolves to /private/tmp), and the slot guard compares record identity.
+alias_case_home() {  # <case>
+  local dir=$1
+  mv "$dir/home" "$dir/real-home"
+  ln -s real-home "$dir/home"
+}
+
 run_case() {  # <case> <id>
   local dir=$1 id=$2
   FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" \
   FM_RUNTIME_LOG="$dir/runtime.log" PATH="$dir/fakebin:$PATH" \
     "$TEARDOWN" "$id" --force
+}
+
+# Replace a case's tmux stub with one that answers the recovery-grade agent
+# inventory probe. Args: <case> <session:window=verdict>...
+# Verdicts: alive (the window exists and its pane runs an agent), dead (the
+# window exists and its pane holds only a shell), missing (no session inventory
+# to read), unreadable (the inventory read fails for an unclassified reason).
+# Any session the case does not name stays unreadable, so an unmodelled probe
+# reads fail-closed rather than silently as gone.
+write_tmux_agent_stub() {  # <case> <session:window=verdict>...
+  local dir=$1 spec left dollar
+  dollar='$'
+  shift
+  {
+    cat <<'SH'
+#!/usr/bin/env bash
+printf 'tmux' >> "${FM_RUNTIME_LOG:?}"
+printf ' <%s>' "$@" >> "${FM_RUNTIME_LOG:?}"
+printf '\n' >> "${FM_RUNTIME_LOG:?}"
+sub=${1:-}
+args=$*
+target=
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = -t ]; then target=${2:-}; shift 2; continue; fi
+  shift
+done
+session=${target%%:*}
+window=$target
+verdict=unreadable
+SH
+    printf 'case "%ssession" in\n' "$dollar"
+    for spec in "$@"; do
+      left=${spec%%=*}
+      printf '  %s) window=%s; verdict=%s ;;\n' \
+        "${left%%:*}" "${left#*:}" "${spec##*=}"
+    done
+    cat <<'SH'
+esac
+case "$sub" in
+  list-windows)
+    case "$verdict" in
+      missing) printf 'no server running on /tmp/fm-fake-tmux\n' >&2; exit 1 ;;
+      unreadable) printf 'unexpected inventory failure\n' >&2; exit 1 ;;
+      *) printf '%s\n' "$window" ;;
+    esac
+    ;;
+  display-message)
+    case "$args" in
+      *pane_current_command*)
+        case "$verdict" in
+          alive) printf 'pi\n' ;;
+          dead) printf 'zsh\n' ;;
+        esac
+        ;;
+      *pane_pid*) printf '%s\n' "${FM_FAKE_TMUX_PANE_PID:-}" ;;
+    esac
+    ;;
+esac
+exit 0
+SH
+  } > "$dir/fakebin/tmux"
+  chmod +x "$dir/fakebin/tmux"
+}
+
+# Give a pool-slot copy the clean, landed state the shared-copy proof requires:
+# its scratch marker committed and its HEAD reachable from a remote-tracking
+# branch. The ordinary collision fixtures deliberately leave both unproven.
+make_slot_copy_landed() {  # <case>
+  local dir=$1
+  git -C "$dir/worktree" add -A
+  git -C "$dir/worktree" -c user.name=test -c user.email=test@example.invalid \
+    commit -qm "pool scratch" 2>/dev/null || true
+  git init -q --bare "$dir/origin.git"
+  git -C "$dir/project" remote add origin "$dir/origin.git" 2>/dev/null || true
+  git -C "$dir/worktree" push -q origin HEAD:refs/heads/main
+  git -C "$dir/project" fetch -q origin
+}
+
+# The slot ownership proof reads both records' endpoints through that
+# inventory, so a contested-slot refusal legitimately makes those read-only
+# calls. Any other tmux subcommand would mean the refusal let cleanup proceed.
+assert_no_mutating_runtime() {  # <case> <description>
+  local dir=$1 description=$2 rest
+  rest=$(grep -Ev '^tmux <(list-windows|display-message)>' "$dir/runtime.log" 2>/dev/null || true)
+  [ -z "$rest" ] || fail "$description: mutating runtime command ran: $rest"
+}
+
+# Everything a shared-slot teardown must leave untouched on a refusal. The
+# optional <reading> is "live-co-claimant" only for the one reading where a
+# different record on the slot reads a live agent and this one does not, which
+# is the only reading where the refusal may still offer the release order.
+assert_shared_slot_refused() {  # <case> <id> <other> <description> [<reading>]
+  local dir=$1 id=$2 other=$3 description=$4 reading=${5:-contested}
+  assert_present "$dir/home/state/$id.meta" "$description: metadata changed before refusal"
+  assert_present "$dir/home/state/$other.meta" "$description: the co-claimant's record was removed"
+  assert_present "$dir/worktree/sentinel" "$description: the shared slot was reset"
+  grep -Fq "treehouse <return>" "$dir/runtime.log" \
+    && fail "$description: the shared slot was returned anyway"
+  assert_no_mutating_runtime "$dir" "$description"
+  assert_contains "$(cat "$dir/stderr")" "Reconcile whichever record is wrong" \
+    "$description: the refusal must name the records to reconcile"
+  if [ "$reading" = live-co-claimant ]; then
+    assert_contains "$(cat "$dir/stderr")" "Tear down task $other first" \
+      "$description: the refusal must name the record whose endpoint is still live"
+  else
+    assert_not_contains "$(cat "$dir/stderr")" "One record can release it:" \
+      "$description: the release order must not be offered where it cannot be followed"
+  fi
 }
 
 assert_refused_without_mutation() {  # <case> <id> <description>
@@ -446,7 +563,9 @@ test_reused_pool_slot_refuses_before_touching_the_other_task() {
   dir=$(make_case slot-reuse)
   mark_case_as_treehouse_pool "$dir"
   # The reuse collision: the pool slot recorded for a finished task has already
-  # been handed to another task, whose worker is live in it right now.
+  # been handed to another task, whose worker is live in it right now. Neither
+  # record's endpoint answers the ownership proof here, so the collision stays
+  # unresolved and the worker is protected.
   fm_write_meta "$dir/home/state/$id.meta" \
     "window=firstmate:fm-$id" "endpoint_task_id=$id" \
     "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
@@ -469,8 +588,7 @@ test_reused_pool_slot_refuses_before_touching_the_other_task() {
   assert_present "$dir/worktree/sentinel" "teardown reset a pool slot a second task record still holds"
   assert_present "$dir/home/state/$other.meta" "teardown removed the live task's record"
   assert_present "$dir/home/state/$id.meta" "teardown removed the stale task's record before refusing"
-  [ ! -s "$dir/runtime.log" ] \
-    || fail "teardown reached the runtime on a contested pool slot: $(cat "$dir/runtime.log")"
+  assert_no_mutating_runtime "$dir" "teardown reached the runtime on a contested pool slot"
   assert_contains "$(cat "$dir/stderr")" "$other" \
     "refusal should name the other task holding the slot"
   kill "$worker" 2>/dev/null || true
@@ -498,6 +616,320 @@ test_reused_pool_slot_refuses_before_touching_the_other_task() {
     || fail "teardown reached the runtime on a slot held by a secondmate home: $(cat "$dir/runtime.log")"
 
   pass "fm-teardown: a pool slot named by a second task record is never returned, killed, or reset"
+}
+
+# Two records, one pool slot, and the earlier record's worker gone: before this
+# path existed each teardown refused on the other's claim, so neither record
+# could ever be collected. The release also requires the two live-work proofs,
+# so the fixture carries a landed copy and the live owner's own worker rooted in
+# the slot.
+test_shared_pool_slot_releases_to_its_surviving_owner() {
+  local dir id=surviving-task other=departed-task gone worker
+
+  for gone in missing dead; do
+    dir=$(make_case "slot-release-$gone")
+    mark_case_as_treehouse_pool "$dir"
+    make_slot_copy_landed "$dir"
+    fm_write_meta "$dir/home/state/$id.meta" \
+      "window=main:fm-$id" "endpoint_task_id=$id" \
+      "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+    fm_write_meta "$dir/home/state/$other.meta" \
+      "window=other:fm-$other" "endpoint_task_id=$other" \
+      "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+    write_tmux_agent_stub "$dir" "main:fm-$id=alive" "other:fm-$other=$gone"
+    # The live owner's own worker, rooted in the slot. It is accounted for by
+    # the pane leader this stub reports, so it must not block the release; the
+    # teardown reaps it as part of its own cleanup.
+    ( cd "$dir/worktree" && exec sleep 30 ) &
+    worker=$!
+
+    FM_FAKE_TMUX_PANE_PID=$worker run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr" \
+      || fail "teardown refused the surviving owner of a slot whose co-claimant reads $gone: $(cat "$dir/stderr")"
+    assert_absent "$dir/home/state/$id.meta" "released slot left the surviving task record"
+    assert_present "$dir/home/state/$other.meta" "released slot removed the gone task's record"
+    grep -Fq "treehouse <return>" "$dir/runtime.log" \
+      || fail "released slot was never returned: $(cat "$dir/runtime.log")"
+    kill "$worker" 2>/dev/null || true
+    wait "$worker" 2>/dev/null || true
+  done
+
+  pass "fm-teardown: a pool slot is released to the live record once the other record's endpoint is provably gone"
+}
+
+# The same two readings, reached through an aliased home. The guard's self-skip
+# compared path spellings while the state walk reaches this record's own
+# directory under the physical spelling too, so the record read as a SECOND
+# record claiming its own slot: every release refused against itself, naming the
+# record as its own co-claimant and telling the operator to reconcile it with
+# itself. The aliased reading must behave exactly like the plain one.
+test_aliased_home_slot_guard_reads_physical_identity() {
+  local dir id=surviving-task other=departed-task worker rc
+
+  dir=$(make_case slot-release-aliased-home)
+  mark_case_as_treehouse_pool "$dir"
+  make_slot_copy_landed "$dir"
+  alias_case_home "$dir"
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=main:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  write_tmux_agent_stub "$dir" "main:fm-$id=alive" "other:fm-$other=missing"
+  ( cd "$dir/worktree" && exec sleep 30 ) &
+  worker=$!
+
+  rc=0
+  FM_FAKE_TMUX_PANE_PID=$worker run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr" || rc=$?
+  kill "$worker" 2>/dev/null || true
+  wait "$worker" 2>/dev/null || true
+  [ "$rc" -eq 0 ] \
+    || fail "an aliased home refused to release a slot whose co-claimant is gone: $(cat "$dir/stderr")"
+  assert_absent "$dir/home/state/$id.meta" "aliased-home release left the surviving record"
+  assert_present "$dir/home/state/$other.meta" "aliased-home release removed the gone record"
+  grep -Fq "treehouse <return>" "$dir/runtime.log" \
+    || fail "the aliased-home release never returned the slot: $(cat "$dir/runtime.log")"
+  [ "$(grep -cF 'is the surviving claimant' "$dir/stderr")" = 1 ] \
+    || fail "the aliased home proved the same co-claimant claim more than once: $(cat "$dir/stderr")"
+
+  # A live co-claimant is still a live co-claimant through the alias.
+  other=running-task
+  dir=$(make_case slot-contested-aliased-home)
+  mark_case_as_treehouse_pool "$dir"
+  alias_case_home "$dir"
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=main:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  write_tmux_agent_stub "$dir" "main:fm-$id=alive" "other:fm-$other=alive"
+
+  set +e
+  run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "an aliased home released a slot while the record sharing it was still running"
+  assert_shared_slot_refused "$dir" "$id" "$other" "aliased home, live co-claimant"
+  assert_contains "$(cat "$dir/stderr")" "$other" \
+    "the aliased-home refusal must name the other task holding the slot"
+
+  pass "fm-teardown: an aliased fm home resolves the shared-slot guard by physical path, never against itself"
+}
+
+# The same reading as above, with one live-work proof removed at a time. Each
+# one must refuse on its own: endpoint liveness never stands in for a proven
+# copy or a proven process set.
+test_shared_pool_slot_still_refuses_unprovable_live_work() {
+  local dir id=surviving-task other=departed-task worker rc description
+
+  # (a) the shared copy holds uncommitted work
+  dir=$(make_case slot-unlanded-copy)
+  mark_case_as_treehouse_pool "$dir"
+  : > "$dir/worktree/scratch"
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=main:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  write_tmux_agent_stub "$dir" "main:fm-$id=alive" "other:fm-$other=missing"
+  ( cd "$dir/worktree" && exec sleep 30 ) &
+  worker=$!
+  rc=0
+  FM_FAKE_TMUX_PANE_PID=$worker run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr" || rc=$?
+  [ "$rc" -ne 0 ] || fail "a shared slot was released with uncommitted work in its copy"
+  assert_contains "$(cat "$dir/stderr")" "uncommitted changes" \
+    "the shared-copy proof, not some other check, should refuse here"
+  assert_shared_slot_refused "$dir" "$id" "$other" "uncommitted shared copy"
+  kill "$worker" 2>/dev/null || true
+  wait "$worker" 2>/dev/null || true
+
+  # (b) the shared copy holds a commit no remote reaches
+  dir=$(make_case slot-unpushed-copy)
+  mark_case_as_treehouse_pool "$dir"
+  make_slot_copy_landed "$dir"
+  printf 'scratch\n' > "$dir/worktree/scratch"
+  git -C "$dir/worktree" add scratch
+  git -C "$dir/worktree" -c user.name=test -c user.email=test@example.invalid commit -qm scratch
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=main:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  write_tmux_agent_stub "$dir" "main:fm-$id=alive" "other:fm-$other=missing"
+  ( cd "$dir/worktree" && exec sleep 30 ) &
+  worker=$!
+  rc=0
+  FM_FAKE_TMUX_PANE_PID=$worker run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr" || rc=$?
+  [ "$rc" -ne 0 ] || fail "a shared slot was released with an unpushed commit in its copy"
+  assert_contains "$(cat "$dir/stderr")" "not on any remote" \
+    "the shared-copy proof, not some other check, should refuse here"
+  assert_shared_slot_refused "$dir" "$id" "$other" "unpushed shared copy"
+  kill "$worker" 2>/dev/null || true
+  wait "$worker" 2>/dev/null || true
+
+  # (c) a process is left rooted in the slot that the live endpoint does not own
+  dir=$(make_case slot-orphan-process)
+  mark_case_as_treehouse_pool "$dir"
+  make_slot_copy_landed "$dir"
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=main:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  write_tmux_agent_stub "$dir" "main:fm-$id=alive" "other:fm-$other=missing"
+  ( cd "$dir/worktree" && exec sleep 30 ) &
+  worker=$!
+  rc=0
+  # A pane leader that is not this process's ancestor: exactly the shape of an
+  # orphan reparented away from the dead endpoint that left it.
+  FM_FAKE_TMUX_PANE_PID=999999 run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr" || rc=$?
+  [ "$rc" -ne 0 ] || fail "a shared slot was released with an unowned process still rooted in it"
+  kill -0 "$worker" 2>/dev/null || fail "the refusal killed a process it could not account for"
+  assert_contains "$(cat "$dir/stderr")" "pid $worker is still rooted in" \
+    "the process proof must name the pid it could not account for"
+  assert_contains "$(cat "$dir/stderr")" "does not own it" \
+    "the process proof must name the blocker instead of only the collision"
+  assert_shared_slot_refused "$dir" "$id" "$other" "unowned slot process"
+  kill "$worker" 2>/dev/null || true
+  wait "$worker" 2>/dev/null || true
+
+  # (d) the backend cannot name the endpoint's pane leader at all
+  dir=$(make_case slot-unprovable-process-set)
+  mark_case_as_treehouse_pool "$dir"
+  make_slot_copy_landed "$dir"
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=main:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  write_tmux_agent_stub "$dir" "main:fm-$id=alive" "other:fm-$other=missing"
+  ( cd "$dir/worktree" && exec sleep 30 ) &
+  worker=$!
+  rc=0
+  run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr" || rc=$?
+  [ "$rc" -ne 0 ] || fail "a shared slot was released without a proven pane leader"
+  assert_contains "$(cat "$dir/stderr")" "cannot name the pane leader" \
+    "the pane-leader proof must say that no pane leader could be named"
+  assert_shared_slot_refused "$dir" "$id" "$other" "unprovable pane leader"
+  kill "$worker" 2>/dev/null || true
+  wait "$worker" 2>/dev/null || true
+
+  description="shared-slot live-work proofs"
+  pass "fm-teardown: $description each refuse on their own - uncommitted copy, unpushed commit, unowned process, and an unprovable pane leader"
+}
+
+test_shared_pool_slot_still_refuses_while_the_co_claimant_runs() {
+  local dir id=surviving-task other=running-task rc
+
+  dir=$(make_case slot-contested-running)
+  mark_case_as_treehouse_pool "$dir"
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=main:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  write_tmux_agent_stub "$dir" "main:fm-$id=alive" "other:fm-$other=alive"
+
+  set +e
+  run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "a pool slot was released while the record sharing it was still running"
+  assert_shared_slot_refused "$dir" "$id" "$other" "live co-claimant"
+  assert_contains "$(cat "$dir/stderr")" "$other" \
+    "refusal should name the task still running in the slot"
+
+  pass "fm-teardown: a pool slot is never released while the record sharing it is still running"
+}
+
+test_shared_pool_slot_still_refuses_an_unprovable_co_claimant() {
+  local dir id=surviving-task other=unreadable-task rc worker
+
+  dir=$(make_case slot-contested-unreadable)
+  mark_case_as_treehouse_pool "$dir"
+  make_slot_copy_landed "$dir"
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=main:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  write_tmux_agent_stub "$dir" "main:fm-$id=alive" "other:fm-$other=unreadable"
+  ( cd "$dir/worktree" && exec sleep 30 ) &
+  worker=$!
+
+  set +e
+  FM_FAKE_TMUX_PANE_PID=$worker run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "a pool slot was released on an unreadable co-claimant endpoint"
+  assert_shared_slot_refused "$dir" "$id" "$other" "unreadable co-claimant"
+  kill "$worker" 2>/dev/null || true
+  wait "$worker" 2>/dev/null || true
+
+  pass "fm-teardown: an unreadable co-claimant endpoint still refuses rather than reading as gone"
+}
+
+# Two gone records leave nothing proving which claim is current, so the
+# collision stays unresolved until they are reconciled by hand.
+test_shared_pool_slot_still_refuses_when_neither_record_is_live() {
+  local dir id=gone-task other=departed-task rc worker
+
+  dir=$(make_case slot-contested-both-gone)
+  mark_case_as_treehouse_pool "$dir"
+  make_slot_copy_landed "$dir"
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=main:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  write_tmux_agent_stub "$dir" "main:fm-$id=dead" "other:fm-$other=dead"
+  ( cd "$dir/worktree" && exec sleep 30 ) &
+  worker=$!
+
+  set +e
+  FM_FAKE_TMUX_PANE_PID=$worker run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "a pool slot was released with no live claimant to prove ownership"
+  assert_shared_slot_refused "$dir" "$id" "$other" "two gone records"
+  kill "$worker" 2>/dev/null || true
+  wait "$worker" 2>/dev/null || true
+
+  pass "fm-teardown: two gone records leave the slot contested instead of guessing which claim is current"
+}
+
+test_shared_pool_slot_refusal_names_the_live_record_to_tear_down_first() {
+  local dir id=stale-task other=live-task rc
+
+  # The collision the captain reported: the stale record is the natural first
+  # pick, and the only record that can release the slot is the one whose
+  # endpoint is still alive.
+  dir=$(make_case slot-contested-one-live)
+  mark_case_as_treehouse_pool "$dir"
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=main:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  write_tmux_agent_stub "$dir" "main:fm-$id=missing" "other:fm-$other=alive"
+
+  set +e
+  run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "a pool slot was released while the record sharing it was still running"
+  assert_shared_slot_refused "$dir" "$id" "$other" "live co-claimant, stale pick" live-co-claimant
+
+  pass "fm-teardown: a refusal names the live record to tear down first"
 }
 
 test_cross_home_pool_slot_collision_refuses() {
@@ -528,8 +960,7 @@ test_cross_home_pool_slot_collision_refuses() {
   assert_present "$dir/home/state/$id.meta" "cross-home collision removed stale metadata"
   assert_present "$second_home/state/$other.meta" "cross-home collision removed live metadata"
   assert_present "$dir/worktree/sentinel" "cross-home collision reset the shared slot"
-  [ ! -s "$dir/runtime.log" ] \
-    || fail "cross-home collision reached the runtime: $(cat "$dir/runtime.log")"
+  assert_no_mutating_runtime "$dir" "cross-home collision reached the runtime"
   assert_contains "$(cat "$dir/stderr")" "$other" \
     "cross-home refusal should name the task holding the slot"
   pass "fm-teardown: a pool slot held by another firstmate home is never returned"
@@ -835,6 +1266,13 @@ test_recorded_process_identity_cleanup_is_exact
 test_isolated_tmux_invalid_and_valid_cleanup
 test_bare_relative_origin_shares_project_lock_with_clone
 test_reused_pool_slot_refuses_before_touching_the_other_task
+test_shared_pool_slot_releases_to_its_surviving_owner
+test_aliased_home_slot_guard_reads_physical_identity
+test_shared_pool_slot_still_refuses_while_the_co_claimant_runs
+test_shared_pool_slot_still_refuses_an_unprovable_co_claimant
+test_shared_pool_slot_still_refuses_when_neither_record_is_live
+test_shared_pool_slot_still_refuses_unprovable_live_work
+test_shared_pool_slot_refusal_names_the_live_record_to_tear_down_first
 test_cross_home_pool_slot_collision_refuses
 test_sole_slot_record_still_tears_down
 test_recorded_endpoint_that_changed_directory_still_tears_down
