@@ -2409,8 +2409,10 @@ test_live_paused_until_controls_recheck_time() {
 # Pinned here, in both directions: while the call stands the first sight still
 # alarms, further sights of the SAME call and status-log state are absorbed, and
 # a new pane hash after the window's end alarms once more; and the identical
-# fixture WITHOUT the hold keeps alarming on every hash, because a bound that
-# swallowed an unheld delivery or blocker would be worse than the churn it removes.
+# fixture WITHOUT the hold is bounded from its `done:` line alone, because a
+# delivered line is its own declaration, while a blocker, a failure, or an
+# ordinary worker line stays news and keeps alarming on every hash - a bound that
+# swallowed that would be worse than the churn it removes.
 #
 # The backlog is real rather than a fixture file: bin/fm-captain-hold.sh is the
 # only writer of a hold and tasks-axi the only reader, so a hand-written row
