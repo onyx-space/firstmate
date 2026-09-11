@@ -355,6 +355,23 @@ STUB
     assert_grep "## Firstmate spec" "$payload" \
       "$mode: promoted worker did not receive the Firstmate spec subsection"
 
+    # Same single owner the ship brief renders, so a promoted worker that opens a
+    # PR gets the language discipline too, and local-only - which opens none -
+    # gets nothing.
+    if [ "$mode" = local-only ]; then
+      assert_no_grep "# PR description" "$payload" \
+        "$mode: promoted worker received a PR description discipline for a path it cannot take"
+    else
+      assert_grep "# PR description" "$payload" \
+        "$mode: promoted worker did not receive the PR description discipline"
+      # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+      assert_grep 'read the `pr-description` skill (`~/.agents/skills/pr-description/SKILL.md`)' "$payload" \
+        "$mode: promoted worker was not pointed at the single-owner pr-description skill"
+      # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+      assert_grep 'Do not use `ce-translate` for a PR description' "$payload" \
+        "$mode: promoted worker was not told ce-translate is not for PR descriptions"
+    fi
+
     # Compare the public outputs of both real generation paths. The promoted
     # payload ends at its Definition of done, as does an ordinary generated
     # brief, so identical suffixes prove both workers receive the same contract.

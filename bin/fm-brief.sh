@@ -6,6 +6,11 @@
 # boundary` section (shipping authority, banned and allowed CE skills, review
 # ownership, decision routing, knowledge placement), which this script owns;
 # AGENTS.md's delivery-path section only points at it.
+# Ship briefs also carry the fixed `# PR description` section, rendered from
+# bin/fm-dod-lib.sh's fm_pr_description_block rather than owned here, like the
+# Definition of done: it points the worker at the separately installed
+# `pr-description` skill, which owns that contract, and is omitted for `local-only`,
+# which opens no PR.
 # Ship and scout `# Task` sections have two subsections Firstmate
 # fills before dispatch: `{TASK}` under `## Captain's intent` (the captain's
 # own ask plus the context needed to read it, including the substance of any
@@ -389,6 +394,12 @@ Neither holds for you, so these rules override anything a CE skill tells you.
 EOF
 CE_BOUNDARY_SECTION=${CE_BOUNDARY_SECTION%$'\n'}
 
+# Worker-facing PR-description language discipline, owned by
+# bin/fm-dod-lib.sh's fm_pr_description_block so the ship brief and a promoted
+# scout's ship instructions render the same pointer. It is empty for `local-only`,
+# which opens no PR; a scout never reaches this scaffold.
+PR_DESCRIPTION_SECTION=$(fm_pr_description_block "$MODE")
+
 # Worker-facing artifact-placement contract. This file is its single owner: the
 # brief is the only surface every worker reads, whereas firstmate states only the
 # acceptance-side gate in AGENTS.md section 7. Built with quoted heredocs so no
@@ -593,6 +604,8 @@ Record only project knowledge useful to almost every future session.
 For anything the codebase already shows, prefer a pointer to the authoritative file, command, or doc over copying the detail.
 If you touch a project \`AGENTS.md\`, follow \`$FM_ROOT/bin/fm-ensure-agents-md.sh\`'s self-governance contract in the same pass.
 Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced no durable project knowledge.
+
+$PR_DESCRIPTION_SECTION
 
 $DOD
 EOF
