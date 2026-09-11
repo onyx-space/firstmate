@@ -243,8 +243,11 @@ EOF
 Delivery contract: mode=no-mistakes
 **Completion for mode=no-mistakes is a PR the no-mistakes pipeline pushed and opened, never a commit.**
 A commit, a clean branch, or "ready for the run" is NOT completion; stopping there leaves the task unfinished and firstmate has to chase it.
-The one completion claim is \`done: PR {url} checks green\`, written with the PR's full \`https://\` URL once the run reports CI green (state the honest real result instead of "checks green" when the repo has no CI).
+The one completion claim is \`done: PR {url} checks green\`, written with the PR's full \`https://\` URL once the run reports CI green.
 Running the pipeline belongs to this task, not to a later instruction: invoke /no-mistakes yourself as soon as your implementation is committed, and keep driving its gates until that green result or a terminal failure.
+Never start a second validation run while one is already active on this branch.
+A firstmate /no-mistakes delivery that arrives mid-run is a nudge to reattach and poll, not a second start.
+If a start is refused for pipeline ownership, check whether the active run is this task's own run and follow its status and help lines instead of reporting the task blocked.
 First run in a repo the pipeline has never seen: run \`no-mistakes doctor\`, then \`no-mistakes init\` if it reports the repo is not initialized here, before the first run.
 When you claim completion, report all three: the PR's full \`https://\` URL, the head commit it validated, and the CI result.
 The completion line is the LAST line in the status log: put any supplementary explanation before it, or in \`data/<task-id>/\`, never after it.

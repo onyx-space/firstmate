@@ -376,7 +376,8 @@ test_no_mistakes_dod_wording() {
 # workers committed, read a commit as completion, and stopped without ever
 # running the pipeline. The generated no-mistakes brief must name the PR as the
 # completion signal, say a commit is not one, and keep the other modes' signals
-# distinct from it.
+# distinct from it. It must also hand the worker its own run to start, without
+# letting a firstmate nudge collide with one already active.
 test_no_mistakes_completion_is_a_pr_not_a_commit() {
   local home id brief
   home="$TMP_ROOT/completion-signal-home"
@@ -393,8 +394,16 @@ test_no_mistakes_completion_is_a_pr_not_a_commit() {
   # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
   assert_grep 'The one completion claim is `done: PR {url} checks green`' "$brief" \
     "no-mistakes brief must pin the one completion claim"
+  assert_no_grep 'state the honest real result instead of "checks green"' "$brief" \
+    "no-mistakes brief must keep the single pinned completion claim instead of accepting a second spelling"
   assert_grep "Running the pipeline belongs to this task, not to a later instruction" "$brief" \
     "no-mistakes brief must make running the pipeline the worker's own step"
+  assert_grep "Never start a second validation run while one is already active on this branch." "$brief" \
+    "no-mistakes brief must forbid a duplicate validation run on the branch"
+  assert_grep "A firstmate /no-mistakes delivery that arrives mid-run is a nudge to reattach and poll, not a second start." "$brief" \
+    "no-mistakes brief must treat a mid-run firstmate delivery as a nudge, not a second start"
+  assert_grep "If a start is refused for pipeline ownership, check whether the active run is this task's own run and follow its status and help lines instead of reporting the task blocked." "$brief" \
+    "no-mistakes brief must route a pipeline-ownership refusal to the active run's status rather than a blocked report"
   assert_grep "if it reports the repo is not initialized here" "$brief" \
     "no-mistakes brief must carry the first-run initialization step"
   assert_grep "report all three: the PR's full" "$brief" \
