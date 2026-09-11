@@ -991,7 +991,7 @@ test_terminal_passed_with_merge_record_says_merged() {
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-d-merged.meta" "window=fm:fm-feat-d-merged" "worktree=$d/wt" "kind=ship" \
     "pr=https://github.com/o/r/pull/1"
-  fm_pr_poll_merge_mark_notified "$d/state" feat-d-merged github github.com o/r 1 \
+  ( fm_pr_poll_merge_mark_notified "$d/state" feat-d-merged github github.com o/r 1 ) \
     || fail "could not record the merge-notified marker for the proven-merge case"
   FM_FAKE_AXI_STATUS="$(run_passed fm/feat-d-merged)"
   local out; out=$(run_crew_state "$d" feat-d-merged)
@@ -1018,7 +1018,7 @@ test_terminal_passed_merge_record_for_other_pr_is_not_proof() {
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-d-other.meta" "window=fm:fm-feat-d-other" "worktree=$d/wt" "kind=ship" \
     "pr=https://github.com/o/r/pull/1"
-  fm_pr_poll_merge_mark_notified "$d/state" feat-d-other github github.com o/r 1 \
+  ( fm_pr_poll_merge_mark_notified "$d/state" feat-d-other github github.com o/r 1 ) \
     || fail "could not record the merge-notified marker for the other-PR case"
   FM_FAKE_AXI_STATUS="$(run_passed_pr fm/feat-d-other https://github.com/o/r/pull/2)"
   local out; out=$(run_crew_state "$d" feat-d-other)
@@ -1039,7 +1039,7 @@ test_run_pr_wins_over_stale_meta_pr() {
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-d-run-pr.meta" "window=fm:fm-feat-d-run-pr" "worktree=$d/wt" "kind=ship" \
     "pr=https://github.com/o/r/pull/9"
-  fm_pr_poll_merge_mark_notified "$d/state" feat-d-run-pr github github.com o/r 1 \
+  ( fm_pr_poll_merge_mark_notified "$d/state" feat-d-run-pr github github.com o/r 1 ) \
     || fail "could not record the merge-notified marker for the run-pr case"
   FM_FAKE_AXI_STATUS="$(run_passed_pr fm/feat-d-run-pr https://github.com/o/r/pull/1)"
   local out; out=$(run_crew_state "$d" feat-d-run-pr)
