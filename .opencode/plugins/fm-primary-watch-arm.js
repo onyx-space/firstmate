@@ -13,11 +13,18 @@ const ARM_RETIRE_TIMEOUT_MS = positiveInteger("FM_WATCH_ARM_RETIRE_TIMEOUT_MS", 
 const REARM_RETRY_BASE_MS = positiveInteger("FM_WATCH_REARM_RETRY_BASE_MS", 250);
 const REARM_RETRY_MAX_MS = positiveInteger("FM_WATCH_REARM_RETRY_MAX_MS", 4000);
 const REARM_RETRY_LIMIT = positiveInteger("FM_WATCH_REARM_RETRY_LIMIT", 5);
+// Cadence the continuity retry drops to once the bounded fast retries are spent.
+// The bounded phase exists to restore supervision quickly; past it the session
+// must still never run without a cycle, so the retry continues slowly rather
+// than stopping. Stopping is what left an unattended fleet with no wake delivery
+// until a human noticed a stale beacon (2026-09-11 done-unlanded stale storm).
+const REARM_RETRY_SLOW_MS = positiveInteger("FM_WATCH_REARM_SLOW_MS", 60000);
 
 let child = null;
 let armStatus = "idle";
 let retryTimer = null;
 let retryFailures = 0;
+let retryFailureSurfaced = false;
 let launchInFlight = null;
 let restorationInFlight = null;
 let armClose = new WeakMap();
@@ -316,19 +323,24 @@ async function scheduleRetry(paths, sessionID, client, reason, predecessorArmPid
     return;
   }
   retryFailures += 1;
-  if (retryFailures > REARM_RETRY_LIMIT) {
-    setArmStatus("failed");
-    surfaceFailure(paths, client, sessionID, `watcher: FAILED - OpenCode could not restore watcher continuity after ${REARM_RETRY_LIMIT} retries\n${reason}`);
-    return;
+  const exhausted = retryFailures > REARM_RETRY_LIMIT;
+  if (exhausted && !retryFailureSurfaced) {
+    retryFailureSurfaced = true;
+    surfaceFailure(paths, client, sessionID, `watcher: FAILED - OpenCode could not restore watcher continuity after ${REARM_RETRY_LIMIT} retries; it keeps retrying on a slow cadence so this session is never left without a supervision cycle\n${reason}`);
   }
   setArmStatus("retrying");
+  // Past the fast bound the cadence is constant and slow, but it never stops:
+  // while this session owns the lock a missing cycle is a supervision outage,
+  // and one bounded attempt per slow interval is strictly better than none.
+  const delay = exhausted ? REARM_RETRY_SLOW_MS : retryDelay(retryFailures);
   const timer = setTimeout(() => {
     if (retryTimer === timer) retryTimer = null;
     void ensureArm(paths, sessionID, client, predecessorArmPid).then((status) => {
       if (["armed", "starting", "wake"].includes(status)) return;
+      if (retryFailureSurfaced) return;
       surfaceFailure(paths, client, sessionID, `watcher: FAILED - OpenCode could not launch a continuity retry (${status})`);
     });
-  }, retryDelay(retryFailures));
+  }, delay);
   timer.unref();
   retryTimer = timer;
 }
@@ -395,6 +407,9 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
     if (classification.kind === "actionable") {
       if (restorationInFlight) return;
       retryFailures = 0;
+      // A delivered wake proves continuity is back, so the next failure episode
+      // gets its own fast budget and its own single exhaustion notice.
+      retryFailureSurfaced = false;
       setArmStatus("wake");
       const restoration = restoreAfterActionableClose(paths, sessionID, client, predecessor);
       restorationInFlight = restoration;

@@ -28,7 +28,8 @@
 #   6. The turn-end guard extension compels one continuation on exit 2 and
 #      stands down when the payload already carries stop_hook_active.
 #   7. The watch extension arms through fm_watch_arm_omp and delivers an
-#      actionable close as one follow-up.
+#      actionable close as one follow-up; past the fast continuity-retry bound it
+#      keeps a slow retry rather than stopping, reporting exhaustion once.
 set -u
 
 # shellcheck source=tests/fixtures.sh
@@ -574,6 +575,62 @@ EOF
   pass ".omp watch extension: fm_watch_arm_omp arms once, repeats as a no-op, and delivers an actionable close as one follow-up"
 }
 
+# The fast retry bound exists to restore supervision quickly, never to give up on
+# it. Past the bound the session owns the lock and owes the fleet a cycle, so the
+# retry drops to a slow constant cadence and keeps running while the exhaustion is
+# reported exactly once. Stopping is what left an unattended home with no wake
+# delivery until a human saw the stale beacon (2026-09-11).
+test_watch_extension_keeps_a_slow_retry_after_the_bound() {
+  local repo home log out status
+  repo="$TMP_ROOT/slow-retry/repo"; home="$TMP_ROOT/slow-retry/home"
+  log="$TMP_ROOT/slow-retry/arms.log"
+  install_omp_extension_fixture "$repo"
+  mkdir -p "$home/state"
+  # Every cycle comes up and closes cleanly with no wake, so only the continuity
+  # retry can put the next child on the log.
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+exit 0
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_OMP_ARM_READY_TIMEOUT_MS=3000 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=1 FM_WATCH_REARM_SLOW_MS=15 \
+    EXT="$repo/.omp/extensions/fm-primary-omp-watch.ts" node --input-type=module 2>&1 <<'EOF'
+import { pathToFileURL } from "node:url";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+const handlers = new Map(); let tool = null; const sent = [];
+const pi = {
+  on(e, h) { handlers.set(e, h); },
+  registerCommand() {},
+  registerTool(candidate) { if (candidate.name === "fm_watch_arm_omp") tool = candidate; },
+  // omp sendUserMessage returns synchronously, not a promise.
+  sendUserMessage(m, o) { sent.push({ m, o }); return undefined; },
+};
+const mod = await import(pathToFileURL(process.env.EXT).href);
+mod.default(pi);
+await tool.execute();
+const rowsNow = () => existsSync(process.env.FM_ARM_LOG)
+  ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n").filter(Boolean)
+  : [];
+for (let i = 0; i < 400 && rowsNow().length < 6; i += 1) {
+  await new Promise((resolve) => setTimeout(resolve, 10));
+}
+const rows = rowsNow();
+if (rows.length < 6) throw new Error(`the continuity retry stopped after the fast bound: ${rows.join(" | ")}`);
+const text = sent.map((entry) => entry.m).join("\n");
+const notices = text.split("could not restore watcher continuity").length - 1;
+if (notices === 0) throw new Error(`retry exhaustion was not surfaced: ${JSON.stringify(sent)}`);
+if (notices > 1) throw new Error(`retry exhaustion was surfaced ${notices} times instead of once: ${JSON.stringify(sent)}`);
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "omp established clean closes must keep a slow continuity retry past the fast bound: $out"
+  [ -z "$out" ] || fail "omp slow-retry test printed output: $out"
+  pass ".omp watch extension: a clean empty close keeps retrying slowly after the fast bound and reports exhaustion once"
+}
+
 test_detection_anchored_name_and_marker_precedence
 test_lock_identity_and_liveness_classification
 test_spawn_launch_line_and_worker_wiring
@@ -585,3 +642,4 @@ test_control_composer_and_model_tables
 test_ownership_proof_is_omp_keyed
 test_turnend_guard_extension_compels_one_continuation
 test_watch_extension_arms_and_delivers
+test_watch_extension_keeps_a_slow_retry_after_the_bound

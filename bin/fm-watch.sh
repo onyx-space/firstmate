@@ -1248,6 +1248,33 @@ captain_call_stale_bound() {  # <window-key> <task>
   stale_wait_throttled "$key" "$STALE_WAIT_DECLARATION"
 }
 
+# Bound a due stale alarm on a DELIVERED terminal status that no backlog hold
+# covers. A `done:` delivery whose PR is still open is the ordinary case: the crew
+# has stopped, the pane goes idle, and nothing further will ever be appended to the
+# status log, so the terminal line stays captain-relevant indefinitely. Without
+# this bound every later pane hash re-alarms for the whole time the captain holds
+# the merge, which is the 2026-09-11 done-unlanded stale storm - the storm that
+# churned supervision cycles until the successor chain gave out and wake delivery
+# stopped. The alarm is a bounded cadence, not a suppression: the first sight of
+# each declaration still wakes, a genuinely new status line is a new declaration
+# and wakes once, and only the unchanged delivery is held to
+# PAUSE_RESURFACE_SECS. Binds the same throttle the declared-wait paths use, so a
+# terminal delivery and a declared wait on one window cannot double-alarm.
+# Deliberately scoped to a `done:` line: a blocker, a failed report, or an open
+# decision is news the supervisor has not necessarily acted on yet, so those keep
+# alarming on every new hash exactly as before. Sets STALE_WAIT_DECLARATION for
+# the caller's stale_wait_record, and returns 0 to absorb or 1 to alarm.
+delivered_stale_bound() {  # <window-key> <task> <last-status-line>
+  local key=$1 task=$2 last=$3
+  # captain_call_stale_bound always runs first in the caller and leaves this empty
+  # only when no open captain call bounds the window; a non-empty value is that
+  # call's more specific declaration and must keep owning the alarm.
+  [ -n "$STALE_WAIT_DECLARATION" ] && return 1
+  [ "$(status_line_verb "$last")" = "done" ] || return 1
+  STALE_WAIT_DECLARATION=$(stale_wait_declaration "$task")
+  stale_wait_throttled "$key" "$STALE_WAIT_DECLARATION"
+}
+
 # Surface a stale pane no classifier could resolve, so firstmate inspects it: it
 # may have finished through an interactive menu that wrote no status, be waiting on
 # a decision, or be wedged. pause_state_class deliberately answers `none` for a
@@ -2171,6 +2198,12 @@ EOF
     if window_is_busy "$w" "$tail40"; then busy_now=0; else busy_now=1; fi
     if [ "$h" = "$prev" ]; then
       n=$(( $(cat "$cf" 2>/dev/null || echo 0) + 1 ))
+      # The counter only ever answers "has this pane stayed byte-identical for the
+      # stale classification's two-poll floor". Nothing reads a larger value, so
+      # it saturates there: an idle delivered pane used to push it into the
+      # dozens (the 2026-09-11 done-unlanded report), turning a plain stability
+      # flag into unbounded state growth.
+      [ "$n" -le 2 ] || n=2
       echo "$n" > "$cf"
       if [ "$n" -ge 2 ] && [ "$busy_now" -ne 0 ]; then
         # The pane is idle/stale at hash $h. Triage decides whether this wakes
@@ -2225,6 +2258,20 @@ EOF
               rm -f "$ssf"
               clear_write_tracking "$key"
               triage_log "absorbed stale (open captain call already surfaced for this status): $w"
+            elif delivered_stale_bound "$key" "$task" "$last"; then
+              # The delivery is real and stays captain-relevant, but firstmate has
+              # already been told about this exact status log: further NEW pane
+              # hashes on an unchanged delivery have nothing to add while the
+              # captain holds the merge. The first sight alarmed, a new hash inside
+              # the cadence is absorbed, and the delivery re-surfaces once per
+              # PAUSE_RESURFACE_SECS until the status log actually changes. That is
+              # the same bounded cadence a declared wait or an open captain call
+              # already gets, and it is what keeps a delivered-but-unlanded pane
+              # from churning one supervision cycle per pane tick.
+              printf '%s' "$h" > "$sf"
+              rm -f "$ssf"
+              clear_write_tracking "$key"
+              triage_log "absorbed stale (delivered status declaration already surfaced for this window): $w"
             else
               fm_wake_append stale "$w" "stale: $w" || exit 1
               stale_wait_record "$key"
