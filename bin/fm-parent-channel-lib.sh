@@ -189,15 +189,20 @@ fm_parent_channel_is_own_log() {  # <state> <path>
 # boundary rule here is explicit and locale-independent, not delegated to `cut`.
 # It bounds the note; it does not repair invalid bytes the caller already had.
 fm_parent_channel_clean_note() {  # <text>
-  local folded bytes lead need have i
+  # The local LC_ALL=C is deliberate: it is what makes ${#text} and ${text:0:1200}
+  # count and slice BYTES in every bash, whatever locale the caller runs in, and
+  # it keeps the fold itself free of any external process.
+  local LC_ALL=C text=$1
+  local lead need have i
   local -a tail
-  folded=$(printf '%s' "$1" | LC_ALL=C tr '\t\r\n' '   ')
-  bytes=$(printf '%s' "$folded" | LC_ALL=C wc -c | tr -d ' ')
-  if [ "$bytes" -gt 1200 ]; then
-    folded=$(printf '%s' "$folded" | head -c 1200)
+  text=${text//$'\t'/ }
+  text=${text//$'\r'/ }
+  text=${text//$'\n'/ }
+  if [ "${#text}" -gt 1200 ]; then
+    text=${text:0:1200}
     # The last four bytes cover the longest UTF-8 sequence, so scanning back
     # from the end finds the leading byte of a character the bound split.
-    read -r -a tail <<<"$(printf '%s' "$folded" | tail -c 4 | LC_ALL=C od -An -v -tu1)"
+    read -r -a tail <<<"$(printf '%s' "$text" | tail -c 4 | od -An -v -tu1)"
     i=$((${#tail[@]} - 1))
     while [ "$i" -gt 0 ] && [ $((tail[i] & 192)) -eq 128 ]; do i=$((i - 1)); done
     lead=${tail[i]}
@@ -210,9 +215,9 @@ fm_parent_channel_clean_note() {  # <text>
     # A sequence with fewer bytes present than it needs is the one the bound
     # cut; its bytes come off with it, and only they do.
     have=$((${#tail[@]} - i))
-    [ "$have" -ge "$need" ] || folded=$(printf '%s' "$folded" | head -c "$((1200 - have))")
+    [ "$have" -ge "$need" ] || text=${text:0:$((1200 - have))}
   fi
-  printf '%s\n' "$folded"
+  printf '%s\n' "$text"
 }
 
 # Append <line> to <path> unless that exact line is already there.
