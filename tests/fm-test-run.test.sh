@@ -1089,6 +1089,39 @@ test_portable_serial_shards_partition_the_serial_lane() {
   pass "portable serial shards are a deterministic disjoint cover of the serial lane"
 }
 
+test_serial_shard_lane_refuses_a_malformed_weight() {
+  local tmp rc lanes lane
+  # The serial shard assignment shares lpt_bin_assignments with the parallel
+  # lanes and is consumed the same way, through a process substitution whose
+  # status no caller inspects, so a malformed weight must refuse the shard lane
+  # rather than truncate it into a shorter run that reports green.
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-serial-hints.XXXXXX")
+  mkdir -p "$tmp/bin"
+  ln -s "$ROOT/tests" "$tmp/tests"
+  sed 's|^\(tests/fm-teardown\.test\.sh\) [0-9]*$|\1 97x603|' "$RUNNER" >"$tmp/bin/fm-test-run.sh"
+  cmp -s "$RUNNER" "$tmp/bin/fm-test-run.sh" \
+    && fail "the malformed serial fixture left the runner unchanged; update its pattern"
+  chmod +x "$tmp/bin/fm-test-run.sh"
+
+  lanes=$("$tmp/bin/fm-test-run.sh" --list-lanes | grep '^portable-serial-[0-9]*of[0-9]*$')
+  [ -n "$lanes" ] || fail "no portable serial shard lanes were listed"
+  while IFS= read -r lane; do
+    [ -n "$lane" ] || continue
+    set +e
+    "$tmp/bin/fm-test-run.sh" --list --lane "$lane" >"$tmp/out" 2>"$tmp/err"
+    rc=$?
+    set -e
+    [ "$rc" -eq 2 ] \
+      || fail "a malformed serial weight must be refused (exit 2), got $rc for $lane"
+    [ ! -s "$tmp/out" ] \
+      || fail "$lane listed a partial suite from a malformed weight table: $(cat "$tmp/out")"
+    grep -Fq 'tests/fm-teardown.test.sh' "$tmp/err" \
+      || fail "$lane must name the offending weight table row: $(cat "$tmp/err")"
+  done <<<"$lanes"
+  rm -rf "$tmp"
+  pass "a malformed serial weight refuses the shard lane instead of truncating it"
+}
+
 test_portable_serial_hint_coverage_is_reported_and_bounded() {
   local out serial unhinted
   # Shards are packed from measured duration hints, so an unmeasured script is
@@ -1650,6 +1683,7 @@ test_exclude_family
 test_portable_shard_union_and_coverage_guard
 test_parallel_lane_refuses_a_stale_weight_table
 test_portable_serial_shards_partition_the_serial_lane
+test_serial_shard_lane_refuses_a_malformed_weight
 test_portable_serial_hint_coverage_is_reported_and_bounded
 test_portable_serial_shard_lane_refusals
 test_jobs_requires_proven_isolated

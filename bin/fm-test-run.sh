@@ -467,16 +467,27 @@ EOF
 # Longest-processing-time assignment of "<ms>\t<script>" rows on stdin to
 # <bins> bins, printing "<bin>\t<script>" in the input (longest-first) order.
 # Deterministic: rows must already be sorted by weight descending, and a tie
-# between equally loaded bins always takes the lowest bin index.
+# between equally loaded bins always takes the lowest bin index. All or nothing:
+# rows are held until the whole input is read, and one unusable duration prints
+# nothing and returns non-zero, because this is consumed through process
+# substitutions whose status no caller inspects, where a truncated assignment
+# would read as a complete smaller one.
 lpt_bin_assignments() {
   local bins=$1 ms script i best best_load
-  local -a loads=()
+  local -a loads=() rows=()
   i=1
   while [ "$i" -le "$bins" ]; do
     loads[i]=0
     i=$((i + 1))
   done
   while IFS=$'\t' read -r ms script; do
+    [ -n "$ms$script" ] || continue
+    case "$ms" in
+      '' | *[!0-9]*)
+        log "unusable weight table row: duration='$ms' script='$script' (durations must be whole milliseconds; refresh the tables per docs/fm-test-portable-shards.md)"
+        return 1
+        ;;
+    esac
     [ -n "$script" ] || continue
     best=1
     best_load=${loads[1]}
@@ -489,8 +500,11 @@ lpt_bin_assignments() {
       i=$((i + 1))
     done
     loads[best]=$((best_load + ms))
-    printf '%s\t%s\n' "$best" "$script"
+    rows+=("$best"$'\t'"$script")
   done
+  if [ "${#rows[@]}" -gt 0 ]; then
+    printf '%s\n' "${rows[@]}"
+  fi
 }
 
 # Real CI-measured durations for the proven-isolated scripts, in milliseconds.
