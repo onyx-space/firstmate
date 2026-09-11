@@ -1,0 +1,12 @@
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e /Users/onyx/.no-mistakes/worktrees/9573b29b9316/01M297S7MSZN3AR2EDM8EG6YHT/.pi/extensions/fm-primary-turnend-guard.ts -e /Users/onyx/.no-mistakes/worktrees/9573b29b9316/01M297S7MSZN3AR2EDM8EG6YHT/.pi/extensions/fm-primary-pi-watch.ts if the extensions are not loaded.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+teardown: pid 3132 is still rooted in /private/tmp/fm-live-case-UsI7TY/.treehouse/project-aa1989/1/project but is neither the pane leader 2735 of main:fm-current-task nor a live descendant of it, so this record's endpoint does not own it.
+Identify that process (ps -o pid,ppid,command -p 3132) and end it once it is confirmed unneeded, then re-run teardown.
+REFUSED: task current-task's recorded worktree /private/tmp/fm-live-case-UsI7TY/.treehouse/project-aa1989/1/project is also task stale-task's recorded worktree.
+Returning that pool slot would kill stale-task's processes and reset its copy, so nothing was changed - not even with --force.
+Reconcile whichever record is wrong (bin/fm-crew-state.sh current-task; bin/fm-crew-state.sh stale-task), then re-run teardown.

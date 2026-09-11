@@ -1,0 +1,9 @@
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e /Users/onyx/.no-mistakes/worktrees/9573b29b9316/01M297S7MSZN3AR2EDM8EG6YHT/.pi/extensions/fm-primary-turnend-guard.ts -e /Users/onyx/.no-mistakes/worktrees/9573b29b9316/01M297S7MSZN3AR2EDM8EG6YHT/.pi/extensions/fm-primary-pi-watch.ts if the extensions are not loaded.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+teardown: task stale-task also records /private/tmp/fm-live-case-gEB0zU/.treehouse/project-2dba38/1/project, but its claim began before the pool's current owner took the slot, so that claim is superseded; task current-task is the slot's true occupant and cleanup continues
+teardown: reaping leaked worktree process(es) for current-task: 86860

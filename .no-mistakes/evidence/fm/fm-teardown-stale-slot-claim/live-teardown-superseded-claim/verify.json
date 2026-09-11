@@ -1,0 +1,245 @@
+{
+  "checks": [
+    {
+      "scenario": "01",
+      "ok": true,
+      "label": "occupant teardown exits 0",
+      "detail": "0"
+    },
+    {
+      "scenario": "01",
+      "ok": true,
+      "label": "stderr names the superseded claim",
+      "detail": ""
+    },
+    {
+      "scenario": "01",
+      "ok": true,
+      "label": "real treehouse owner stamp present before",
+      "detail": ""
+    },
+    {
+      "scenario": "01",
+      "ok": true,
+      "label": "real treehouse slot returned (owner stamp cleared)",
+      "detail": ""
+    },
+    {
+      "scenario": "01",
+      "ok": true,
+      "label": "occupant record removed",
+      "detail": ""
+    },
+    {
+      "scenario": "01",
+      "ok": true,
+      "label": "stale record retained",
+      "detail": ""
+    },
+    {
+      "scenario": "01",
+      "ok": true,
+      "label": "occupant pane killed",
+      "detail": ""
+    },
+    {
+      "scenario": "02",
+      "ok": true,
+      "label": "pre-fix teardown refuses",
+      "detail": "1"
+    },
+    {
+      "scenario": "02",
+      "ok": true,
+      "label": "pre-fix refusal is the reported deadlock",
+      "detail": ""
+    },
+    {
+      "scenario": "02",
+      "ok": true,
+      "label": "pre-fix slot never returned",
+      "detail": ""
+    },
+    {
+      "scenario": "02",
+      "ok": true,
+      "label": "pre-fix both records left stuck",
+      "detail": ""
+    },
+    {
+      "scenario": "03",
+      "ok": true,
+      "label": "first (occupant) teardown exits 0",
+      "detail": ""
+    },
+    {
+      "scenario": "03",
+      "ok": true,
+      "label": "second (stale) teardown exits 0",
+      "detail": "0"
+    },
+    {
+      "scenario": "03",
+      "ok": true,
+      "label": "both records cleared",
+      "detail": ""
+    },
+    {
+      "scenario": "04",
+      "ok": true,
+      "label": "superseded side refuses",
+      "detail": ""
+    },
+    {
+      "scenario": "04",
+      "ok": true,
+      "label": "refusal names the slot's true occupant",
+      "detail": ""
+    },
+    {
+      "scenario": "04",
+      "ok": true,
+      "label": "slot still held after refusal",
+      "detail": ""
+    },
+    {
+      "scenario": "04",
+      "ok": true,
+      "label": "neither record touched",
+      "detail": ""
+    },
+    {
+      "scenario": "05",
+      "ok": true,
+      "label": "no pool owner start: refuses",
+      "detail": "1"
+    },
+    {
+      "scenario": "05",
+      "ok": true,
+      "label": "keeps the slot-collision refusal",
+      "detail": ""
+    },
+    {
+      "scenario": "05",
+      "ok": true,
+      "label": "slot not returned (treehouse return never ran)",
+      "detail": ""
+    },
+    {
+      "scenario": "05",
+      "ok": true,
+      "label": "both records preserved",
+      "detail": ""
+    },
+    {
+      "scenario": "06",
+      "ok": true,
+      "label": "both claims predate the owner: refuses",
+      "detail": "1"
+    },
+    {
+      "scenario": "06",
+      "ok": true,
+      "label": "keeps the slot-collision refusal",
+      "detail": ""
+    },
+    {
+      "scenario": "06",
+      "ok": true,
+      "label": "slot not returned",
+      "detail": ""
+    },
+    {
+      "scenario": "06",
+      "ok": true,
+      "label": "both records preserved",
+      "detail": ""
+    },
+    {
+      "scenario": "07",
+      "ok": true,
+      "label": "secondmate co-claimant: refuses",
+      "detail": "1"
+    },
+    {
+      "scenario": "07",
+      "ok": true,
+      "label": "keeps the slot-collision refusal",
+      "detail": ""
+    },
+    {
+      "scenario": "07",
+      "ok": true,
+      "label": "slot not returned",
+      "detail": ""
+    },
+    {
+      "scenario": "07",
+      "ok": true,
+      "label": "both records preserved",
+      "detail": ""
+    },
+    {
+      "scenario": "08",
+      "ok": true,
+      "label": "unlanded shared copy: refuses",
+      "detail": ""
+    },
+    {
+      "scenario": "08",
+      "ok": true,
+      "label": "refusal comes from the shared-copy proof",
+      "detail": ""
+    },
+    {
+      "scenario": "08",
+      "ok": true,
+      "label": "uncommitted file untouched",
+      "detail": ""
+    },
+    {
+      "scenario": "08",
+      "ok": true,
+      "label": "both records preserved",
+      "detail": ""
+    },
+    {
+      "scenario": "09",
+      "ok": true,
+      "label": "unowned process rooted in the slot: refuses",
+      "detail": ""
+    },
+    {
+      "scenario": "09",
+      "ok": true,
+      "label": "refusal names the unowned pid",
+      "detail": ""
+    },
+    {
+      "scenario": "09",
+      "ok": true,
+      "label": "the unaccounted process was not killed",
+      "detail": ""
+    },
+    {
+      "scenario": "09",
+      "ok": true,
+      "label": "slot not returned",
+      "detail": ""
+    },
+    {
+      "scenario": "10",
+      "ok": true,
+      "label": "the reading also engages on the ordinary non-force ship path",
+      "detail": ""
+    },
+    {
+      "scenario": "10",
+      "ok": true,
+      "label": "no --force used in that run",
+      "detail": ""
+    }
+  ],
+  "failed": 0
+}

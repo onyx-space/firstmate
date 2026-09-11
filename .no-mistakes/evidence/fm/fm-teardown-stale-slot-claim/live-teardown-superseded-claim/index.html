@@ -1,0 +1,225 @@
+<!doctype html>
+<meta charset="utf-8"><title>fm-teardown superseded slot claim - live evidence</title>
+<style>
+ body { font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem auto; max-width: 1100px; color: #1b1f24; }
+ h1 { font-size: 1.5rem; } h2 { font-size: 1.1rem; margin-bottom: .2rem; }
+ section.case { border: 1px solid #d7dbe0; border-radius: 8px; padding: 1rem 1.2rem; margin: 1rem 0; }
+ section.ok { border-left: 5px solid #1a7f37; } section.bad { border-left: 5px solid #cf222e; }
+ .verdict { font-weight: normal; font-size: .8rem; background: #eef1f4; padding: .1rem .4rem; border-radius: 4px; }
+ table.kv { border-collapse: collapse; width: 100%; margin: .5rem 0; } table.kv th { text-align: left; vertical-align: top; padding: .15rem .6rem .15rem 0; color: #57606a; font-weight: 600; white-space: nowrap; }
+ pre { background: #f6f8fa; border: 1px solid #d7dbe0; border-radius: 6px; padding: .6rem .8rem; white-space: pre-wrap; font-size: 12.5px; }
+ code { font-size: 12.5px; } .files { color: #57606a; font-size: .85rem; }
+ summary { margin: .5rem 0 1rem; } ul { margin: .3rem 0; }
+</style>
+<h1>Live evidence - fm-teardown stale slot claim on a reused Treehouse slot</h1>
+<p>40/40 machine assertions passed. Every case drove the real <code>bin/fm-teardown.sh</code> executable against a real git project, a real <code>treehouse get</code> pool owner stamp, real tmux panes whose endpoints the product's own classifier reads, a real firstmate home, and the real <code>treehouse return</code>.</p>
+<details open><summary>How each case was stood up</summary>
+<ol>
+<li><code>treehouse.toml</code> pins the pool root to an isolated temp root; a real <code>treehouse get</code> stamps <code>owner_started_at</code> in the pool's own <code>treehouse-state.json</code>.</li>
+<li>Two real firstmate task records name that slot; the occupant's <code>spawn_gen</code> is after the owner stamp, the stale record's is ~13h before it.</li>
+<li>A real tmux server (isolated with <code>TMUX_TMPDIR</code>) holds both records' endpoints: both read <code>alive</code> through <code>fm_backend_agent_state</code>, so endpoint liveness alone resolves nothing.</li>
+<li><code>FM_HOME=&lt;case&gt;/home FM_ROOT_OVERRIDE=&lt;repo&gt; bin/fm-teardown.sh &lt;task&gt; --force</code> is run as the end user runs it.</li>
+</ol>
+</details>
+
+<section class="case ok">
+  <h2>1. Occupant releases a slot whose co-claim the pool&#x27;s owner record supersedes (fix, --force) <span class="verdict">pass</span></h2>
+  <p class="files">evidence dir: <code>01-release-superseded-claim/</code></p>
+  <table class="kv">
+    <tr><th>slot</th><td><code>/private/tmp/fm-live-case-gEB0zU/.treehouse/project-2dba38/1/project</code></td></tr>
+    <tr><th>pool owner_started_at (ms)</th><td><code>1789165044328</code></td></tr>
+    <tr><th>occupant endpoint / stale endpoint (real tmux, product classifier)</th><td><code>alive</code> / <code>alive</code></td></tr>
+    <tr><th>processes rooted in slot before</th><td><code>[&#x27;86860&#x27;]</code></td></tr>
+    <tr><th>teardown target / force / kind</th><td><code>current-task</code> / <code>--force</code> / <code>scout</code></td></tr>
+    <tr><th>exit code</th><td><b>0</b></td></tr>
+    <tr><th>records after</th><td>current_meta=no stale_meta=yes</td></tr>
+    <tr><th>pool owner stamp after</th><td>no</td></tr>
+  </table>
+  <h3>Decisive product output</h3>
+  <pre>teardown: task stale-task also records /private/tmp/fm-live-case-gEB0zU/.treehouse/project-2dba38/1/project, but its claim began before the pool&#x27;s current owner took the slot, so that claim is superseded; task current-task is the slot&#x27;s true occupant and cleanup continues
+teardown: reaping leaked worktree process(es) for current-task: 86860</pre>
+  <h3>Assertions</h3>
+  <ul><li>PASS occupant teardown exits 0</li><li>PASS stderr names the superseded claim</li><li>PASS real treehouse owner stamp present before</li><li>PASS real treehouse slot returned (owner stamp cleared)</li><li>PASS occupant record removed</li><li>PASS stale record retained</li><li>PASS occupant pane killed</li></ul>
+</section>
+<section class="case ok">
+  <h2>2. Same live case against the BASE commit: the reported deadlock, --force included <span class="verdict">expected refusal (pre-fix)</span></h2>
+  <p class="files">evidence dir: <code>02-release-base-commit-deadlock/</code></p>
+  <table class="kv">
+    <tr><th>slot</th><td><code>/private/tmp/fm-live-case-MpxReB/.treehouse/project-3cd5dd/1/project</code></td></tr>
+    <tr><th>pool owner_started_at (ms)</th><td><code>1789165050758</code></td></tr>
+    <tr><th>occupant endpoint / stale endpoint (real tmux, product classifier)</th><td><code>alive</code> / <code>alive</code></td></tr>
+    <tr><th>processes rooted in slot before</th><td><code>[&#x27;89588&#x27;]</code></td></tr>
+    <tr><th>teardown target / force / kind</th><td><code>current-task</code> / <code>--force</code> / <code>scout</code></td></tr>
+    <tr><th>exit code</th><td><b>1</b></td></tr>
+    <tr><th>records after</th><td>current_meta=yes stale_meta=yes</td></tr>
+    <tr><th>pool owner stamp after</th><td>yes</td></tr>
+  </table>
+  <h3>Decisive product output</h3>
+  <pre>REFUSED: task current-task&#x27;s recorded worktree /private/tmp/fm-live-case-MpxReB/.treehouse/project-3cd5dd/1/project is also task stale-task&#x27;s recorded worktree.
+Returning that pool slot would kill stale-task&#x27;s processes and reset its copy, so nothing was changed - not even with --force.
+Reconcile whichever record is wrong (bin/fm-crew-state.sh current-task; bin/fm-crew-state.sh stale-task), then re-run teardown.</pre>
+  <h3>Assertions</h3>
+  <ul><li>PASS pre-fix teardown refuses</li><li>PASS pre-fix refusal is the reported deadlock</li><li>PASS pre-fix slot never returned</li><li>PASS pre-fix both records left stuck</li></ul>
+</section>
+<section class="case ok">
+  <h2>3. Full incident recovery: occupant collected, then the stale record collected (--force) <span class="verdict">pass</span></h2>
+  <p class="files">evidence dir: <code>03-incident-recovery-both-records/</code></p>
+  <table class="kv">
+    <tr><th>slot</th><td><code>/private/tmp/fm-live-case-HnAn8O/.treehouse/project-21a4bc/1/project</code></td></tr>
+    <tr><th>pool owner_started_at (ms)</th><td><code>1789165055077</code></td></tr>
+    <tr><th>occupant endpoint / stale endpoint (real tmux, product classifier)</th><td><code>alive</code> / <code>alive</code></td></tr>
+    <tr><th>processes rooted in slot before</th><td><code>[&#x27;91005&#x27;]</code></td></tr>
+    <tr><th>teardown target / force / kind</th><td><code>current-task</code> / <code>--force</code> / <code>scout</code></td></tr>
+    <tr><th>exit code</th><td><b>0</b> / second run 0</td></tr>
+    <tr><th>records after</th><td>current_meta=no stale_meta=yes stale_meta_after_second=no</td></tr>
+    <tr><th>pool owner stamp after</th><td>no</td></tr>
+  </table>
+  <h3>Decisive product output</h3>
+  <pre>teardown: task stale-task also records /private/tmp/fm-live-case-HnAn8O/.treehouse/project-21a4bc/1/project, but its claim began before the pool&#x27;s current owner took the slot, so that claim is superseded; task current-task is the slot&#x27;s true occupant and cleanup continues
+teardown: reaping leaked worktree process(es) for current-task: 91005</pre>
+  <h3>Assertions</h3>
+  <ul><li>PASS first (occupant) teardown exits 0</li><li>PASS second (stale) teardown exits 0</li><li>PASS both records cleared</li></ul>
+</section>
+<section class="case ok">
+  <h2>4. Adversarial: the superseded side must not release the occupant&#x27;s slot <span class="verdict">pass</span></h2>
+  <p class="files">evidence dir: <code>04-refusal-reverse-superseded-side/</code></p>
+  <table class="kv">
+    <tr><th>slot</th><td><code>/private/tmp/fm-live-case-DNskkE/.treehouse/project-a850b1/1/project</code></td></tr>
+    <tr><th>pool owner_started_at (ms)</th><td><code>1789165062922</code></td></tr>
+    <tr><th>occupant endpoint / stale endpoint (real tmux, product classifier)</th><td><code>alive</code> / <code>alive</code></td></tr>
+    <tr><th>processes rooted in slot before</th><td><code>[&#x27;94899&#x27;]</code></td></tr>
+    <tr><th>teardown target / force / kind</th><td><code>stale-task</code> / <code>--force</code> / <code>scout</code></td></tr>
+    <tr><th>exit code</th><td><b>1</b></td></tr>
+    <tr><th>records after</th><td>current_meta=yes stale_meta=yes</td></tr>
+    <tr><th>pool owner stamp after</th><td>yes</td></tr>
+  </table>
+  <h3>Decisive product output</h3>
+  <pre>REFUSED: task stale-task&#x27;s recorded worktree /private/tmp/fm-live-case-DNskkE/.treehouse/project-a850b1/1/project is also task current-task&#x27;s recorded worktree.
+Returning that pool slot would kill current-task&#x27;s processes and reset its copy, so nothing was changed - not even with --force.
+Treehouse&#x27;s pool state names task current-task as the slot&#x27;s current occupant: tear down task current-task first, then re-run this one.
+Reconcile whichever record is wrong (bin/fm-crew-state.sh stale-task; bin/fm-crew-state.sh current-task), then re-run teardown.</pre>
+  <h3>Assertions</h3>
+  <ul><li>PASS superseded side refuses</li><li>PASS refusal names the slot&#x27;s true occupant</li><li>PASS slot still held after refusal</li><li>PASS neither record touched</li></ul>
+</section>
+<section class="case ok">
+  <h2>5. Adversarial: pool state names no owner start -&gt; refuse <span class="verdict">pass</span></h2>
+  <p class="files">evidence dir: <code>05-refusal-no-owner-record/</code></p>
+  <table class="kv">
+    <tr><th>slot</th><td><code>/private/tmp/fm-live-case-Fqbpji/.treehouse/project-718c5f/1/project</code></td></tr>
+    <tr><th>pool owner_started_at (ms)</th><td><code>1789165067286</code></td></tr>
+    <tr><th>occupant endpoint / stale endpoint (real tmux, product classifier)</th><td><code>alive</code> / <code>alive</code></td></tr>
+    <tr><th>processes rooted in slot before</th><td><code>[&#x27;96408&#x27;]</code></td></tr>
+    <tr><th>teardown target / force / kind</th><td><code>current-task</code> / <code>--force</code> / <code>scout</code></td></tr>
+    <tr><th>exit code</th><td><b>1</b></td></tr>
+    <tr><th>records after</th><td>current_meta=yes stale_meta=yes</td></tr>
+    <tr><th>pool owner stamp after</th><td>no</td></tr>
+  </table>
+  <h3>Decisive product output</h3>
+  <pre>REFUSED: task current-task&#x27;s recorded worktree /private/tmp/fm-live-case-Fqbpji/.treehouse/project-718c5f/1/project is also task stale-task&#x27;s recorded worktree.
+Returning that pool slot would kill stale-task&#x27;s processes and reset its copy, so nothing was changed - not even with --force.
+Reconcile whichever record is wrong (bin/fm-crew-state.sh current-task; bin/fm-crew-state.sh stale-task), then re-run teardown.</pre>
+  <h3>Assertions</h3>
+  <ul><li>PASS no pool owner start: refuses</li><li>PASS keeps the slot-collision refusal</li><li>PASS slot not returned (treehouse return never ran)</li><li>PASS both records preserved</li></ul>
+</section>
+<section class="case ok">
+  <h2>6. Adversarial: both claims predate the owner (third-party holder) -&gt; refuse <span class="verdict">pass</span></h2>
+  <p class="files">evidence dir: <code>06-refusal-both-claims-predate-owner/</code></p>
+  <table class="kv">
+    <tr><th>slot</th><td><code>/private/tmp/fm-live-case-EtWkxK/.treehouse/project-118217/1/project</code></td></tr>
+    <tr><th>pool owner_started_at (ms)</th><td><code>1789165071776</code></td></tr>
+    <tr><th>occupant endpoint / stale endpoint (real tmux, product classifier)</th><td><code>alive</code> / <code>alive</code></td></tr>
+    <tr><th>processes rooted in slot before</th><td><code>[&#x27;97949&#x27;]</code></td></tr>
+    <tr><th>teardown target / force / kind</th><td><code>current-task</code> / <code>--force</code> / <code>scout</code></td></tr>
+    <tr><th>exit code</th><td><b>1</b></td></tr>
+    <tr><th>records after</th><td>current_meta=yes stale_meta=yes</td></tr>
+    <tr><th>pool owner stamp after</th><td>yes</td></tr>
+  </table>
+  <h3>Decisive product output</h3>
+  <pre>REFUSED: task current-task&#x27;s recorded worktree /private/tmp/fm-live-case-EtWkxK/.treehouse/project-118217/1/project is also task stale-task&#x27;s recorded worktree.
+Returning that pool slot would kill stale-task&#x27;s processes and reset its copy, so nothing was changed - not even with --force.
+Reconcile whichever record is wrong (bin/fm-crew-state.sh current-task; bin/fm-crew-state.sh stale-task), then re-run teardown.</pre>
+  <h3>Assertions</h3>
+  <ul><li>PASS both claims predate the owner: refuses</li><li>PASS keeps the slot-collision refusal</li><li>PASS slot not returned</li><li>PASS both records preserved</li></ul>
+</section>
+<section class="case ok">
+  <h2>7. Adversarial: a secondmate co-claimant is never superseded -&gt; refuse <span class="verdict">pass</span></h2>
+  <p class="files">evidence dir: <code>07-refusal-secondmate-co-claimant/</code></p>
+  <table class="kv">
+    <tr><th>slot</th><td><code>/private/tmp/fm-live-case-DC5e9w/.treehouse/project-61cba4/1/project</code></td></tr>
+    <tr><th>pool owner_started_at (ms)</th><td><code>1789165076151</code></td></tr>
+    <tr><th>occupant endpoint / stale endpoint (real tmux, product classifier)</th><td><code>alive</code> / <code>alive</code></td></tr>
+    <tr><th>processes rooted in slot before</th><td><code>[&#x27;99438&#x27;]</code></td></tr>
+    <tr><th>teardown target / force / kind</th><td><code>current-task</code> / <code>--force</code> / <code>scout</code></td></tr>
+    <tr><th>exit code</th><td><b>1</b></td></tr>
+    <tr><th>records after</th><td>current_meta=yes stale_meta=yes</td></tr>
+    <tr><th>pool owner stamp after</th><td>yes</td></tr>
+  </table>
+  <h3>Decisive product output</h3>
+  <pre>REFUSED: task current-task&#x27;s recorded worktree /private/tmp/fm-live-case-DC5e9w/.treehouse/project-61cba4/1/project is also task stale-task&#x27;s recorded worktree.
+Returning that pool slot would kill stale-task&#x27;s processes and reset its copy, so nothing was changed - not even with --force.
+Reconcile whichever record is wrong (bin/fm-crew-state.sh current-task; bin/fm-crew-state.sh stale-task), then re-run teardown.</pre>
+  <h3>Assertions</h3>
+  <ul><li>PASS secondmate co-claimant: refuses</li><li>PASS keeps the slot-collision refusal</li><li>PASS slot not returned</li><li>PASS both records preserved</li></ul>
+</section>
+<section class="case ok">
+  <h2>8. Adversarial: superseded claim but unlanded shared copy -&gt; refuse <span class="verdict">pass</span></h2>
+  <p class="files">evidence dir: <code>08-refusal-unlanded-shared-copy/</code></p>
+  <table class="kv">
+    <tr><th>slot</th><td><code>/private/tmp/fm-live-case-rUn4H5/.treehouse/project-4ed687/1/project</code></td></tr>
+    <tr><th>pool owner_started_at (ms)</th><td><code>1789165080457</code></td></tr>
+    <tr><th>occupant endpoint / stale endpoint (real tmux, product classifier)</th><td><code>alive</code> / <code>alive</code></td></tr>
+    <tr><th>processes rooted in slot before</th><td><code>[&#x27;1279&#x27;]</code></td></tr>
+    <tr><th>teardown target / force / kind</th><td><code>current-task</code> / <code>--force</code> / <code>scout</code></td></tr>
+    <tr><th>exit code</th><td><b>1</b></td></tr>
+    <tr><th>records after</th><td>current_meta=yes stale_meta=yes</td></tr>
+    <tr><th>pool owner stamp after</th><td>yes</td></tr>
+  </table>
+  <h3>Decisive product output</h3>
+  <pre>REFUSED: worktree /private/tmp/fm-live-case-rUn4H5/.treehouse/project-4ed687/1/project has uncommitted changes.
+REFUSED: task current-task&#x27;s recorded worktree /private/tmp/fm-live-case-rUn4H5/.treehouse/project-4ed687/1/project is also task stale-task&#x27;s recorded worktree.
+Returning that pool slot would kill stale-task&#x27;s processes and reset its copy, so nothing was changed - not even with --force.
+Reconcile whichever record is wrong (bin/fm-crew-state.sh current-task; bin/fm-crew-state.sh stale-task), then re-run teardown.</pre>
+  <h3>Assertions</h3>
+  <ul><li>PASS unlanded shared copy: refuses</li><li>PASS refusal comes from the shared-copy proof</li><li>PASS uncommitted file untouched</li><li>PASS both records preserved</li></ul>
+</section>
+<section class="case ok">
+  <h2>9. Adversarial: superseded claim but a process rooted in the slot belongs to no one -&gt; refuse <span class="verdict">pass</span></h2>
+  <p class="files">evidence dir: <code>09-refusal-unowned-slot-process/</code></p>
+  <table class="kv">
+    <tr><th>slot</th><td><code>/private/tmp/fm-live-case-UsI7TY/.treehouse/project-aa1989/1/project</code></td></tr>
+    <tr><th>pool owner_started_at (ms)</th><td><code>1789165084892</code></td></tr>
+    <tr><th>occupant endpoint / stale endpoint (real tmux, product classifier)</th><td><code>alive</code> / <code>alive</code></td></tr>
+    <tr><th>processes rooted in slot before</th><td><code>[&#x27;2735&#x27;, &#x27;3132&#x27;]</code></td></tr>
+    <tr><th>teardown target / force / kind</th><td><code>current-task</code> / <code>--force</code> / <code>scout</code></td></tr>
+    <tr><th>exit code</th><td><b>1</b></td></tr>
+    <tr><th>records after</th><td>current_meta=yes stale_meta=yes</td></tr>
+    <tr><th>pool owner stamp after</th><td>yes</td></tr>
+  </table>
+  <h3>Decisive product output</h3>
+  <pre>teardown: pid 3132 is still rooted in /private/tmp/fm-live-case-UsI7TY/.treehouse/project-aa1989/1/project but is neither the pane leader 2735 of main:fm-current-task nor a live descendant of it, so this record&#x27;s endpoint does not own it.
+REFUSED: task current-task&#x27;s recorded worktree /private/tmp/fm-live-case-UsI7TY/.treehouse/project-aa1989/1/project is also task stale-task&#x27;s recorded worktree.
+Returning that pool slot would kill stale-task&#x27;s processes and reset its copy, so nothing was changed - not even with --force.
+Reconcile whichever record is wrong (bin/fm-crew-state.sh current-task; bin/fm-crew-state.sh stale-task), then re-run teardown.</pre>
+  <h3>Assertions</h3>
+  <ul><li>PASS unowned process rooted in the slot: refuses</li><li>PASS refusal names the unowned pid</li><li>PASS the unaccounted process was not killed</li><li>PASS slot not returned</li></ul>
+</section>
+<section class="case ok">
+  <h2>10. The reading also engages on the ordinary non-force ship path (later unrelated gate stops it) <span class="verdict">pass</span></h2>
+  <p class="files">evidence dir: <code>10-no-force-ship-path-reading-engages/</code></p>
+  <table class="kv">
+    <tr><th>slot</th><td><code>/private/tmp/fm-live-case-nF4nhl/.treehouse/project-912333/1/project</code></td></tr>
+    <tr><th>pool owner_started_at (ms)</th><td><code>1789165089354</code></td></tr>
+    <tr><th>occupant endpoint / stale endpoint (real tmux, product classifier)</th><td><code>alive</code> / <code>alive</code></td></tr>
+    <tr><th>processes rooted in slot before</th><td><code>[&#x27;4380&#x27;]</code></td></tr>
+    <tr><th>teardown target / force / kind</th><td><code>current-task</code> / <code>none</code> / <code>ship</code></td></tr>
+    <tr><th>exit code</th><td><b>1</b> / second run 1</td></tr>
+    <tr><th>records after</th><td>current_meta=yes stale_meta=yes stale_meta_after_second=yes</td></tr>
+    <tr><th>pool owner stamp after</th><td>yes</td></tr>
+  </table>
+  <h3>Decisive product output</h3>
+  <pre>teardown: task stale-task also records /private/tmp/fm-live-case-nF4nhl/.treehouse/project-912333/1/project, but its claim began before the pool&#x27;s current owner took the slot, so that claim is superseded; task current-task is the slot&#x27;s true occupant and cleanup continues
+REFUSED: scout task current-task has not passed the captain-call completion gate.</pre>
+  <h3>Assertions</h3>
+  <ul><li>PASS the reading also engages on the ordinary non-force ship path</li><li>PASS no --force used in that run</li></ul>
+</section>
+<p>Verify: <code>python3 fm-live-verify.py</code> (assertions above are re-derived from the saved transcripts and pool state files in this directory).</p>

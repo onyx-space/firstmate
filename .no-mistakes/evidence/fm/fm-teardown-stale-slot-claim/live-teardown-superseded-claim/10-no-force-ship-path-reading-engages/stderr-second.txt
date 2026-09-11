@@ -1,0 +1,5 @@
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+REFUSED: task stale-task's recorded worktree /private/tmp/fm-live-case-nF4nhl/.treehouse/project-912333/1/project is also task current-task's recorded worktree.
+Returning that pool slot would kill current-task's processes and reset its copy, so nothing was changed - not even with --force.
+Treehouse's pool state names task current-task as the slot's current occupant: tear down task current-task first, then re-run this one.
+Reconcile whichever record is wrong (bin/fm-crew-state.sh stale-task; bin/fm-crew-state.sh current-task), then re-run teardown.

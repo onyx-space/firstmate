@@ -1,0 +1,11 @@
+{
+  "worktrees": [
+    {
+      "name": "1",
+      "path": "/private/tmp/fm-live-case-rUn4H5/.treehouse/project-4ed687/1/project",
+      "created_at": "2026-09-12T06:18:00.618145+08:00",
+      "owner_pid": 643,
+      "owner_started_at": 1789165080457
+    }
+  ]
+}

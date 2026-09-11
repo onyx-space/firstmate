@@ -1,0 +1,6 @@
+A new version of treehouse is available: v2.1.1 → v2.3.0
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown current-task complete (window main:fm-current-task, worktree /private/tmp/fm-live-case-gEB0zU/.treehouse/project-2dba38/1/project)
+Backlog: current-task just finished (this home keeps no markdown backlog at /private/tmp/fm-live-case-gEB0zU/home/data/backlog.md). Update /private/tmp/fm-live-case-gEB0zU/home/data/backlog.md - move current-task to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
