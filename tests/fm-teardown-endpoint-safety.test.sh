@@ -48,6 +48,25 @@ mark_case_as_treehouse_pool() {  # <case>
   : > "$dir/worktree/sentinel"
 }
 
+# Record the pool's own current owner for the case's slot, the way Treehouse
+# stamps a slot when it hands that slot to an owner. Args: <case>
+# <owner_started_at> [ms|s], because Treehouse writes the field in milliseconds
+# on some versions and seconds on others and the guard must read both.
+set_case_slot_owner() {  # <case> <owner_started_at> [ms|s]
+  local dir=$1 started=$2 unit=${3:-ms} slot
+  slot=$(CDPATH='' cd -- "$dir/worktree" && pwd -P) || return 1
+  [ "$unit" = s ] || started="${started}000"
+  {
+    printf '{\n  "worktrees": [\n    {\n'
+    printf '      "name": "1",\n'
+    printf '      "path": "%s",\n' "$slot"
+    printf '      "created_at": "2026-01-01T00:00:00.000000+08:00",\n'
+    printf '      "owner_pid": 4242,\n'
+    printf '      "owner_started_at": %s\n' "$started"
+    printf '    }\n  ]\n}\n'
+  } > "$dir/pool/treehouse-state.json"
+}
+
 # Reach a case's home through a symlink: the spelling an operator's home is
 # reached with is not always the physical one (a symlinked home, or a /tmp root
 # that resolves to /private/tmp), and the slot guard compares record identity.
@@ -906,6 +925,235 @@ test_shared_pool_slot_still_refuses_when_neither_record_is_live() {
   pass "fm-teardown: two gone records leave the slot contested instead of guessing which claim is current"
 }
 
+# A pool slot handed to a new task leaves the previous task's record still
+# naming it. Both records then exist, and here both endpoints even read live, so
+# the endpoint reading resolves nothing and each teardown refused on the other's
+# claim. The pool's own record of when the slot's current owner started is what
+# shows which claim belongs to an earlier allocation, and that lets the current
+# occupant collect the slot. Both field units Treehouse is known to write are
+# covered, because reading only one would leave the other version deadlocked.
+test_slot_claim_superseded_by_the_pool_owner_releases() {
+  local dir id=current-task other=stale-task owner worker rc unit
+
+  for unit in ms s; do
+    dir=$(make_case "slot-superseded-claim-$unit")
+    mark_case_as_treehouse_pool "$dir"
+    make_slot_copy_landed "$dir"
+    owner=1789161032
+    set_case_slot_owner "$dir" "$owner" "$unit"
+    fm_write_meta "$dir/home/state/$id.meta" \
+      "window=main:fm-$id" "endpoint_task_id=$id" \
+      "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+      "spawn_gen=s$((owner + 12)).4242.1"
+    fm_write_meta "$dir/home/state/$other.meta" \
+      "window=other:fm-$other" "endpoint_task_id=$other" \
+      "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+      "spawn_gen=s$((owner - 46800)).4242.2"
+    write_tmux_agent_stub "$dir" "main:fm-$id=alive" "other:fm-$other=alive"
+    ( cd "$dir/worktree" && exec sleep 30 ) &
+    worker=$!
+
+    rc=0
+    FM_FAKE_TMUX_PANE_PID=$worker run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr" || rc=$?
+    kill "$worker" 2>/dev/null || true
+    wait "$worker" 2>/dev/null || true
+    [ "$rc" -eq 0 ] \
+      || fail "the slot's current occupant could not collect a superseded co-claim ($unit): $(cat "$dir/stderr")"
+    assert_absent "$dir/home/state/$id.meta" "the superseded-claim release left the occupant's own record"
+    assert_present "$dir/home/state/$other.meta" "the superseded-claim release removed the stale record"
+    grep -Fq "treehouse <return>" "$dir/runtime.log" \
+      || fail "the superseded-claim release never returned the slot ($unit): $(cat "$dir/runtime.log")"
+    assert_contains "$(cat "$dir/stderr")" "superseded" \
+      "the release must name the superseded claim as its evidence"
+  done
+
+  pass "fm-teardown: the slot's current occupant collects a claim the pool's own owner record supersedes"
+}
+
+# The reverse direction stays refused: the record whose claim the pool's owner
+# record shows superseded may not return a slot someone else holds, and the
+# refusal names the occupant to collect first so the operator stops picking the
+# wrong record.
+test_slot_claim_superseded_side_still_refuses_the_occupants_slot() {
+  local dir id=current-task other=stale-task owner rc
+
+  dir=$(make_case slot-superseded-claim-reverse)
+  mark_case_as_treehouse_pool "$dir"
+  make_slot_copy_landed "$dir"
+  owner=1789161032
+  set_case_slot_owner "$dir" "$owner"
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=main:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+    "spawn_gen=s$((owner + 12)).4242.1"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+    "spawn_gen=s$((owner - 46800)).4242.2"
+  write_tmux_agent_stub "$dir" "main:fm-$id=alive" "other:fm-$other=alive"
+
+  set +e
+  run_case "$dir" "$other" > "$dir/stdout" 2> "$dir/stderr"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "a superseded claim returned a slot the pool's current owner holds"
+  assert_shared_slot_refused "$dir" "$other" "$id" "superseded claimant"
+  assert_contains "$(cat "$dir/stderr")" "names task $id as the slot's current occupant" \
+    "the refusal must name the record whose claim the pool's owner record confirms"
+
+  pass "fm-teardown: the superseded side still refuses and names the slot's current occupant"
+}
+
+# The ownership reading is evidence and never authority, so --force must gain
+# nothing from it. Each case below is missing, contradictory, or unproved
+# evidence, and every one keeps the refusal exactly as it was; the last two also
+# pin that the new reading cannot reach the slot without the destruction proofs
+# that make returning it safe.
+test_slot_claim_evidence_never_relaxes_force() {
+  local dir id=current-task other=stale-task owner worker rc
+
+  # (a) the pool state records no owner start for the slot at all
+  dir=$(make_case slot-claim-no-owner-record)
+  mark_case_as_treehouse_pool "$dir"
+  make_slot_copy_landed "$dir"
+  owner=1789161032
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=main:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+    "spawn_gen=s$((owner + 12)).4242.1"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+    "spawn_gen=s$((owner - 46800)).4242.2"
+  write_tmux_agent_stub "$dir" "main:fm-$id=alive" "other:fm-$other=alive"
+  set +e
+  run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "a shared slot was released with no pool owner record to prove which claim is current"
+  assert_shared_slot_refused "$dir" "$id" "$other" "no pool owner record"
+  assert_not_contains "$(cat "$dir/stderr")" "superseded" \
+    "an ownerless pool record must not read as a superseded claim"
+
+  # (b) both claims began before the current owner's start: a third party holds
+  # the slot, so neither record may return it
+  dir=$(make_case slot-claim-both-predate-owner)
+  mark_case_as_treehouse_pool "$dir"
+  make_slot_copy_landed "$dir"
+  set_case_slot_owner "$dir" "$owner"
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=main:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+    "spawn_gen=s$((owner - 10)).4242.1"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+    "spawn_gen=s$((owner - 20)).4242.2"
+  write_tmux_agent_stub "$dir" "main:fm-$id=alive" "other:fm-$other=alive"
+  set +e
+  run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "a shared slot was released when both claims predate its current owner"
+  assert_shared_slot_refused "$dir" "$id" "$other" "both claims predate the pool owner"
+
+  # (c) this record carries no claim instant (a record older than the field)
+  dir=$(make_case slot-claim-no-incarnation)
+  mark_case_as_treehouse_pool "$dir"
+  make_slot_copy_landed "$dir"
+  set_case_slot_owner "$dir" "$owner"
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=main:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+    "spawn_gen=s$((owner - 46800)).4242.2"
+  write_tmux_agent_stub "$dir" "main:fm-$id=alive" "other:fm-$other=alive"
+  set +e
+  run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "a shared slot was released for a record carrying no claim instant"
+  assert_shared_slot_refused "$dir" "$id" "$other" "record without an incarnation"
+
+  # (d) a secondmate co-claimant is never superseded, on either field
+  dir=$(make_case slot-claim-secondmate-co-claimant)
+  mark_case_as_treehouse_pool "$dir"
+  make_slot_copy_landed "$dir"
+  set_case_slot_owner "$dir" "$owner"
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=main:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+    "spawn_gen=s$((owner + 12)).4242.1"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "home=$dir/worktree" \
+    "project=$dir/project" "kind=secondmate" \
+    "spawn_gen=s$((owner - 46800)).4242.2"
+  write_tmux_agent_stub "$dir" "main:fm-$id=alive" "other:fm-$other=alive"
+  set +e
+  run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "a superseded-claim reading released a slot a secondmate record also names"
+  assert_shared_slot_refused "$dir" "$id" "$other" "secondmate co-claimant"
+
+  # (e) the co-claim is superseded, but the shared copy holds uncommitted work
+  dir=$(make_case slot-claim-unlanded-copy)
+  mark_case_as_treehouse_pool "$dir"
+  set_case_slot_owner "$dir" "$owner"
+  : > "$dir/worktree/scratch"
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=main:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+    "spawn_gen=s$((owner + 12)).4242.1"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+    "spawn_gen=s$((owner - 46800)).4242.2"
+  write_tmux_agent_stub "$dir" "main:fm-$id=alive" "other:fm-$other=alive"
+  ( cd "$dir/worktree" && exec sleep 30 ) &
+  worker=$!
+  rc=0
+  FM_FAKE_TMUX_PANE_PID=$worker run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr" || rc=$?
+  [ "$rc" -ne 0 ] || fail "a superseded-claim reading released a slot whose copy holds unlanded work"
+  assert_contains "$(cat "$dir/stderr")" "uncommitted changes" \
+    "the shared-copy proof, not some other check, should refuse here"
+  assert_shared_slot_refused "$dir" "$id" "$other" "superseded claim with an unlanded copy"
+  kill "$worker" 2>/dev/null || true
+  wait "$worker" 2>/dev/null || true
+
+  # (f) the co-claim is superseded and the copy is landed, but a process rooted
+  # in the slot belongs to no one this record's endpoint owns
+  dir=$(make_case slot-claim-unowned-process)
+  mark_case_as_treehouse_pool "$dir"
+  make_slot_copy_landed "$dir"
+  set_case_slot_owner "$dir" "$owner"
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=main:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+    "spawn_gen=s$((owner + 12)).4242.1"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+    "spawn_gen=s$((owner - 46800)).4242.2"
+  write_tmux_agent_stub "$dir" "main:fm-$id=alive" "other:fm-$other=alive"
+  ( cd "$dir/worktree" && exec sleep 30 ) &
+  worker=$!
+  rc=0
+  FM_FAKE_TMUX_PANE_PID=999999 run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr" || rc=$?
+  [ "$rc" -ne 0 ] || fail "a superseded-claim reading released a slot with an unaccounted process in it"
+  kill -0 "$worker" 2>/dev/null || fail "the refusal killed a process it could not account for"
+  assert_contains "$(cat "$dir/stderr")" "pid $worker is still rooted in" \
+    "the process proof must name the pid it could not account for"
+  assert_shared_slot_refused "$dir" "$id" "$other" "superseded claim with an unowned slot process"
+  kill "$worker" 2>/dev/null || true
+  wait "$worker" 2>/dev/null || true
+
+  pass "fm-teardown: a superseded claim releases nothing without the pool's owner record and the destruction proofs, --force included"
+}
+
 test_shared_pool_slot_refusal_names_the_live_record_to_tear_down_first() {
   local dir id=stale-task other=live-task rc
 
@@ -1272,6 +1520,9 @@ test_shared_pool_slot_still_refuses_while_the_co_claimant_runs
 test_shared_pool_slot_still_refuses_an_unprovable_co_claimant
 test_shared_pool_slot_still_refuses_when_neither_record_is_live
 test_shared_pool_slot_still_refuses_unprovable_live_work
+test_slot_claim_superseded_by_the_pool_owner_releases
+test_slot_claim_superseded_side_still_refuses_the_occupants_slot
+test_slot_claim_evidence_never_relaxes_force
 test_shared_pool_slot_refusal_names_the_live_record_to_tear_down_first
 test_cross_home_pool_slot_collision_refuses
 test_sole_slot_record_still_tears_down
