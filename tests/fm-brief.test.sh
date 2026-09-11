@@ -1024,6 +1024,46 @@ test_scout_and_secondmate_scaffold() {
   pass "fm-brief: scout and secondmate code paths still scaffold well-formed briefs"
 }
 
+# The captain's standing command-timeout discipline (30 seconds by default, 60
+# seconds generally, 120 seconds at most, never 300 or 600, slower work to a
+# background job) has to reach the worker, and the brief is the only surface
+# every worker reads - the same posture in data/captain.md is firstmate-private.
+# A persistent secondmate runs the same firstmate scripts, so its charter
+# carries the section too. It must appear exactly once per scaffold: two copies
+# would be two owners of the same numbers and would drift.
+test_tool_call_timeout_discipline_section() {
+  local home kind brief count
+  home="$TMP_ROOT/tool-timeouts"
+  mkdir -p "$home/data"
+  for kind in no-mistakes direct-PR local-only scout; do
+    if [ "$kind" = scout ]; then
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "brief-timeout-$kind" some-proj --scout >/dev/null 2>&1 \
+        || fail "$kind: scaffold failed"
+    else
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "brief-timeout-$kind" some-proj --mode "$kind" >/dev/null 2>&1 \
+        || fail "$kind: scaffold failed"
+    fi
+    brief="$home/data/brief-timeout-$kind/brief.md"
+    assert_grep "# Tool call timeouts" "$brief" "$kind brief is missing the command-timeout section"
+    assert_grep "Default 30 seconds" "$brief" "$kind brief lost the 30-second default"
+    assert_grep "60 seconds for an ordinary command" "$brief" "$kind brief lost the 60-second general bound"
+    assert_grep "120 seconds is the cap" "$brief" "$kind brief lost the 120-second cap"
+    assert_grep "Never use 300 or 600" "$brief" "$kind brief lost the 300/600 ban"
+    assert_grep "belongs in a background job" "$brief" "$kind brief lost the background-job route"
+    assert_grep "job_run" "$brief" "$kind brief lost the background-job command"
+    count=$(grep -c -F -- "# Tool call timeouts" "$brief")
+    expect_code 1 "$count" "$kind brief carries the command-timeout section $count times, not once"
+  done
+  FM_SECONDMATE_CHARTER='Supervise assigned work.' \
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-timeout-secondmate --secondmate --no-projects >/dev/null 2>&1 \
+    || fail "secondmate scaffold failed"
+  brief="$home/data/brief-timeout-secondmate/brief.md"
+  assert_grep "# Tool call timeouts" "$brief" "secondmate charter is missing the command-timeout section"
+  assert_grep "120 seconds is the cap" "$brief" "secondmate charter lost the 120-second cap"
+  assert_grep "Never use 300 or 600" "$brief" "secondmate charter lost the 300/600 ban"
+  pass "fm-brief: every scaffold states the command-timeout discipline exactly once"
+}
+
 test_artifact_placement_contract() {
   local home kind brief
   home="$TMP_ROOT/artifact-placement"
@@ -1141,5 +1181,6 @@ test_pause_verb_override_renders_all_brief_scaffolds
 test_scout_and_secondmate_load_decision_hold_policy
 test_ce_workflow_boundary_section
 test_pr_description_discipline_section
+test_tool_call_timeout_discipline_section
 test_artifact_placement_contract
 test_scout_and_secondmate_scaffold
