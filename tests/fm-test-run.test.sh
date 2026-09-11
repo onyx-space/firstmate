@@ -1000,6 +1000,40 @@ test_portable_shard_union_and_coverage_guard() {
   pass "portable shard union, disjointness, and coverage guard hold"
 }
 
+test_parallel_lane_refuses_a_stale_weight_table() {
+  local tmp rc out
+  # Lane listings are packed from the weight table inside command substitutions,
+  # where a missing hint cannot fail loudly: the die() only kills the subshell,
+  # so the listing quietly gets shorter and the lane reports green having run
+  # fewer scripts than the proof covers. The completeness check has to sit in
+  # the shell the lane's exit status belongs to, and that is what this asserts.
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-stale-hints.XXXXXX")
+  mkdir -p "$tmp/bin"
+  # Drop one hint row (the proven-isolated list entry has no weight, so only the
+  # measured table loses a line).
+  grep -v '^tests/fm-arm-pretool-check\.test\.sh [0-9]' "$RUNNER" >"$tmp/bin/fm-test-run.sh"
+  chmod +x "$tmp/bin/fm-test-run.sh"
+
+  set +e
+  out=$("$tmp/bin/fm-test-run.sh" --list --lane portable-parallel-1 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] \
+    || fail "a shard whose weight table lost a proven script must be refused (exit 2), got $rc: $out"
+  printf '%s\n' "$out" | grep -Fq 'no measured CI duration' \
+    || fail "the refusal must say the hint table is stale: $out"
+  printf '%s\n' "$out" | grep -Fq 'tests/fm-arm-pretool-check.test.sh' \
+    || fail "the refusal must name the unmeasured script: $out"
+
+  set +e
+  out=$("$tmp/bin/fm-test-run.sh" --list --lane portable-parallel-2 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "both parallel lanes balance from that table, got exit $rc for shard 2"
+  rm -rf "$tmp"
+  pass "a stale portable parallel weight table fails the lane instead of shrinking it"
+}
+
 test_portable_serial_shards_partition_the_serial_lane() {
   local lanes count serial shard listed union dups shard_lane total cap
   lanes=$("$RUNNER" --list-lanes)
@@ -1605,6 +1639,7 @@ test_live_guards_expect_a_capability_skip_class
 test_fail_on_gate_skip_token
 test_exclude_family
 test_portable_shard_union_and_coverage_guard
+test_parallel_lane_refuses_a_stale_weight_table
 test_portable_serial_shards_partition_the_serial_lane
 test_portable_serial_hint_coverage_is_reported_and_bounded
 test_portable_serial_shard_lane_refusals

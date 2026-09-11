@@ -13,7 +13,7 @@ It answers *which* scripts may run concurrently.
 
 **Balance weights** for the two portable parallel shards come from those lanes' own CI timing artifacts, listed under [Parallel lanes](#parallel-lanes).
 The proof's file `fm-test-isolation-proof.json` keeps its local wall clocks as the historical record of that proof; those clocks are not CI durations and are no longer used for packing.
-Keeping the two apart is the whole point: the local proof's wall clocks were up to 18x below what the same script costs on a CI runner (`tests/fm-pr-merge.test.sh` 6290 ms there, 115843 ms in CI) and a few were above it, so packing from them left one shard holding both of the real heavyweights and three times the other shard's work on run 34586799603 (592.3 s against 197.4 s, both under one 600 s cap).
+Keeping the two apart is the whole point: the local proof's wall clocks were up to 18x below what the same script costs on a CI runner (`tests/fm-pr-merge.test.sh` 6290 ms there, 115843 ms in CI) and a few were above it, so packing from them left one shard holding both of the real heavyweights and three times the other shard's work on run 34586799603 (592.3 s against 197.4 s of script time, both lanes under one 600 s job cap, which shard 1's 592.7 s wall clock plus job setup then exceeded).
 
 ## Parallel lanes
 
@@ -62,7 +62,7 @@ The two heaviest scripts land in different shards, which is the assignment LPT e
 Their union is 444.8 s, so packing them together would put one shard near the cap on script time alone; separating them is the single most important property of this partition.
 The previous partition derived from the isolation proof put both in shard 1, where they measured 592.3 s of real CI script time on run 34586799603 against a 600 s cap while shard 2 used 197.4 s.
 
-Re-partitioning the same observed runs is the honest way to read the improvement, because it holds runner speed and script set constant:
+Re-partitioning the same observed runs is the honest way to read the improvement, because it holds runner speed and script set constant. Every cell below is a sum of the run's per-script `duration_ms`, not a wall clock: a lane's own wall clock is the artifact's `summary.duration_ms`, which for run 34586799603's old shard 1 was 592675 ms against a 592302 ms script-time sum. The job cap measures the wall clock, so keep the two apart when comparing a lane against it.
 
 | run | old shard 1 | old shard 2 | re-partitioned 1 | re-partitioned 2 |
 |---|---:|---:|---:|---:|
@@ -76,8 +76,8 @@ Re-partitioning the same observed runs is the honest way to read the improvement
 | [34549712118](https://github.com/onyx-space/firstmate/actions/runs/34549712118) | 527312 | 137576 | 341667 | 323221 |
 | [34586799603](https://github.com/onyx-space/firstmate/actions/runs/34586799603) | 592302 | 197422 | 398622 | 391102 |
 
-Spreading the old shard 1 across both shards cuts the slowest lane from 450-593 s to 320-399 s.
-The worst re-partitioned shard on record is 398622 ms, 33% below the 592675 ms that run's shard 1 actually took.
+Spreading the old shard 1 across both shards cuts the slowest lane from 451-592 s to 320-399 s of script time.
+The worst re-partitioned shard on record is 398622 ms of script time, 33% below the 592302 ms of script time the old shard 1 recorded in that run's artifacts.
 
 `bin/fm-test-run.sh` owns the partition: `portable_parallel_assignments` runs the same deterministic LPT helper the serial shards use, and `list_portable_parallel_1` / `list_portable_parallel_2` are its two shards.
 The coverage guard refuses a partition whose union is not the whole proven-isolated set, so the membership proof cannot be weakened by rebalancing.
@@ -178,7 +178,7 @@ Portable shards, each portable serial shard, and the Herdr lane upload runner-ge
 
 | Lane | Bound | Rationale |
 |---|---|---|
-| portable parallel 1/2 | job `timeout-minutes: 15` | The balanced estimate from the retained per-script CI maxima is ~406 s of script time per shard; observed job setup, measured as job wall clock minus lane wall clock on runs 34454669796, 34464528364, and 34549712118 (job timestamps are minute-rounded), is 11-20 s. The worst healthy wall is therefore about 426 s, and 15 minutes leaves a little over 2x margin over it. The old 10-minute cap sits 1.4x above this new partition's worst healthy wall and 1.01x above the old one's, which is why rebalancing rather than the cap is the fix: on run 34586799603 shard 1 finished all 11 scripts green in 592.7 s and was cancelled at that cap. The parallel lanes run the same proven-isolated set on separate runners, so this is a hang tripwire and must stay a multiple of the healthy wall rather than a tight bound; do not raise it without refreshing the weight table above. |
+| portable parallel 1/2 | job `timeout-minutes: 15` | The balanced estimate from the retained per-script CI maxima is ~406 s of script time per shard; observed job setup, measured as job wall clock minus lane wall clock on runs 34454669796, 34464528364, and 34549712118 (job timestamps are minute-rounded), is 11-20 s. The worst healthy wall is therefore about 426 s, and 15 minutes leaves a little over 2x margin over it. The old 10-minute cap sits 1.4x above this new partition's worst healthy wall and 1.01x above the old one's, which is why rebalancing rather than the cap is the fix: on run 34586799603 shard 1 finished all 11 scripts green in 592.7 s of wall clock and was cancelled at that cap. The parallel lanes run the same proven-isolated set on separate runners, so this is a hang tripwire and must stay a multiple of the healthy wall rather than a tight bound; do not raise it without refreshing the weight table above. |
 | portable serial 1-5 | job `timeout-minutes: 30` | Current runners can take about 20 minutes; the 30-minute cap remains a hang tripwire while leaving margin for job setup and runner-speed spread. |
 | Herdr | family-run step `timeout-minutes: 20`; job `timeout-minutes: 75` backstop | Healthy runs finished around 7 minutes before this lane gained `fm-backend-herdr-focus-flash-e2e`, which measures about 2 minutes against a real lab locally, so the step bound is still the hang tripwire (cleanup and timing artifacts still upload) while the job cap stays a last-resort backstop. Refresh this figure from the lane's uploaded timing artifact. |
 

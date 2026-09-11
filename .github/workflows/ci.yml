@@ -55,8 +55,9 @@ jobs:
     # so 15 minutes leaves a little over 2x margin over the worst healthy wall.
     # Do not read the cap as the defense against imbalance: the old partition
     # held both heavyweights here and reached the previous 10-minute cap while
-    # every script exited 0 (run 34586799603 ran 592.7 s of script time against
-    # it). Change this number only together with a refreshed balance table.
+    # every script exited 0 (run 34586799603 ran 592.7 s of lane wall clock
+    # against it). Change this number only together with a refreshed balance
+    # table.
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6

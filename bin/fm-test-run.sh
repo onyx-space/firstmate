@@ -548,6 +548,19 @@ portable_parallel_weight_for() {
   die "no measured CI duration for proven-isolated script '$want' (refresh it per docs/fm-test-portable-shards.md)"
 }
 
+# Cover the whole proven set with hints before anything is listed or run. Both
+# shard listings reach portable_parallel_weight_for through command
+# substitutions, where its die() only kills that subshell and the caller cannot
+# see it, so a stale table would silently list a shorter shard. Checked here, in
+# the shell the lane's exit status belongs to.
+require_complete_parallel_weight_hints() {
+  local script
+  while IFS= read -r script; do
+    [ -n "$script" ] || continue
+    portable_parallel_weight_for "$script" >/dev/null
+  done < <(list_proven_isolated)
+}
+
 # Longest-processing-time assignment of the proven-isolated set to the two
 # portable parallel shards, printing "<shard>\t<script>" for every script.
 # Two is the shard count the two list_portable_parallel_<k> lanes below expose;
@@ -904,19 +917,13 @@ select_proven_isolated() {
 select_lane() {
   local want=$1 s shard idx found=0
   case "$want" in
-    portable-parallel-1)
+    portable-parallel-1 | portable-parallel-2)
+      require_complete_parallel_weight_hints
       while IFS= read -r s; do
         [ -n "$s" ] || continue
         add_script "$s"
         found=1
-      done < <(list_portable_parallel_1)
-      ;;
-    portable-parallel-2)
-      while IFS= read -r s; do
-        [ -n "$s" ] || continue
-        add_script "$s"
-        found=1
-      done < <(list_portable_parallel_2)
+      done < <(portable_parallel_shard_members "${want#portable-parallel-}")
       ;;
     portable-serial)
       while IFS= read -r s; do
