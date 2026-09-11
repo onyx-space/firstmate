@@ -304,6 +304,65 @@ This change does not address that warning and does not claim to.
 That automated spawn case runs against a fake claude, so it asserts the store entry and the launch command and nothing more; the live arms above are what establish that the entry actually suppresses the dialog.
 The composer-classification record below observes the same gate from the other side, where an untrusted worktree left Claude, Grok, and Muse unverified because the guard reads a first-launch trust dialog as an unreadable composer.
 
+## Pi project trust
+
+Verified 2026-09-11 on Pi 0.85.1 (installed `pi`).
+Pi gates a directory it has never trusted behind an interactive project-trust selector, and a worker parked on it emits no agent event at all, so the pane reads alive while producing nothing.
+Unlike Claude the flag that answers it is a launch flag, and `pi --help` documents it.
+
+```sh
+pi --version
+pi --help | grep -A 1 -- '--approve'
+```
+
+```text
+0.85.1
+  --approve, -a                  Trust project-local files for this run
+```
+
+Suppression was then observed with a control arm and a treatment arm on the same date and version, each launched in a real pty against a fresh directory holding a trust-requiring `.pi/extensions/`.
+`PI_CODING_AGENT_DIR` pointed at a throwaway agent directory, so neither arm could reach the operator's own trust store.
+
+```sh
+probe=/tmp/fm-pi-trust-probe
+rm -rf "$probe"; mkdir -p "$probe/wt/.pi/extensions" "$probe/agent"
+printf 'export default function(){};\n' > "$probe/wt/.pi/extensions/probe.ts"
+python3 - "$probe" <<'EOF'
+import os, pty, select, sys, time, fcntl, termios, struct, signal
+probe = sys.argv[1]
+env = dict(os.environ, PI_CODING_AGENT_DIR=f"{probe}/agent", TERM="xterm-256color")
+env.pop("PI_CODING_AGENT", None)
+for args in ([], ["--approve"]):
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.chdir(f"{probe}/wt")
+        os.execvpe("pi", ["pi", "--offline", *args, "say ok"], env)
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
+    buf = b""
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        if select.select([fd], [], [], 0.3)[0]:
+            try: chunk = os.read(fd, 65536)
+            except OSError: break
+            if not chunk: break
+            buf += chunk
+    os.kill(pid, signal.SIGKILL); os.waitpid(pid, 0); os.close(fd)
+    print(f"args={args} dialog_seen={'Trust project folder' in buf.decode('utf-8', 'replace')}")
+EOF
+```
+
+```text
+args=[] dialog_seen=True
+args=['--approve'] dialog_seen=False
+```
+
+The control arm rendered `Trust project folder?` with the worktree path and stayed parked on it for the whole window.
+The treatment arm never rendered it and reached the composer.
+Neither arm produced a `trust.json` in the throwaway agent directory, which is the point: `--approve` is Pi's per-run grant, so it authorizes project-local resources without writing the operator's `~/.pi/agent/trust.json` and without any store lock, backup, or merge.
+[`bin/fm-spawn.sh`](../../bin/fm-spawn.sh) therefore carries `--approve` on every pi and pi-signed launch whose resolved executable advertises it, probing that executable's `--help` exactly like its `--tui-mode` probe.
+The flag and the gate shipped together in Pi 0.79.0, but a pre-0.79 Pi has neither and rejects `--approve` as an unknown option before its TUI starts, so an older install keeps spawning without it.
+`tests/fm-spawn-dispatch-profile.test.sh` pins the launch line and is what CI reruns; the arms above are what establish that the flag actually suppresses the dialog.
+
 ## Composer classification matrix
 
 The shared composer classifier (`bin/fm-composer-lib.sh`, `fm_composer_classify_screen`) owns every composer shape fleet-wide; each backend contributes only a capture and a capability descriptor.

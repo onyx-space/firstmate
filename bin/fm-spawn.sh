@@ -245,6 +245,7 @@
 #     __BRIEF__    absolute path to data/<task-id>/brief.md
 #     __PIBIN__    quoted concrete Pi-family executable path resolved from PATH
 #     __PITUIMODE__ optional --tui-mode regular when that executable advertises it
+#     __PIAPPROVE__ optional --approve when that executable advertises it
 #     __TURNEND__  absolute path to state/<task-id>.turn-ended (for harnesses whose
 #                  turn-end signal rides the launch command, e.g. codex -c notify=[...])
 #     __PIEXT__    absolute path to state/<task-id>.pi-ext.ts (pi turn-end extension,
@@ -292,6 +293,18 @@
 # and every refusal; a failed registration stops this spawn rather than launching
 # a worker that would wedge on the dialog. A --secondmate launch never runs it,
 # so a claude secondmate home keeps its own one-time trust decision.
+# Pi needs the same gate pre-answered, and needs no store write to do it: every
+# pi and pi-signed launch whose resolved executable advertises --approve carries
+# it, the vendor's own per-run grant. A worker parked on Pi's project-trust
+# selector emits no agent event at all, so the pane reads alive while producing
+# nothing. --approve authorizes project-local resources for that one run in that
+# one worktree and leaves the captain's ~/.pi/agent/trust.json untouched, so
+# there is no store to lock, back up, or merge - strictly narrower authority than
+# a registered path, and no concurrent-write hazard against Pi's own locked
+# writes. The gate and the flag shipped together in 0.79.0, but an older Pi has
+# neither and rejects --approve as an unknown option before its TUI starts, so
+# the launch probes the resolved executable for the flag exactly like the
+# --tui-mode probe below and omits it when it is not advertised.
 # Every claude launch also carries the attribution-off policy in its per-launch
 # --settings JSON, so a spawned worker never writes a Co-Authored-By trailer,
 # Claude-Session link, or generated-with line into a commit or PR body;
@@ -1368,12 +1381,22 @@ resolve_pi_executable() {
 }
 
 # Pi's CLI surface is version-dependent, so probe the resolved executable's help
-# before composing the optional regular-TUI flag. An absent or inconclusive probe
-# omits the flag so older Pi versions can still spawn.
-pi_supports_tui_mode() {
-  local executable=$1 help
+# before composing an optional flag. An absent or inconclusive probe omits the
+# flag so older Pi versions can still spawn.
+pi_help_advertises() {  # <executable> <flag>
+  local executable=$1 flag=$2 help
   help=$("$executable" --help 2>&1) || return 1
-  printf '%s\n' "$help" | grep -Eq -- '(^|[[:space:]])--tui-mode([[:space:]=]|$)'
+  printf '%s\n' "$help" | grep -Eq -- "(^|[[:space:]])${flag}([[:space:]=,]|\$)"
+}
+
+pi_supports_tui_mode() {
+  pi_help_advertises "$1" --tui-mode
+}
+
+# Pi's project-trust gate and its --approve grant shipped together in 0.79.0; a
+# pre-0.79 Pi has neither and dies on the unknown option.
+pi_supports_approve() {
+  pi_help_advertises "$1" --approve
 }
 
 # omp pre-launch model validation. `omp models --json` (omp 18.1.11) prints
@@ -1447,7 +1470,10 @@ launch_template() {
       ;;
     opencode) printf '%s' 'OPENCODE_CONFIG_CONTENT='\''{"permission":{"*":"allow"}}'\'' opencode __MODELFLAG__--prompt "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
     pi|pi-signed)
-      printf '%s' '__PIBIN____PITUIMODE__'
+      # __PIAPPROVE__ pre-answers Pi's project-trust selector when the resolved
+      # executable advertises it, which the header above and the probe own; a
+      # worker parked on that modal dialog emits no agent event at all.
+      printf '%s' '__PIBIN____PITUIMODE____PIAPPROVE__'
       if [ "$kind" = secondmate ]; then
         printf '%s' ' __MODELFLAG____EFFORTFLAG__-e __PITURNEND__ -e __PIWATCH__ "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
       else
@@ -1659,7 +1685,12 @@ case "$HARNESS" in
     if pi_supports_tui_mode "$PI_BIN"; then
       PI_TUI_MODE=' --tui-mode regular'
     fi
+    PI_APPROVE=
+    if pi_supports_approve "$PI_BIN"; then
+      PI_APPROVE=' --approve'
+    fi
     LAUNCH=${LAUNCH//__PITUIMODE__/$PI_TUI_MODE}
+    LAUNCH=${LAUNCH//__PIAPPROVE__/$PI_APPROVE}
     LAUNCH="FM_PI_HARNESS=$HARNESS $LAUNCH"
     ;;
   cursor)
