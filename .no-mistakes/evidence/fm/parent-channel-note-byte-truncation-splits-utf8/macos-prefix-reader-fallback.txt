@@ -1,0 +1,16 @@
+=== target's voice-relay regression case vs PRE-FIX reader:
+test exit=1
+ok - a reply that arrives before the end of the clip is named as an unusable clock
+not ok - one invalid byte in a durable record made the whole status answer fail: Traceback (most recent call last):
+  File "/tmp/fm-mac-prefix/bin/fm_voice_records.py", line 574, in <module>
+    sys.exit(main(sys.argv[1:]))
+             ~~~~^^^^^^^^^^^^^^
+  File "/tmp/fm-mac-prefix/bin/fm_voice_records.py", line 562, in main
+    result = fleet_status(home=args.home, scope=args.scope)
+  File "/tmp/fm-mac-prefix/bin/fm_voice_records.py", line 377, in fleet_status
+    workers = _workers(state)
+  File "/tmp/fm-mac-prefix/bin/fm_voice_records.py", line 350, in _workers
+    for line in handle:
+                ^^^^^^
+  File "<frozen codecs>", line 325, in decode
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 30: invalid start byte

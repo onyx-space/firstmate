@@ -1,0 +1,22 @@
+
+=== h机 GNU coreutils 9.4 — FIXED tree, ambient
+rc=127
+=== h机 GNU coreutils 9.4 — PRE-FIX tree, ambient
+rc=127
+=== h机 GNU coreutils 9.4 — FIXED tree, LC_ALL=C
+--- channel file (1331 bytes, 1 line(s)):
+OK strict utf-8 decode of the whole channel file; one line; note 1198 bytes; head='修好了：a中中中中中中中中中中中中中中中中中中中' tail='中中中中中中'
+rc=0
+=== h机 GNU coreutils 9.4 — PRE-FIX tree, LC_ALL=C
+--- channel file (1333 bytes, 1 line(s)):
+FAIL strict utf-8 decode of the channel file: 'utf-8' codec can't decode bytes in position 1262-1263: invalid continuation byte
+rc=1
+
+=== h机 GNU coreutils 9.4 — FIXED tree, ambient locale (LANG=C.UTF-8)
+--- channel file (1331 bytes, 1 line(s)):
+OK strict utf-8 decode of the whole channel file; one line; note 1198 bytes; head='修好了：a中中中中中中中中中中中中中中中中中中中' tail='中中中中中中'
+rc=0
+=== h机 GNU coreutils 9.4 — PRE-FIX tree, ambient locale (LANG=C.UTF-8)
+--- channel file (1333 bytes, 1 line(s)):
+FAIL strict utf-8 decode of the channel file: 'utf-8' codec can't decode bytes in position 1262-1263: invalid continuation byte
+rc=1

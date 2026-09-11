@@ -1,0 +1,121 @@
+FM_TEST_BEGIN 2026-09-11T02:35:33Z tests/fm-inactive-reconcile.test.sh family=watcher-wake-lock expected_gate_skip=none
+actionable: inactive terminal outcome awaiting captain presentation: child=child state=done pr=https://example.test/owner/repo/pull/1
+ok - main direct terminal presentation has a durable receipt
+ok - secondmate delivers a child's terminal ledger line once, on the next poll, from the ledger alone
+ok - busy child locks do not starve later ledger outcomes
+ok - ledger delivery carries the report pointer, the failed verb, and each new terminal line
+ok - terminal lines arriving during state reads remain ledger-owned
+ok - inactive and ledger paths reconcile one raced completion without hiding later events
+ok - progress after an inactive fallback starts a distinct terminal event
+ok - complete long ledger lines retain distinct receipt identities
+ok - a ledger line still being appended waits for its newline
+ok - the remote route carries a child's ledger line once
+ok - report delivers a child's final line, owes nothing twice, and refuses only an unwritable channel
+ok - report preserves teardown's metadata-before-scan lock order
+actionable: child outcome needs parent report: child=child state=failed (missing or unreadable parent binding .fm-secondmate-parent)
+ok - relative local parent homes fail closed
+ok - invalid secondmate markers block routing and surface the obligation
+ok - remote parent-replies mirror input is durable and idempotent
+ok - reused task ids retain per-incarnation terminal receipts
+ok - legacy metadata rewrites preserve terminal receipt identity
+ok - relaunch cannot replace metadata during terminal snapshot
+actionable: inactive terminal outcome awaiting captain presentation: child=child state=done pr=https://example.test/owner/repo/pull/1
+ok - terminal reconciliation ignores heartbeat backoff state
+actionable: inactive terminal outcome awaiting captain presentation: child=child state=done pr=https://example.test/owner/repo/pull/1
+ok - scan marker replaces a symlink without overwriting its target
+ok - nonterminal and captain-held workers remain outside inactive terminal reporting
+ok - watcher hook wakes for terminal loss and preserves idle secondmate exemption
+ok - the real watcher poll delivers a child's terminal ledger line to the parent channel
+actionable: inactive terminal outcome awaiting captain presentation: child=b state=done pr=https://example.test/owner/repo/pull/1
+ok - stalled state reads are bounded without starving later children
+ok - aggregate scan budget includes durable wake operations
+actionable: inactive terminal outcome needs parent report: child=child state=failed (missing or unreadable parent binding .fm-secondmate-parent)
+ok - notice recovery remains idempotent across queue acknowledgement
+ok - a secondmate home with no parent binding names the missing binding instead of failing quietly
+actionable: inactive terminal outcome awaiting captain presentation: child=child state=done pr=https://example.test/owner/repo/pull/1
+ok - reconciliation makes zero forge or PR API calls
+all inactive reconciliation tests passed
+FM_TEST_END 2026-09-11T02:36:07Z tests/fm-inactive-reconcile.test.sh exit=0 duration_ms=33470 gate_skip=false
+FM_TEST_BEGIN 2026-09-11T02:36:07Z tests/fm-voice-relay.test.sh family=standalone expected_gate_skip=none
+ok - wire format round trips and rejects a desynchronised stream
+ok - the relay refuses a desynchronised uplink header instead of waiting for its payload
+ok - the relay reads whose account to use from this home and refuses to guess
+ok - an unconfigured home can still read how to configure the relay
+ok - the model-backed subcommands refuse by name while note keeps working
+ok - fm-inbox.sh --help prints its whole header, privacy paragraph included
+ok - the relay and the reader agree on the tool names and the handover argument
+ok - credentials are resolved once per relay, refreshed before expiry, off the event loop
+ok - a turn the model refuses is announced and costs one turn, not the relay
+ok - audio that arrives with no turn open is dropped, not turned into a turn
+ok - a failure inside the model reader costs one turn, not every later one
+ok - a reader failure is named to the captain, a clean end and a close are not
+usage: fm-voice-client.py [-h] [--host HOST] [--local] [--relay RELAY]
+                          [--relay-python RELAY_PYTHON]
+                          [--relay-arg RELAY_ARG]
+                          [--listen {push-to-talk,open-mic}] [--runs RUNS]
+                          [--talk-seconds TALK_SECONDS] [--in-file IN_FILE]
+                          [--out-file OUT_FILE] [--input-device INPUT_DEVICE]
+                          [--output-device OUTPUT_DEVICE] [--timeout TIMEOUT]
+                          [--wait-for-reply | --no-wait-for-reply]
+                          [--gap-seconds GAP_SECONDS]
+                          [--audio-idle AUDIO_IDLE] [--verbose]
+fm-voice-client.py: error: say where the relay is: --relay <path to fm-voice-relay.py on the desktop>, or set FM_VOICE_RELAY
+usage: fm-voice-client.py [-h] [--host HOST] [--local] [--relay RELAY]
+                          [--relay-python RELAY_PYTHON]
+                          [--relay-arg RELAY_ARG]
+                          [--listen {push-to-talk,open-mic}] [--runs RUNS]
+                          [--talk-seconds TALK_SECONDS] [--in-file IN_FILE]
+                          [--out-file OUT_FILE] [--input-device INPUT_DEVICE]
+                          [--output-device OUTPUT_DEVICE] [--timeout TIMEOUT]
+                          [--wait-for-reply | --no-wait-for-reply]
+                          [--gap-seconds GAP_SECONDS]
+                          [--audio-idle AUDIO_IDLE] [--verbose]
+fm-voice-client.py: error: --listen open-mic is not built yet: it needs end-of-speech detection to know when a turn ended, which lands with session continuity across turns, so it would stream forever and never end a turn. Use the default --listen push-to-talk.
+client: connection lost: stream ended after 2 of the 5 bytes of a frame header
+client: connection lost: [Errno 104] Connection reset by peer
+client: discarded 15 bytes your login shell printed before the relay started: b'You have mail.\n'
+ok - the laptop client builds the right remote command and survives a chatty login shell
+ok - the client runs from a laptop holding only the two files the guide names
+ok - --listen open-mic refuses at startup, before it opens anything
+ok - the narrow scope answers how much is waiting without saying what it is
+ok - the wide scope names open work and reports state without quoting event lines
+ok - an absent read-scope setting means the narrowest answer, not the widest
+ok - a home widens its own read scope by writing the setting
+ok - finished work and note bodies never reach a spoken answer at any scope
+ok - excluding a note body does not distort the counts
+ok - a denied item becomes a withheld count without hiding that work exists
+ok - the deny list matches regardless of case
+ok - an item denied in more than one list is counted as withheld once
+ok - one deny decision per item covers every list that item could appear in
+ok - the state verb is a closed vocabulary, so free text cannot ride out on it
+ok - the backlog and the state directory always come from the same home
+ok - a finished task's pull request is neither counted nor named
+ok - a deny substring on an open title removes its pull request and says so
+ok - an unknown read scope refuses instead of widening
+ok - the configured read scope is honoured
+ok - handover queues the request for firstmate and wakes it exactly once
+ok - the reader and the queue resolve the state directory the same way
+ok - an empty request is refused rather than queued as a blank note
+ok - a home with no records answers nothing rather than failing
+ok - a spoken turn goes out and comes back: the records answer, firstmate gets the work
+ok - a model session that ends mid-conversation costs one turn, not the relay
+ok - a desynchronised uplink is named to the client before the goodbye, not only to stderr
+ok - the desktop's own check answers from the records and times it from the talk end
+ok - a reply that arrives before the end of the clip is named as an unusable clock
+ok - an invalid byte in a durable record costs one byte, not the whole answer
+all voice relay cases passed
+FM_TEST_END 2026-09-11T02:36:54Z tests/fm-voice-relay.test.sh exit=0 duration_ms=46948 gate_skip=false
+FM_TEST_BEGIN 2026-09-11T02:36:54Z tests/fm-parent-channel.test.sh family=unclassified expected_gate_skip=none
+ok - only a remote mate home's own parent-channel log is recognized
+ok - the watcher's scans skip the parent-channel log and keep scanning a task log
+ok - the classifier's fleet-wide scans skip the parent-channel log and keep scanning a task log
+ok - the drain folds no open decision from the mate's own parent-channel log
+ok - the note fold keeps a bounded one-line note that is valid UTF-8 (84 boundary alignments, ambient locale and LC_ALL=C)
+FM_TEST_END 2026-09-11T02:36:57Z tests/fm-parent-channel.test.sh exit=0 duration_ms=3730 gate_skip=false
+FM_TEST_SUMMARY total=3 failed=0 skipped_gate=0 duration_ms=84425
+FM_TEST_SUMMARY_FAMILY family=standalone count=1 duration_ms=46948 failed=0
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=3730 failed=0
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=1 duration_ms=33470 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-voice-relay.test.sh duration_ms=46948
+FM_TEST_SLOWEST rank=2 script=tests/fm-inactive-reconcile.test.sh duration_ms=33470
+FM_TEST_SLOWEST rank=3 script=tests/fm-parent-channel.test.sh duration_ms=3730

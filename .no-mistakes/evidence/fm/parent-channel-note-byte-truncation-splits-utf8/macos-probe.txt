@@ -1,0 +1,9 @@
+=== macOS 26.6.2 direct probe
+pre-fix: locale=unset total=42 invalid_utf8=0 over_1200_bytes=42 not_one_line=0 note_text_lost=0
+fixed: locale=unset total=42 invalid_utf8=0 over_1200_bytes=0 not_one_line=0 note_text_lost=0
+pre-fix: locale=C total=42 invalid_utf8=30 over_1200_bytes=0 not_one_line=0 note_text_lost=0
+fixed: locale=C total=42 invalid_utf8=0 over_1200_bytes=0 not_one_line=0 note_text_lost=0
+=== raw BSD cut behaviour:
+      14
+       8
+00000000: 4142 4344 45e4 b80a                      ABCDE...

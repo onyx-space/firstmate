@@ -1,0 +1,4 @@
+
+=== h机 Linux, GNU coreutils 9.4, LC_ALL=C (the field failure)
+pre-fix | bytes=1200 | last 6 bytes:  ad e4 b8 ad e4 b8 | strict-utf8: INVALID ('utf-8' codec can't decode bytes in position 1198-1199: unexpected end of data)
+fixed   | bytes=1198 | last 6 bytes:  e4 b8 ad e4 b8 ad | strict-utf8: VALID

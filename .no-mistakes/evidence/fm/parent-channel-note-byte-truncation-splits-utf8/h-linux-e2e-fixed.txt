@@ -1,0 +1,8 @@
+
+=== h机 GNU coreutils 9.4, FIXED tree, ambient locale:
+--- channel file (1333 bytes, 1 line(s)):
+done [key=child-outcome-child-done-89026fe9]: child child done: 修好了：中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中 pr=https://example.test/owner/repo/pull/1 mode=no-mistakes yolo=off
+Traceback (most recent call last):
+  File "<stdin>", line 14, in <module>
+AssertionError: FAIL the folded note is 1268 bytes
+exit=1

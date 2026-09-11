@@ -1,0 +1,8 @@
+PRE-FIX fold:
+  printf '%s' "$1" | LC_ALL=C tr '\t\r\n' '   ' | cut -c1-1200
+--- run target regression test against PRE-FIX fold:
+ok - only a remote mate home's own parent-channel log is recognized
+ok - the watcher's scans skip the parent-channel log and keep scanning a task log
+ok - the classifier's fleet-wide scans skip the parent-channel log and keep scanning a task log
+ok - the drain folds no open decision from the mate's own parent-channel log
+not ok - the fold split a multibyte character at ASCII-prefix 0 in the ambient locale, so the channel line carried invalid UTF-8

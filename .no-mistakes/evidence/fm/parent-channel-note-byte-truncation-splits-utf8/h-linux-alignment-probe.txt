@@ -1,0 +1,7 @@
+
+Authorized users only. All activities may be monitored and reported.
+=== Linux h机 cut (GNU coreutils) 9.4, bash GNU bash, version 5.2.15(1)-release (aarch64-openEuler-linux-gnu)
+pre-fix: locale=unset total=42 invalid_utf8=0 over_1200_bytes=42 not_one_line=0 note_text_lost=0
+fixed: locale=unset total=42 invalid_utf8=0 over_1200_bytes=0 not_one_line=0 note_text_lost=0
+pre-fix: locale=C total=42 invalid_utf8=30 over_1200_bytes=0 not_one_line=0 note_text_lost=0
+fixed: locale=C total=42 invalid_utf8=0 over_1200_bytes=0 not_one_line=0 note_text_lost=0

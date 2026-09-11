@@ -1,0 +1,10 @@
+
+Authorized users only. All activities may be monitored and reported.
+PRE-FIX fold line:   printf '%s' "$1" | LC_ALL=C tr '\t\r\n' '   ' | cut -c1-1200
+--- PRE-FIX tree, same regression test:
+ok - only a remote mate home's own parent-channel log is recognized
+ok - the watcher's scans skip the parent-channel log and keep scanning a task log
+ok - the classifier's fleet-wide scans skip the parent-channel log and keep scanning a task log
+ok - the drain folds no open decision from the mate's own parent-channel log
+not ok - the folded line grew past its byte bound: 1546 bytes at ASCII-prefix 0 in the ambient locale
+exit=1

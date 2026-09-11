@@ -1,0 +1,10 @@
+
+Authorized users only. All activities may be monitored and reported.
+tree md5: 4395659de86126386ee6c3c277830876  bin/fm-parent-channel-lib.sh
+--- FIXED tree, regression test:
+ok - only a remote mate home's own parent-channel log is recognized
+ok - the watcher's scans skip the parent-channel log and keep scanning a task log
+ok - the classifier's fleet-wide scans skip the parent-channel log and keep scanning a task log
+ok - the drain folds no open decision from the mate's own parent-channel log
+ok - the note fold keeps a bounded one-line note that is valid UTF-8 (84 boundary alignments, ambient locale and LC_ALL=C)
+exit=0

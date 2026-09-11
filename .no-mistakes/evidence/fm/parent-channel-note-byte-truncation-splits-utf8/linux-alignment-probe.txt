@@ -1,0 +1,5 @@
+=== Linux d机 GNU coreutils cut (uutils coreutils) 0.8.0
+pre-fix: locale=unset total=42 invalid_utf8=30 over_1200_bytes=0 not_one_line=0 note_text_lost=0
+fixed: locale=unset total=42 invalid_utf8=0 over_1200_bytes=0 not_one_line=0 note_text_lost=0
+pre-fix: locale=C total=42 invalid_utf8=30 over_1200_bytes=0 not_one_line=0 note_text_lost=0
+fixed: locale=C total=42 invalid_utf8=0 over_1200_bytes=0 not_one_line=0 note_text_lost=0
