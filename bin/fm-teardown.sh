@@ -2210,19 +2210,13 @@ EOF
 # and the scout/secondmate carve-out, which is a property of one record rather
 # than of a copy two records name. An unprovable copy refuses.
 teardown_slot_copy_is_landed() {  # <slot>
-  local slot=$1 rc saved_wt=$WT saved_force=$FORCE saved_kind=$KIND
-  WT=$slot
-  FORCE=
-  KIND=ship
-  if validate_worktree_teardown_safety; then
-    rc=0
-  else
-    rc=$?
-  fi
-  WT=$saved_wt
-  FORCE=$saved_force
-  KIND=$saved_kind
-  return "$rc"
+  local slot=$1
+  (
+    WT=$slot
+    FORCE=
+    KIND=ship
+    validate_worktree_teardown_safety
+  )
 }
 
 # True when this record is the uncontested claimant of the live slot the OTHER
