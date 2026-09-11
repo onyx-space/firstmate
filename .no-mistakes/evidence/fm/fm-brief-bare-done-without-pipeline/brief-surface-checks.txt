@@ -1,0 +1,25 @@
+== generated brief paths ==
+/tmp/fm-live2-eOH9dC/home/data/live-direct-PR/brief.md
+/tmp/fm-live2-eOH9dC/home/data/live-local-only/brief.md
+/tmp/fm-live2-eOH9dC/home/data/live-no-mistakes/brief.md
+
+== harness-specific slash form in no-mistakes brief (expect 0) ==
+0
+
+== unverifiable ownership claims in no-mistakes brief (expect none) ==
+(none)
+
+== no-mistakes contract leaking into other modes (expect 0 0) ==
+direct-PR: 0
+local-only: 0
+
+== mode-specific completion signals ==
+When it is implemented and committed, push your branch and open a PR with `gh-axi`, then append `done: PR {url}` to the status file and stop.
+When it is implemented and committed, append `done: ready in branch fm/live-local-only` to the status file and stop.
+The one completion claim is `done: PR {url} checks green`, written with the PR's full `https://` URL once the run reports CI green.
+After the pipeline reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), append `done: PR {url} checks green` and stop. You are finished.
+
+== anti-duplication rules delivered in no-mistakes brief ==
+112:Never start a second validation run while one is already active on this branch.
+113:Treat a firstmate delivery of this task's no-mistakes skill that arrives mid-run as a nudge to reattach and poll, not as a second start.
+114:If a start is refused because a run is already active on this branch, follow the pipeline's own status and help lines instead of reporting the task blocked.

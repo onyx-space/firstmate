@@ -1,0 +1,9 @@
+pinned claim only (brief line 246/279)
+  line: done: PR https://github.com/o/r/pull/9 checks green
+  -> state: done · source: status-log · PR https://github.com/o/r/pull/9 checks green · run still monitoring PR
+pinned claim + head + CI appended (brief line 233 shape)
+  line: done: PR https://github.com/o/r/pull/9 checks green head deadbeef CI green
+  -> state: done · source: status-log · PR https://github.com/o/r/pull/9 checks green head deadbeef CI green · run still monitoring PR
+commit-only claim (the failure this change targets)
+  line: done: fix committed on branch fm/feat-ci, ready for the run
+  -> state: working · source: run-step · validating (running)
