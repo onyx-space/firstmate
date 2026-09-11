@@ -413,3 +413,27 @@ fm_backend_tmux_agent_alive() {  # <target>
     *) printf 'unknown' ;;
   esac
 }
+
+# fm_backend_tmux_endpoint_root_pid: the pane-leader pid of one recorded
+# target, or empty when it cannot be proven. Nothing is printed unless the
+# exact recorded window appears in a successful session inventory first,
+# because tmux answers an absent target from the client's active window and
+# would otherwise name some other pane's leader. Callers use this to decide
+# which processes a slot return would actually kill.
+fm_backend_tmux_endpoint_root_pid() {  # <target>
+  local target=$1 session window windows leader
+  case "$target" in
+    ''|*:*:*|*:) return 1 ;;
+    *:*) ;;
+    *) return 1 ;;
+  esac
+  session=${target%%:*}
+  window=${target#*:}
+  [ -n "$session" ] || return 1
+  windows=$(LC_ALL=C tmux list-windows -t "$session" -F '#{window_name}' 2>/dev/null) || return 1
+  printf '%s\n' "$windows" | grep -Fqx "$window" || return 1
+  leader=$(tmux display-message -p -t "$target" '#{pane_pid}' 2>/dev/null) || return 1
+  leader=$(printf '%s' "$leader" | tr -d '[:space:]')
+  case "$leader" in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s\n' "$leader"
+}

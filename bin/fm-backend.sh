@@ -912,6 +912,23 @@ fm_backend_agent_alive() {  # <backend> <target>
   esac
 }
 
+# fm_backend_endpoint_root_pid: the pid of the process that heads <target>'s
+# pane - the pane leader on tmux, the pane shell on Herdr - or empty when the
+# backend cannot prove it. It names the ancestor every process the recorded
+# endpoint actually owns descends from, so a caller can tell an endpoint's own
+# processes apart from anything else still living in the same directory. Only
+# the backends with a recovery-grade endpoint probe implement it; every other
+# backend proves nothing and prints nothing.
+fm_backend_endpoint_root_pid() {  # <backend> <target>
+  local backend=$1 target=$2
+  fm_backend_source "$backend" || return 1
+  case "$backend" in
+    tmux) fm_backend_tmux_endpoint_root_pid "$target" ;;
+    herdr) fm_backend_herdr_endpoint_root_pid "$target" ;;
+    *) return 1 ;;
+  esac
+}
+
 # --- native event push (backend-extensible) ---------------------------------
 #
 # The watcher's event-wait splice (bin/fm-watch.sh) is backend-agnostic: it asks

@@ -82,16 +82,21 @@
 # collision itself, whichever record is stale. The guard asks which record
 # genuinely owns the live slot, and exactly one reading resolves it: the
 # co-claimant's recorded endpoint is provably gone while this record's recorded
-# endpoint is provably alive, both read through the shared recovery-grade
-# classifier (bin/fm-backend.sh's fm_backend_agent_state). A gone co-claimant
-# then has no live work to protect, and an alive owner proves this record is the
-# surviving claimant, so returning the slot no longer deadlocks two records that
-# can both only be collected by it. Every other combination keeps the refusal: a
-# live, ambiguous, unreadable, unverified, or endpoint-less co-claimant, an
-# unprovable own endpoint, and two gone records, where nothing proves which
-# claim is current. A secondmate co-claimant always keeps it, on either field,
-# because that path may hold its durable home rather than a disposable pool
-# slot. The recorded endpoint's exact
+# endpoint is provably alive (both read through the shared recovery-grade
+# classifier, bin/fm-backend.sh's fm_backend_agent_state), the shared copy holds
+# no unlanded work, and nothing is left running in the slot that this record's
+# own endpoint does not own (bin/fm-backend.sh's fm_backend_endpoint_root_pid
+# names the ancestor those processes descend from). Endpoint liveness alone is
+# never enough, because the return below kills every process rooted in the slot
+# and hard-resets the copy; a gone endpoint says nothing about either. The alive
+# owner plus the other three proofs is what makes returning the slot safe, and
+# it resolves a deadlock in which two records each waited for the other. Every
+# other combination keeps the refusal: a live, ambiguous, unreadable,
+# unverified, or endpoint-less co-claimant; an unprovable own endpoint; an
+# unprovable process or copy proof; and two gone records, where nothing proves
+# which claim is current. A secondmate co-claimant always keeps it, on either
+# field, because that path may hold its durable home rather than a disposable
+# pool slot. The recorded endpoint's exact
 # task identity and the record's spawn incarnation are validated separately
 # before cleanup. Its current working directory is only incidental process
 # state: the same worker remains the owner after changing directory, so cwd can
@@ -2160,20 +2165,89 @@ teardown_record_agent_state() {  # <meta>
   fm_backend_agent_state "$backend" "$target" 2>/dev/null
 }
 
+# True when <pid> is <root> itself or a live descendant of it. An orphan
+# reparented away from the endpoint's pane no longer descends from it, which is
+# exactly the leak this proves against.
+teardown_pid_is_owned_by() {  # <pid> <root>
+  local pid=$1 root=$2 parent hops=0
+  [ "$pid" = "$root" ] && return 0
+  while [ "$hops" -lt 64 ]; do
+    parent=$(ps -o ppid= -p "$pid" 2>/dev/null) || return 1
+    parent=$(printf '%s' "$parent" | tr -d '[:space:]')
+    case "$parent" in ''|*[!0-9]*) return 1 ;; esac
+    [ "$parent" = "$root" ] && return 0
+    [ "$parent" -le 1 ] && return 1
+    pid=$parent
+    hops=$((hops + 1))
+  done
+  return 1
+}
+
+# The process half of the live-owner proof: every process still rooted in the
+# slot must be this record's own recorded endpoint process or a live descendant
+# of it. Anything else - a detached orphan of the co-claimant, or of any earlier
+# occupant - would be killed by the return below, so it refuses instead. A
+# backend that cannot name the pane leader, or an unreadable process scan,
+# proves nothing and refuses.
+teardown_slot_processes_are_owned() {  # <backend> <target> <slot>
+  local backend=$1 target=$2 slot=$3 root pids pid
+  root=$(fm_backend_endpoint_root_pid "$backend" "$target") || return 1
+  case "$root" in ''|*[!0-9]*) return 1 ;; esac
+  pids=$(pids_with_cwd_under "$slot") || return 1
+  [ -n "$pids" ] || return 0
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    teardown_pid_is_owned_by "$pid" "$root" || return 1
+  done <<EOF
+$pids
+EOF
+}
+
+# The copy half of the live-owner proof: the SHARED copy must hold no unlanded
+# work before this record may return it. This re-runs the ordinary landed-work
+# proof on that copy while deliberately bypassing both of the normal path's
+# openings - --force, which only ever authorized discarding THIS record's work,
+# and the scout/secondmate carve-out, which is a property of one record rather
+# than of a copy two records name. An unprovable copy refuses.
+teardown_slot_copy_is_landed() {  # <slot>
+  local slot=$1 rc saved_wt=$WT saved_force=$FORCE saved_kind=$KIND
+  WT=$slot
+  FORCE=
+  KIND=ship
+  if validate_worktree_teardown_safety; then
+    rc=0
+  else
+    rc=$?
+  fi
+  WT=$saved_wt
+  FORCE=$saved_force
+  KIND=$saved_kind
+  return "$rc"
+}
+
 # True when this record is the uncontested claimant of the live slot the OTHER
-# record also names: the co-claimant's endpoint reads dead or missing - the same
-# two verdicts that license a legacy-record teardown, and the only ones that
-# show no agent bound - while this record's own endpoint reads alive. A
-# secondmate co-claimant is never one: its durable home, not a pool slot, may be
-# what that path holds.
-teardown_slot_claim_is_uncontested() {  # <record-meta> <other-meta>
-  local record_meta=$1 other=$2
+# record also names. Every part must hold: the co-claimant's endpoint reads
+# dead or missing - the same two verdicts that license a legacy-record teardown,
+# and the only ones that show no agent bound; this record's own endpoint reads
+# alive; the shared copy holds no unlanded work; and nothing is left running in
+# the slot that this record's own endpoint does not own. Anything unprovable
+# refuses, because the return below both kills what is rooted in the slot and
+# resets the copy. A secondmate co-claimant is never one: its durable home, not
+# a pool slot, may be what that path holds.
+teardown_slot_claim_is_uncontested() {  # <record-meta> <other-meta> <slot>
+  local record_meta=$1 other=$2 slot=$3 backend target
   [ "$(fm_meta_get "$other" kind)" != secondmate ] || return 1
   case "$(teardown_record_agent_state "$other")" in
     dead|missing) ;;
     *) return 1 ;;
   esac
-  [ "$(teardown_record_agent_state "$record_meta")" = alive ]
+  backend=$(fm_backend_of_meta "$record_meta")
+  target=$(fm_backend_target_of_meta "$record_meta")
+  [ -n "$target" ] || return 1
+  fm_backend_is_known "$backend" || return 1
+  [ "$(teardown_record_agent_state "$record_meta")" = alive ] || return 1
+  teardown_slot_copy_is_landed "$slot" || return 1
+  teardown_slot_processes_are_owned "$backend" "$target" "$slot"
 }
 
 require_exclusive_worktree_slot_record() {
@@ -2191,12 +2265,13 @@ require_exclusive_worktree_slot_record() {
         [ -n "$other_path" ] || continue
         other_slot=$(canonical_existing_dir "$other_path") || continue
         [ "$other_slot" = "$slot" ] || continue
-        if [ "$field" = worktree ] && teardown_slot_claim_is_uncontested "$record_meta" "$other"; then
-          echo "teardown: task $other_id also records $slot but its recorded endpoint reads no live agent, while task $record_id's endpoint is live, so $record_id is the surviving claimant of that pool slot; continuing" >&2
+        if [ "$field" = worktree ] && teardown_slot_claim_is_uncontested "$record_meta" "$other" "$slot"; then
+          echo "teardown: task $other_id also records $slot, but its endpoint reads no live agent, the shared copy holds no unlanded work, and nothing rooted in the slot belongs to anyone else; task $record_id is the surviving claimant, so cleanup continues" >&2
           continue
         fi
         echo "REFUSED: task $record_id's recorded worktree $slot is also task $other_id's recorded $field." >&2
         echo "Returning that pool slot would kill $other_id's processes and reset its copy, so nothing was changed - not even with --force." >&2
+        echo "One record can release it: the one whose recorded endpoint is still alive, once the shared copy holds no unlanded work and nothing rooted in the slot belongs to anyone else. Tear down the record whose endpoint is still live first, then re-run this one." >&2
         echo "Reconcile whichever record is wrong (bin/fm-crew-state.sh $record_id; bin/fm-crew-state.sh $other_id), then re-run teardown." >&2
         return 1
       done

@@ -2135,6 +2135,24 @@ fm_backend_herdr_agent_alive() {  # <target>
   esac
 }
 
+# fm_backend_herdr_endpoint_root_pid: the pane shell pid of one recorded
+# target, or empty when it cannot be proven. pane process-info must agree on
+# the exact pane id, so a stale or reused pane id never names another pane's
+# shell. Callers use this to decide which processes a slot return would
+# actually kill.
+fm_backend_herdr_endpoint_root_pid() {  # <target>
+  local target=$1 info shell_pid
+  fm_backend_herdr_parse_target "$target" || return 1
+  info=$(fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" pane process-info --pane "$FM_BACKEND_HERDR_PANE" 2>/dev/null) || return 1
+  printf '%s' "$info" | jq -e --arg pane "$FM_BACKEND_HERDR_PANE" '
+    .result.type == "pane_process_info"
+    and .result.process_info.pane_id == $pane
+  ' >/dev/null 2>&1 || return 1
+  shell_pid=$(printf '%s' "$info" | jq -er \
+    '.result.process_info.shell_pid | select(type == "number" and . > 1) | floor' 2>/dev/null) || return 1
+  printf '%s\n' "$shell_pid"
+}
+
 # fm_backend_herdr_create_task: create the task's tab (one pane) in
 # <container> ("session:workspace_id"). Herdr does NOT enforce label
 # uniqueness itself (verified: two tabs can share a label), so the duplicate
