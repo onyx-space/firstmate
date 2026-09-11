@@ -364,8 +364,10 @@ STUB
     else
       assert_grep "# PR description" "$payload" \
         "$mode: promoted worker did not receive the PR description discipline"
+      # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
       assert_grep 'read the `pr-description` skill (`~/.agents/skills/pr-description/SKILL.md`)' "$payload" \
         "$mode: promoted worker was not pointed at the single-owner pr-description skill"
+      # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
       assert_grep 'Do not use `ce-translate` for a PR description' "$payload" \
         "$mode: promoted worker was not told ce-translate is not for PR descriptions"
     fi

@@ -900,10 +900,12 @@ test_pr_description_discipline_section() {
       || fail "$mode: scaffold failed"
     brief="$home/data/$id/brief.md"
     assert_grep "# PR description" "$brief" "$mode brief is missing the PR description section"
+    # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
     assert_grep 'read the `pr-description` skill (`~/.agents/skills/pr-description/SKILL.md`)' "$brief" \
       "$mode brief does not point at the single-owner pr-description skill"
     assert_grep "Before you write or edit a pull request description" "$brief" \
       "$mode brief does not scope the skill pointer to writing or editing a PR description"
+    # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
     assert_grep 'Do not use `ce-translate` for a PR description' "$brief" \
       "$mode brief does not prohibit routing PR text through ce-translate"
     assert_no_grep '<details><summary>English</summary>' "$brief" \
