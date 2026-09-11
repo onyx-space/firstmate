@@ -1,0 +1,16 @@
+root=/private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fmnm-live-herdr.z4DOk0 session=fm-lab-nmlive-57408-25012
+slot=/private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fmnm-live-herdr.z4DOk0/root/.treehouse/proj-305477/1/proj
+workspace=w1 pane=w1:p1
+PASS  H1: fm_backend_endpoint_root_pid (herdr) names the real pane shell pid 57819
+PASS  H1: an absent pane proves no endpoint root (empty)
+PASS  H1: the live pane reads alive through the recovery classifier
+root_shell_cwd_pids=57819 
+teardown rc=0
+PASS  H2: teardown of the live claimant released the shared Herdr slot (rc=0)
+PASS  H2: the Herdr release was taken by the live-owner proof
+PASS  H2: the live record was collected
+PASS  H2: the gone record was left for reconciliation
+PASS  H2: no process is left rooted in the returned slot
+PASS  H2: real treehouse returned the slot (no longer leased)
+PASS  H2: the recorded Herdr pane was closed
+live herdr drive: 10 passed, 0 failed

@@ -1,0 +1,29 @@
+root=/private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fmnm-live-tmux.e5RN1T
+PASS  C1: teardown of the live claimant released the shared slot (rc=0)
+PASS  C1: the release was taken by the live-owner proof
+PASS  C1: the live record was collected
+PASS  C1: the gone record was left for reconciliation
+PASS  C1: the endpoint pane was reaped
+PASS  C1: no process is left rooted in the returned slot
+PASS  C1: real treehouse returned the slot (no longer leased)
+PASS  C2: teardown refused while the co-claimant's pane is live
+PASS  C2: the refusal names the release order (tear down live first)
+PASS  C2: both records survived
+PASS  C2: the live pane survived
+PASS  C2: the slot is still leased
+PASS  C2: no mutating command ran
+PASS  C3: teardown refused with an unowned process rooted in the slot
+PASS  C3: the refusal explains which process it could not account for
+PASS  C3: the refusal names the ownership proof
+PASS  C3: the release order is not offered on this reading
+PASS  C3: the slot is still leased
+C3 orphan root scan (pid ppid): 54160 1
+54162 54160
+PASS  C4: teardown refused with unlanded work in the shared copy
+PASS  C4: the refusal is the shared-copy proof
+PASS  C4: the unlanded copy survived
+PASS  C4: the slot is still leased
+PASS  C5: teardown refused while both claimants are live
+PASS  C5: no release order offered (neither record is the live one this pick can use)
+PASS  C5: the slot is still leased
+live tmux drive: 25 passed, 0 failed

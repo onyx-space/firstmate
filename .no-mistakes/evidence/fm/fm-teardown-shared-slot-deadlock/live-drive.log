@@ -1,0 +1,69 @@
+
+=== S1 release+collect (co-claimant gone): kind=ship, real treehouse return
+      missing case: slot=/Users/onyx/.treehouse/project-597fcc/1/project pane-leader=37677
+      missing case: product reads own=alive other=missing
+evidence: /Users/onyx/.no-mistakes/evidence/01M280VC7RN42VXZ540X1NMFE7/transcripts/S1-missing.stderr
+      missing case: guard released the slot (release message present)
+PASS  co-claimant reads missing: record collected (exit 0), slot returned to the real pool, co-claimant record untouched
+      dead case: slot=/Users/onyx/.treehouse/project-b85e16/1/project pane-leader=41113
+      dead case: product reads own=alive other=dead
+evidence: /Users/onyx/.no-mistakes/evidence/01M280VC7RN42VXZ540X1NMFE7/transcripts/S1-dead.stderr
+      dead case: guard released the slot (release message present)
+PASS  co-claimant reads dead: record collected (exit 0), slot returned to the real pool, co-claimant record untouched
+
+=== S2 live co-claimant refuses (plain and --force)
+evidence: /Users/onyx/.no-mistakes/evidence/01M280VC7RN42VXZ540X1NMFE7/transcripts/S2-plain.stderr
+PASS  live co-claimant (plain): refused, nothing mutated, no release order offered (both endpoints live)
+evidence: /Users/onyx/.no-mistakes/evidence/01M280VC7RN42VXZ540X1NMFE7/transcripts/S2---force.stderr
+PASS  live co-claimant (--force): refused, nothing mutated, no release order offered (both endpoints live)
+
+=== S3 gone record over a live co-claimant: refusal names the sanctioned order
+evidence: /Users/onyx/.no-mistakes/evidence/01M280VC7RN42VXZ540X1NMFE7/transcripts/S3-release-order.stderr
+PASS  gone record: refused and told the operator to tear down the live co-claimant first
+evidence: /Users/onyx/.no-mistakes/evidence/01M280VC7RN42VXZ540X1NMFE7/transcripts/S3-follow-the-order.stderr
+PASS  following the named order collects the live record and returns the slot
+
+=== S3b both records gone: still contested, no order invented
+evidence: /Users/onyx/.no-mistakes/evidence/01M280VC7RN42VXZ540X1NMFE7/transcripts/S3b-two-gone.stderr
+PASS  both gone: refused, nothing mutated, no release order claimed
+
+=== S4 leaked process rooted in the slot blocks the release
+      orphan pid rooted in the slot with ppid 1: 53313
+evidence: /Users/onyx/.no-mistakes/evidence/01M280VC7RN42VXZ540X1NMFE7/transcripts/S4-leaked-process.stderr
+PASS  orphan rooted in the slot: release refused, diagnostic names the unowned pid, slot untouched
+
+=== S4b unlanded work in the shared copy blocks the release
+evidence: /Users/onyx/.no-mistakes/evidence/01M280VC7RN42VXZ540X1NMFE7/transcripts/S4b-plain.stderr
+PASS  unlanded copy (plain): release refused, copy and records untouched
+evidence: /Users/onyx/.no-mistakes/evidence/01M280VC7RN42VXZ540X1NMFE7/transcripts/S4b---force.stderr
+PASS  unlanded copy (--force): release refused, copy and records untouched
+
+=== S4c secondmate co-claimant keeps the refusal
+evidence: /Users/onyx/.no-mistakes/evidence/01M280VC7RN42VXZ540X1NMFE7/transcripts/S4c-secondmate.stderr
+PASS  secondmate co-claimant: refused even with --force, nothing mutated
+
+=== S5 symlinked fm home: release works, self-collision does not
+      FM_HOME spelling=/tmp/fm-live-teardown/aliased-home/home -> /private/tmp/fm-live-teardown/aliased-home/real-home
+evidence: /Users/onyx/.no-mistakes/evidence/01M280VC7RN42VXZ540X1NMFE7/transcripts/S5-release.stderr
+PASS  aliased home, co-claimant gone: released (exit 0) with no self-collision
+evidence: /Users/onyx/.no-mistakes/evidence/01M280VC7RN42VXZ540X1NMFE7/transcripts/S5-contested.stderr
+PASS  aliased home, live co-claimant: refused even with --force
+
+=== S6 fm_backend_endpoint_root_pid against the real backends
+PASS  tmux: endpoint root pid 73492 matches the real pane leader and is the ancestor of the slot-rooted processes
+      absent window -> '[rc=1]'
+PASS  tmux: an absent window names no pane leader (empty, rc=1)
+      herdr default:w3M:p2 -> '53633[rc=0]'
+PASS  herdr: endpoint root pid 53633 returned for a live pane (real herdr server)
+
+=== S6b reported reproduction slot: herdr root pid is its processes' ancestor
+      slot=/Users/onyx/.treehouse/firstmate-9b33b6/4/firstmate target=default:w3M:p2 root=53633 pids=53966 56649 56912 56925 
+PASS  every pid rooted in the reported slot 53966 56649 56912 56925  descends from the herdr root 53633
+
+=== S7 aliased home: pre-fix build vs branch tip
+PASS  pre-fix build refused the aliased home against its own record (self-collision reproduced live)
+evidence: /Users/onyx/.no-mistakes/evidence/01M280VC7RN42VXZ540X1NMFE7/transcripts/S7-branch-tip.stderr
+PASS  branch tip released the same aliased home (exit 0) and collected the record
+
+=== RESULT
+all live scenarios passed

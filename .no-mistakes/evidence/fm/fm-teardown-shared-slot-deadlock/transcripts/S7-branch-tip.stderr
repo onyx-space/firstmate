@@ -1,0 +1,4 @@
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+teardown: task departed-task also records /Users/onyx/.treehouse/project-debc0a/1/project, but its endpoint reads no live agent, the shared copy holds no unlanded work, and nothing rooted in the slot belongs to anyone else; task surviving-task is the surviving claimant, so cleanup continues
+teardown: reaping leaked worktree process(es) for surviving-task: 78346
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.

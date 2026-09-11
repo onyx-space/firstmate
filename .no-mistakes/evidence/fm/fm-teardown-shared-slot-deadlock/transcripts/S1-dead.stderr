@@ -1,0 +1,10 @@
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e /Users/onyx/.no-mistakes/worktrees/9573b29b9316/01M280VC7RN42VXZ540X1NMFE7/.pi/extensions/fm-primary-turnend-guard.ts -e /Users/onyx/.no-mistakes/worktrees/9573b29b9316/01M280VC7RN42VXZ540X1NMFE7/.pi/extensions/fm-primary-pi-watch.ts if the extensions are not loaded.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+teardown: task departed-task also records /Users/onyx/.treehouse/project-b85e16/1/project, but its endpoint reads no live agent, the shared copy holds no unlanded work, and nothing rooted in the slot belongs to anyone else; task surviving-task is the surviving claimant, so cleanup continues
+teardown: reaping leaked worktree process(es) for surviving-task: 41113
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.

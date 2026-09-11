@@ -1,0 +1,3 @@
+teardown: task departed also records /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fmnm-live-herdr.z4DOk0/root/.treehouse/proj-305477/1/proj, but its endpoint reads no live agent, the shared copy holds no unlanded work, and nothing rooted in the slot belongs to anyone else; task survivor is the surviving claimant, so cleanup continues
+teardown: reaping leaked worktree process(es) for survivor: 57819
+teardown: force-killing leaked worktree process(es) for survivor: 57819

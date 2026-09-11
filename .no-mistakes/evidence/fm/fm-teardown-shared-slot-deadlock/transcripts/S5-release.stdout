@@ -1,0 +1,7 @@
+A new version of treehouse is available: v2.1.1 → v2.3.0
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+/tmp/fm-live-teardown/aliased-home/project: synced 02c23cb..afed61f
+teardown surviving-task complete (window main:fm-surviving-task, worktree /Users/onyx/.treehouse/project-7787d6/1/project)
+Backlog: surviving-task just finished (this home keeps no markdown backlog at /private/tmp/fm-live-teardown/aliased-home/real-home/data/backlog.md). Update /private/tmp/fm-live-teardown/aliased-home/real-home/data/backlog.md - move surviving-task to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
