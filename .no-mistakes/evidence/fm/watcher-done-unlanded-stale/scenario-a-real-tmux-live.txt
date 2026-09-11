@@ -1,0 +1,58 @@
+pane: test:fm-held-merge
+status: done: PR https://example.invalid/pull/1 checks green
+cycle 1 exit reason: stale: test:fm-held-merge
+  PASS unheld delivery first sight alarms exactly once (got 1)
+throttle recorded: yes
+  PASS watcher supervised through 4 delivered-pane hash changes
+  PASS watcher still alive (no storm cycle)
+  PASS delivered churn adds no stale wake (got 0)
+  PASS idle poll counter saturated at 1
+  PASS idle poll counter still 2 after 15 more polls
+triage log:
+    [2026-09-11T12:16:40+0800] absorbed stale (delivered status declaration already surfaced for this window): test:fm-held-merge
+cycle 3 exit reason: stale: test:fm-held-merge
+stale: test:fm-held-merge
+  PASS an elapsed cadence re-surfaces the delivery exactly once (got 1)
+== real tmux pane the watcher supervised:
+    onyx@OnyxdeMac-mini nm-live % echo pane-ready
+    pane-ready
+    onyx@OnyxdeMac-mini nm-live % echo idle-tick-1
+    idle-tick-1
+    onyx@OnyxdeMac-mini nm-live % echo idle-tick-2
+    idle-tick-2
+    onyx@OnyxdeMac-mini nm-live % echo idle-tick-3
+    idle-tick-3
+    onyx@OnyxdeMac-mini nm-live % echo idle-tick-4
+    idle-tick-4
+    onyx@OnyxdeMac-mini nm-live % echo after-the-cadence
+    after-the-cadence
+    onyx@OnyxdeMac-mini nm-live %
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+
+== RESULT-A: failed=0

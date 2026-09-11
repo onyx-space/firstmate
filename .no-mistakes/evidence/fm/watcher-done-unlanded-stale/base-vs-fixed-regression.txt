@@ -1,0 +1,16 @@
+== BASE f6766ddc bin/fm-watch.sh; the change's own new hostile test drives it:
+$ bash tests/.nm-base-run.sh   # unheld-delivery bound + hostile terminal lines
+not ok - the watcher exited during an unheld delivery's pane churn instead of supervising through it
+
+$ bash tests/.nm-base-run2.sh  # idle poll counter
+not ok - the idle counter grew past the stability floor: 10
+
+== FIXED 2fcb7f8; the same tests:
+$ bash tests/fm-watch-triage.test.sh (targeted subset)
+ok - work under an open captain call surfaces once, absorbs pane churn, then re-surfaces when the window elapses
+ok - an unheld delivery is bounded like a hold while its own first sight and a replacement delivery still alarm; blocker, failure, and worker lines keep alarming on every new hash
+ok - the pane-stability counter saturates instead of growing without bound
+ok - a released-then-re-held task is a distinct captain call whose first sight still alarms
+ok - a stale pane sitting on a terminal status is surfaced (queue + exit)
+ok - a stale terminal-looking status is overridden and absorbed while a run is actively working, then wedge-escalated
+ok - a not-provably-working non-terminal stale is surfaced immediately (never left to wait out the timer)

@@ -1,0 +1,23 @@
+== Pi / OpenCode adapters: continuity retry never stops on the ordinary close path,
+   reports exhaustion once, and the restoration-exhaustion stop is preserved
+$ bash tests/fm-pi-watch-extension.test.sh (targeted subset)
+ok - Pi established clean closes keep retrying slowly after the fast bound and report exhaustion once
+ok - OpenCode established clean closes keep retrying slowly after the fast bound and report exhaustion once
+ok - Pi clean empty close triggers a bounded continuity retry
+ok - OpenCode clean empty close triggers a bounded continuity retry
+ok - Pi unretired successor falls back without an overlapping retry
+ok - Pi hung successor falls back to one typed actionable wake
+ok - OpenCode unretired successor falls back without an overlapping retry
+ok - OpenCode hung successor falls back to one typed actionable wake
+ok - Pi late unretired closes resume classified supervision
+ok - OpenCode late unretired closes resume classified supervision
+ok - Pi retries a verified successor that failed during wake delivery once that delivery settles
+
+== omp adapter
+$ bash tests/fm-omp-harness.test.sh (targeted subset)
+ok - .omp watch extension: a clean empty close keeps retrying slowly after the fast bound and reports exhaustion once
+ok - .omp watch extension: fm_watch_arm_omp arms once, repeats as a no-op, and delivers an actionable close as one follow-up
+
+== arm chain ledger still links a verified successor (intent: successor must not be empty)
+$ bash tests/fm-watcher-lock.test.sh (targeted subset)
+ok - cycle-exit ledger links a verified successor and remains size-capped

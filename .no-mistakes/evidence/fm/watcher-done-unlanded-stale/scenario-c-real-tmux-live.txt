@@ -1,0 +1,9 @@
+hold recorded by bin/fm-captain-hold.sh: 1 backlog reference(s)
+  PASS a captain-held delivery surfaces on its first sight (got 1)
+  PASS the hold recorded a re-surface cadence
+  PASS captain-held pane churn adds no stale wake (got 0)
+triage log:
+    [2026-09-11T12:18:11+0800] absorbed stale (open captain call already surfaced for this status): test:fm-held-merge
+  PASS the absorb cited the open captain call
+
+== RESULT-C: failed=0

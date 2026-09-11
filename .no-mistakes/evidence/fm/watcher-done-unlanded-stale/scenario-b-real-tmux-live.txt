@@ -1,0 +1,14 @@
+-- blocked line: blocked: cannot reach the release host
+  PASS blocked line surfaces on its first new hash (got 1)
+  PASS blocked line still surfaces on a later new pane hash (got 1)
+-- failed line: failed: the build broke
+  PASS failed line surfaces on its first new hash (got 1)
+  PASS failed line still surfaces on a later new pane hash (got 1)
+-- working line: working: still tidying the branch
+  PASS working line surfaces on its first new hash (got 1)
+  PASS working line still surfaces on a later new pane hash (got 1)
+-- replacement delivery on the same unheld task
+  PASS first delivery surfaces (got 1)
+  PASS a replacement delivery still surfaces on a new hash (got 1)
+
+== RESULT-B: failed=0
