@@ -133,8 +133,10 @@ reconcile_now() {
   esac
 }
 
+# One bounded channel-safe line. bin/fm-parent-channel-lib.sh owns the fold,
+# including its UTF-8 boundary rule, so there is one implementation of it.
 clean_field() {
-  printf '%s' "$1" | LC_ALL=C tr '\t\r\n' '   ' | cut -c1-1200
+  fm_parent_channel_clean_note "$1"
 }
 
 valid_id() {

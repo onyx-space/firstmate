@@ -177,8 +177,56 @@ fm_parent_channel_is_own_log() {  # <state> <path>
 
 # Fold <text> onto one bounded line, so a note copied from a child ledger or a
 # hold reason cannot break the channel's line framing.
+#
+# The bound is a BYTE bound - the channel's line framing, its at-most-once
+# append, and the remote reader's position-plus-prefix cursor all reason in bytes
+# - and the cut must land on a UTF-8 character boundary. The old fold ended in
+# `cut -c1-1200` with `LC_ALL=C` scoped to the `tr` only, so `cut` inherited the
+# caller's ambient locale, and `cut -c` counts bytes in a C/POSIX locale and
+# characters in a UTF-8 one (measured on GNU coreutils 9.4 and BSD alike).
+# Where it counted bytes it cut at whatever byte came 1200th, so a multibyte
+# character straddling the bound was split and the channel carried invalid
+# UTF-8, which makes a consumer that strictly decodes the file fail on the
+# whole record rather than on the note.
+# That is why the failure looked platform-shaped: non-interactive Linux contexts
+# (ssh, cron, CI) usually run a C/POSIX locale while macOS defaults to a UTF-8
+# one. The boundary rule here is explicit and locale-independent, not delegated
+# to `cut`. It bounds the note; it does not repair invalid bytes the caller
+# already had.
 fm_parent_channel_clean_note() {  # <text>
-  printf '%s' "$1" | LC_ALL=C tr '\t\r\n' '   ' | cut -c1-1200
+  # The local LC_ALL=C is deliberate: it is what makes ${#text} and ${text:0:1200}
+  # count and slice BYTES in every bash, whatever locale the caller runs in. The
+  # common at-or-under-bound path is then process-free; only a note over the
+  # bound forks, piping through tail and od to inspect the cut.
+  local LC_ALL=C text=$1
+  local lead need have i
+  # A scoped name, not the obvious `tail`: this array's type is visible to
+  # ShellCheck wherever this library is sourced, and a scalar caller variable
+  # sharing the name would then be flagged as an array misuse.
+  local -a note_bytes
+  text=${text//$'\t'/ }
+  text=${text//$'\r'/ }
+  text=${text//$'\n'/ }
+  if [ "${#text}" -gt 1200 ]; then
+    text=${text:0:1200}
+    # The last four bytes cover the longest UTF-8 sequence, so scanning back
+    # from the end finds the leading byte of a character the bound split.
+    read -r -a note_bytes <<<"$(printf '%s' "$text" | tail -c 4 | od -An -v -tu1)"
+    i=$((${#note_bytes[@]} - 1))
+    while [ "$i" -gt 0 ] && [ $((note_bytes[i] & 192)) -eq 128 ]; do i=$((i - 1)); done
+    lead=${note_bytes[i]}
+    # How many bytes that character needs, by its leading byte.
+    need=1
+    [ "$lead" -lt 192 ] || need=2
+    [ "$lead" -lt 224 ] || need=3
+    [ "$lead" -lt 240 ] || need=4
+    [ "$lead" -lt 248 ] || need=5
+    # A sequence with fewer bytes present than it needs is the one the bound
+    # cut; its bytes come off with it, and only they do.
+    have=$((${#note_bytes[@]} - i))
+    [ "$have" -ge "$need" ] || text=${text:0:$((1200 - have))}
+  fi
+  printf '%s\n' "$text"
 }
 
 # Append <line> to <path> unless that exact line is already there.
