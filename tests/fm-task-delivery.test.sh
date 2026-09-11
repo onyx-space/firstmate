@@ -382,8 +382,8 @@ STUB
     "promoted no-mistakes worker did not receive the fleet-wide ban wording"
 
   payload="$TMP_ROOT/promote-dod/payload-promote-dod-direct-pr"
-  assert_grep "supersede the scout delivery rules and report-based Definition of done" "$payload" \
-    "promoted worker retained the scout delivery contract"
+  assert_grep "supersede the scout delivery rules, the scout-time artifact-placement rules, and the report-based Definition of done" "$payload" \
+    "promoted worker retained the scout delivery and artifact-placement contracts"
   assert_grep "status protocol; the instruction inbox and its acknowledgement; the escalation rules, including ask-user; and every safety rule" "$payload" \
     "promoted worker lost the scout protocols and safety rules that still apply"
 

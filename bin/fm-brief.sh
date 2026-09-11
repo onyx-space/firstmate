@@ -396,7 +396,10 @@ CE_BOUNDARY_SECTION=${CE_BOUNDARY_SECTION%$'\n'}
 # never promoted has no delivery path: its durable homes are the report and the
 # task data directory, while a ship task's are the landed branch and that same
 # directory. Rule 2 in each scaffold names the paths this brief lets a worker
-# write outside its worktree, so this section grants no permission of its own.
+# write outside its worktree, so this section grants no permission of its own. The
+# scout production ban stays scoped to the scout role because bin/fm-promote.sh
+# promotes that task in place without rewriting this brief, and its ship
+# instructions supersede the scout-time placement rules separately.
 if [ "$KIND" = scout ]; then
 IFS= read -r -d '' ARTIFACT_ROLE_SECTION <<'EOF' || true
 # Artifact placement
@@ -406,7 +409,7 @@ Anything another person or a later task needs - proof-of-concept source, scripts
   A tracked path in a scout's scratch worktree is NOT delivery - it is destroyed with the slot - so the experiment home below means that data directory, never a path tracked only in this worktree.
 - Experiment artifacts (probe, proof of concept, spike): they are delivered in this task's data directory - the source, launcher, and probe script there, or their complete text in the report - opening with a status marker saying they are experimental and may be rewritten or deleted.
   Building them in the scratch worktree is fine; that directory copy is what makes them durable, and the report must say enough to rebuild and rerun them.
-- Production artifacts: not a scout's to place. Say in the report which production change the experiment implies and let firstmate route that recommendation, rather than committing a production-shaped version into a worktree whose commits are discarded with it.
+- Production artifacts: while this task is still a scout, they are not yours to place. Say in the report which production change the experiment implies and let firstmate route that recommendation, rather than committing a production-shaped version into a worktree whose commits are discarded with it. A promotion to a ship task supersedes this bullet, and production artifacts then follow that task's ship-time delivery path.
 EOF
 else
 IFS= read -r -d '' ARTIFACT_ROLE_SECTION <<'EOF' || true

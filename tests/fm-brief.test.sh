@@ -951,8 +951,10 @@ test_artifact_placement_contract() {
     if [ "$kind" = scout ]; then
       assert_grep "A tracked path in a scout's scratch worktree is NOT delivery" "$brief" \
         "scout brief must call a tracked path in the dying worktree non-delivery"
-      assert_grep "not a scout's to place" "$brief" \
-        "scout brief must keep production placement out of the scout's remit"
+      assert_grep "while this task is still a scout, they are not yours to place" "$brief" \
+        "scout brief must scope the production ban to the scout role"
+      assert_grep "A promotion to a ship task supersedes this bullet" "$brief" \
+        "scout brief must resolve its production ban against a later promotion"
       assert_no_grep "promote it to production maintenance" "$brief" \
         "scout brief still orders a promotion it cannot perform"
       assert_no_grep "shipped through this task's delivery path" "$brief" \
