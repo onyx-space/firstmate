@@ -1,0 +1,10 @@
+== generating and checking every real scaffold ==
+checked: ship-no-mistakes (/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/tmp.Kd5zJryFYS/home/data/drive-no-mistakes/brief.md)
+checked: ship-direct-PR (/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/tmp.Kd5zJryFYS/home/data/drive-direct-PR/brief.md)
+checked: ship-local-only (/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/tmp.Kd5zJryFYS/home/data/drive-local-only/brief.md)
+checked: scout (/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/tmp.Kd5zJryFYS/home/data/drive-scout/brief.md)
+checked: ship-no-mistakes-herdr-lab (/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/tmp.Kd5zJryFYS/home/data/drive-hl-ship/brief.md)
+checked: scout-herdr-lab (/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/tmp.Kd5zJryFYS/home/data/drive-hl-scout/brief.md)
+checked: secondmate charter stays free of the worker placement section
+work home: /var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/tmp.Kd5zJryFYS
+RESULT: all placement-coherence checks passed
