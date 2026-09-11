@@ -536,11 +536,18 @@ EOF
 # Balance weight for one proven-isolated script. Unlike the serial remainder
 # there is no default: the proven set only changes through a new isolation
 # proof, which measures durations itself, so a member with no hint is a stale
-# table and must fail loudly instead of being balanced on a guess.
+# table and must fail loudly instead of being balanced on a guess, and a hint
+# that is not a whole number of milliseconds must fail the same way rather than
+# abort lpt_bin_assignments mid-partition.
 portable_parallel_weight_for() {
   local want=$1 path ms
   while read -r path ms; do
     if [ "$path" = "$want" ]; then
+      case "$ms" in
+        '' | *[!0-9]*)
+          die "measured CI duration for proven-isolated script '$want' is not a whole number of milliseconds: '$ms' (refresh it per docs/fm-test-portable-shards.md)"
+          ;;
+      esac
       printf '%s\n' "$ms"
       return 0
     fi
