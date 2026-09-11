@@ -199,7 +199,10 @@ fm_parent_channel_clean_note() {  # <text>
   # it keeps the fold itself free of any external process.
   local LC_ALL=C text=$1
   local lead need have i
-  local -a tail
+  # A scoped name, not the obvious `tail`: this array's type is visible to
+  # ShellCheck wherever this library is sourced, and a scalar caller variable
+  # sharing the name would then be flagged as an array misuse.
+  local -a note_bytes
   text=${text//$'\t'/ }
   text=${text//$'\r'/ }
   text=${text//$'\n'/ }
@@ -207,10 +210,10 @@ fm_parent_channel_clean_note() {  # <text>
     text=${text:0:1200}
     # The last four bytes cover the longest UTF-8 sequence, so scanning back
     # from the end finds the leading byte of a character the bound split.
-    read -r -a tail <<<"$(printf '%s' "$text" | tail -c 4 | od -An -v -tu1)"
-    i=$((${#tail[@]} - 1))
-    while [ "$i" -gt 0 ] && [ $((tail[i] & 192)) -eq 128 ]; do i=$((i - 1)); done
-    lead=${tail[i]}
+    read -r -a note_bytes <<<"$(printf '%s' "$text" | tail -c 4 | od -An -v -tu1)"
+    i=$((${#note_bytes[@]} - 1))
+    while [ "$i" -gt 0 ] && [ $((note_bytes[i] & 192)) -eq 128 ]; do i=$((i - 1)); done
+    lead=${note_bytes[i]}
     # How many bytes that character needs, by its leading byte.
     need=1
     [ "$lead" -lt 192 ] || need=2
@@ -219,7 +222,7 @@ fm_parent_channel_clean_note() {  # <text>
     [ "$lead" -lt 248 ] || need=5
     # A sequence with fewer bytes present than it needs is the one the bound
     # cut; its bytes come off with it, and only they do.
-    have=$((${#tail[@]} - i))
+    have=$((${#note_bytes[@]} - i))
     [ "$have" -ge "$need" ] || text=${text:0:$((1200 - have))}
   fi
   printf '%s\n' "$text"
