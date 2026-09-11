@@ -223,7 +223,7 @@ Delivery contract: mode=direct-PR
 This task ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
 When it is implemented and committed, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
-Do NOT run /no-mistakes. The configured merge authority decides whether to merge the PR; firstmate relays the outcome.
+Do NOT start the no-mistakes pipeline. The configured merge authority decides whether to merge the PR; firstmate relays the outcome.
 EOF
       ;;
     local-only)
@@ -244,16 +244,17 @@ Delivery contract: mode=no-mistakes
 **Completion for mode=no-mistakes is a PR the no-mistakes pipeline pushed and opened, never a commit.**
 A commit, a clean branch, or "ready for the run" is NOT completion; stopping there leaves the task unfinished and firstmate has to chase it.
 The one completion claim is \`done: PR {url} checks green\`, written with the PR's full \`https://\` URL once the run reports CI green.
-Running the pipeline belongs to this task, not to a later instruction: invoke /no-mistakes yourself as soon as your implementation is committed, and keep driving its gates until that green result or a terminal failure.
+Running the pipeline belongs to this task, not to a later instruction: once your implementation is committed, start this task's no-mistakes pipeline yourself in your own harness's skill-invocation form, and keep driving its gates until that green result or a terminal failure.
+The exact skill-invocation form is harness-specific and owned by \`harness-adapters\`; when you are unsure of it, state the action in natural language and proceed.
 Never start a second validation run while one is already active on this branch.
-A firstmate /no-mistakes delivery that arrives mid-run is a nudge to reattach and poll, not a second start.
+A firstmate delivery of this task's no-mistakes skill that arrives mid-run is a nudge to reattach and poll, not a second start.
 If a start is refused for pipeline ownership, check whether the active run is this task's own run and follow its status and help lines instead of reporting the task blocked.
 First run in a repo the pipeline has never seen: run \`no-mistakes doctor\`, then \`no-mistakes init\` if it reports the repo is not initialized here, before the first run.
-When you claim completion, report all three: the PR's full \`https://\` URL, the head commit it validated, and the CI result.
+Write the completion line as the pinned claim first, then the validated head commit and the CI result on that same line, leaving the claim itself intact.
 The completion line is the LAST line in the status log: put any supplementary explanation before it, or in \`data/<task-id>/\`, never after it.
 
 You drive no-mistakes by responding to its gates, not by implementing fixes.
-Follow the guidance no-mistakes itself provides for the mechanics: it loads when you invoke /no-mistakes, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
+Follow the guidance no-mistakes itself provides for the mechanics: it loads when you start the skill, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
 When starting no-mistakes, pass \`--intent\` as only this brief's \`## Captain's intent\` subsection plus any later words the captain actually said.
 For a legacy brief with no such subsection, include only words explicitly labeled \`Captain:\`, \`Captain's words:\`, \`Captain's ask:\`, or \`Captain's intent:\`; never copy its mixed \`# Task\` wholesale. If it has no provenance-marked captain words, stop and ask firstmate instead of starting no-mistakes.
 Do not include \`## Firstmate spec\`, later Firstmate build constraints, or your own decisions and tradeoffs.
@@ -275,7 +276,7 @@ Two firstmate-specific rules layer on top of that guidance:
 - NEVER pass \`--yes\` (or \`-y\`) to \`no-mistakes axi run\` or \`no-mistakes axi respond\`. It is banned fleet-wide.
   It auto-resolves every gate including ask-user findings with no escalation, and answering your own ask-user finding is a hard rule violation.
 
-After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), append \`done: PR {url} checks green\` and stop. You are finished.
+After the pipeline reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), append \`done: PR {url} checks green\` and stop. You are finished.
 EOF
       ;;
     *)
