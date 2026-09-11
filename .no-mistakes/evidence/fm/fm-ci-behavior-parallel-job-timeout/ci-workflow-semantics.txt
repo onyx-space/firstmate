@@ -1,0 +1,32 @@
+== CI workflow semantic model ==
+tests-portable-parallel-1: name='Behavior portable parallel 1'
+    lane='bin/fm-test-run.sh --lane portable-parallel-1 \\'
+    timeout-minutes 10 -> 15
+    installs Pi package: True -> True
+    gate-skip tokens: ['Pi extension typecheck prerequisite not found'] -> ['Pi extension typecheck prerequisite not found']
+tests-portable-parallel-2: name='Behavior portable parallel 2'
+    lane='bin/fm-test-run.sh --lane portable-parallel-2 \\'
+    timeout-minutes 10 -> 15
+    installs Pi package: False -> True
+    gate-skip tokens: [] -> ['Pi extension typecheck prerequisite not found']
+
+skip lines carried by tests/fm-pi-primary-types.test.sh:
+    command -v npm >/dev/null 2>&1 || { echo "skip: Pi extension typecheck prerequisite not found: npm"; exit 0; }
+    command -v tsc >/dev/null 2>&1 || { echo "skip: Pi extension typecheck prerequisite not found: tsc"; exit 0; }
+    echo "skip: Pi extension typecheck prerequisite not found: installed @earendil-works/pi-coding-agent package"
+
+[OK ] tests-portable-parallel-1: cap is 15 minutes (was 10)
+[OK ] tests-portable-parallel-1: installs the Pi package the shard's tests read
+[OK ] tests-portable-parallel-1: gate-skip guard armed with exactly one token
+[OK ] tests-portable-parallel-1: guard token matches every skip line the carried test emits
+[OK ] tests-portable-parallel-1: job id, display name and lane argument unchanged
+[OK ] tests-portable-parallel-2: cap is 15 minutes (was 10)
+[OK ] tests-portable-parallel-2: installs the Pi package the shard's tests read
+[OK ] tests-portable-parallel-2: gate-skip guard armed with exactly one token
+[OK ] tests-portable-parallel-2: guard token matches every skip line the carried test emits
+[OK ] tests-portable-parallel-2: job id, display name and lane argument unchanged
+[OK ] aggregate timing job still needs both parallel lanes
+[OK ] no job added or removed
+[OK ] only the two parallel lane caps changed
+
+ALL CI WORKFLOW CONTRACT CHECKS PASS

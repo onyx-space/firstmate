@@ -1,0 +1,13 @@
+portable-parallel-1
+portable-parallel-2
+portable-serial
+portable-serial-1of5
+portable-serial-2of5
+portable-serial-3of5
+portable-serial-4of5
+portable-serial-5of5
+real-herdr-gated
+serial shard lanes: ['portable-serial-1of5', 'portable-serial-2of5', 'portable-serial-3of5', 'portable-serial-4of5', 'portable-serial-5of5']
+serial lane scripts=158 shard members=158 union=158 duplicates=[]
+partition equals the serial lane exactly: True
+every shard non-empty: True

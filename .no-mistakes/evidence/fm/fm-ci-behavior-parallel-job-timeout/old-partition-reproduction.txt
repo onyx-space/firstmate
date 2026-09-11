@@ -1,0 +1,22 @@
+base-commit partition sizes: {1: 11, 2: 13}
+run 34454669796 lane 1: CI artifact membership == base-commit list_portable_parallel_1: True
+run 34454669796 lane 2: CI artifact membership == base-commit list_portable_parallel_2: True
+run 34549712118 lane 1: CI artifact membership == base-commit list_portable_parallel_1: True
+run 34549712118 lane 2: CI artifact membership == base-commit list_portable_parallel_2: True
+run 34586799603 lane 1: CI artifact membership == base-commit list_portable_parallel_1: True
+run 34586799603 lane 2: CI artifact membership == base-commit list_portable_parallel_2: True
+
+REPRODUCTION HOLDS: the cancelled lane (run 34586799603 shard 1) is exactly the base commit's
+hardcoded partition, which put both CI heavyweights in one lane:
+   shard1  282342 ms exit=0 gate_skip=False tests/fm-captain-hold-lifecycle.test.sh
+   shard1  162434 ms exit=0 gate_skip=False tests/fm-lint.test.sh
+   shard1   87711 ms exit=0 gate_skip=False tests/fm-test-run.test.sh
+   shard1   27140 ms exit=0 gate_skip=False tests/fm-x-mode.test.sh
+   shard1   15799 ms exit=0 gate_skip=False tests/fm-cd-pretool-check.test.sh
+   shard1    6330 ms exit=0 gate_skip=False tests/fm-grok-harness.test.sh
+   shard1    3553 ms exit=0 gate_skip=False tests/fm-pi-primary-types.test.sh
+   shard1    2666 ms exit=0 gate_skip=False tests/fm-review-diff.test.sh
+   shard1    2305 ms exit=0 gate_skip=False tests/fm-brief.test.sh
+   shard1    1934 ms exit=0 gate_skip=False tests/fm-composer-ghost.test.sh
+   shard1      88 ms exit=0 gate_skip=False tests/fm-transition-lib.test.sh
+   lane wall clock = 592675 ms over the 600000 ms cap; failed=0 skipped_gate=0

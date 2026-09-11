@@ -1,0 +1,66 @@
+== retained per-script CI maxima vs the runner's own new-lane estimates ==
+lane 1: scripts=13 sum(max dur over 12 runs)=406109  runner parallel_est_1=406109  match=True
+lane 2: scripts=11 sum(max dur over 12 runs)=406067  runner parallel_est_2=406067  match=True
+imbalance=42 ms
+guard line: FM_TEST_COVERAGE ok total=195 parallel=24 parallel_est_1=406109 parallel_est_2=406067 serial=158 serial_shards=5 serial_unhinted=12 herdr=13
+
+== two heaviest proven scripts ==
+tests/fm-captain-hold-lifecycle.test.sh: 282342 ms -> lane(s) [1]
+tests/fm-lint.test.sh: 162434 ms -> lane(s) [2]
+
+union=24 overlap=0 covers every script with a retained weight=True
+
+== old partition (from the runs' own lane artifacts) vs re-partitioned, per run ==
+         run     old1     old2     new1     new2  old worst  new worst
+ 34454669796   505420   161571   344435   322556     505420     344435
+ 34460182760   517366   212965   365837   364494     517366     365837
+ 34464528364   491032   200316   339574   351774     491032     351774
+ 34482703624   513992   200680   355960   358712     513992     358712
+ 34483083923   450973   206757   319594   338136     450973     338136
+ 34487816755   527663   150188   350467   327384     527663     350467
+ 34542464499   503134   212440   354809   360765     503134     360765
+ 34549712118   527312   137576   341667   323221     527312     341667
+ 34555469660        0   151878    51632   100246     151878     100246
+ 34559834562        0   214019    72509   141510     214019     141510
+ 34580845979        0   198295    66799   131496     198295     131496
+ 34586799603   592302   197422   398622   391102     592302     398622
+
+worst old lane over 12 runs: 592302 ms of script time (+job setup) vs old 600000 ms cap -> over=False
+worst new lane over 12 runs: 398622 ms of script time (+job setup) vs old 600000 ms cap / new 900000 ms cap
+worst new lane headroom: 501378 ms under the new cap
+reduction in worst lane: 193680 ms (32.7%)
+
+== GitHub job wall clock vs the lane's own artifact wall clock (setup overhead) ==
+         run                   lane job wall s lane wall s  setup s  conclusion
+ 34454669796 Behavior portable parallel 1        521       505.7       15     success
+ 34454669796 Behavior portable parallel 2        173       161.9       11     success
+ 34460182760 Behavior portable parallel 2        225       213.4       12     success
+ 34460182760 Behavior portable parallel 1        537       517.7       19     success
+ 34464528364 Behavior portable parallel 1        506       491.4       15     success
+ 34464528364 Behavior portable parallel 2        213       200.7       12     success
+ 34482703624 Behavior portable parallel 1        538       514.3       24     success
+ 34482703624 Behavior portable parallel 2        209       201.1        8     success
+ 34483083923 Behavior portable parallel 1        470       451.3       19     success
+ 34483083923 Behavior portable parallel 2        220       207.2       13     success
+ 34487816755 Behavior portable parallel 1        559       528.0       31     success
+ 34487816755 Behavior portable parallel 2        165       150.5       14     success
+ 34542464499 Behavior portable parallel 1        519       503.4       16     success
+ 34542464499 Behavior portable parallel 2        230       212.9       17     success
+ 34549712118 Behavior portable parallel 1        547       527.6       19     success
+ 34549712118 Behavior portable parallel 2        150       137.9       12     success
+ 34555469660 Behavior portable parallel 2        165       152.2       13     success
+ 34555469660 Behavior portable parallel 1        615 no artifact            cancelled
+ 34559834562 Behavior portable parallel 1        616 no artifact            cancelled
+ 34559834562 Behavior portable parallel 2        223       214.5        9     success
+ 34580845979 Behavior portable parallel 1        615 no artifact            cancelled
+ 34580845979 Behavior portable parallel 2        208       198.7        9     success
+ 34586799603 Behavior portable parallel 1        617       592.7       24   cancelled
+ 34586799603 Behavior portable parallel 2        212       197.8       14     success
+
+== docs assignment table vs the runner's live listing and the CI maxima ==
+lane 1: docs table == (CI max weight, runner listing) -> True
+lane 2: docs table == (CI max weight, runner listing) -> True
+docs lane estimate row vs live guard: ['406109', '406067']
+captain-hold-lifecycle line count in docs claim: True actual: 3825
+docs bound table first row: None
+all doc assignment rows consistent: True

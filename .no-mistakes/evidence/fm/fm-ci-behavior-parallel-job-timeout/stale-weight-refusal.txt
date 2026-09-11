@@ -1,0 +1,114 @@
+[missing-row] --list --lane portable-parallel-1 rc=2 listed_scripts=0
+fm-test-run: no measured CI duration for proven-isolated script 'tests/fm-arm-pretool-check.test.sh' (refresh it per docs/fm-test-portable-shards.md)
+
+[missing-row] --list --lane portable-parallel-2 rc=2 listed_scripts=0
+fm-test-run: no measured CI duration for proven-isolated script 'tests/fm-arm-pretool-check.test.sh' (refresh it per docs/fm-test-portable-shards.md)
+
+[missing-row] --check-coverage rc=1
+fm-test-run: no measured CI duration for proven-isolated script 'tests/fm-arm-pretool-check.test.sh' (refresh it per docs/fm-test-portable-shards.md)
+fm-test-run: unusable weight table row: duration='tests/fm-arm-pretool-check.test.sh' script='' (durations must be whole milliseconds; refresh the tables per docs/fm-test-portable-shards.md)
+fm-test-run: no measured CI duration for proven-isolated script 'tests/fm-arm-pretool-check.test.sh' (refresh it per docs/fm-test-portable-shards.md)
+fm-test-run: unusable weight table row: duration='tests/fm-arm-pretool-check.test.sh' script='' (durations must be whole milliseconds; refresh the tables per docs/fm-test-portable-shards.md)
+fm-test-run: coverage guard: portable shards must equal the proven-isolated set
+fm-test-run: missing from shards:
+tests/fm-arm-pretool-check.test.sh
+tests/fm-backend-herdr.test.sh
+tests/fm-brief.test.sh
+tests/fm-captain-hold-lifecycle.test.sh
+tests/fm-cd-pretool-check.test.sh
+tests/fm-composer-ghost.test.sh
+tests/fm-composer-lib.test.sh
+tests/fm-crew-state.test.sh
+tests/fm-ensure-agents-md.test.sh
+tests/fm-grok-harness.test.sh
+tests/fm-herdr-lab.test.sh
+tests/fm-lint.test.sh
+tests/fm-pi-primary-types.test.sh
+tests/fm-pr-merge.test.sh
+tests/fm-review-diff.test.sh
+tests/fm-send-popup-settle.test.sh
+tests/fm-send-settle.test.sh
+tests/fm-send-strict.test.sh
+tests/fm-spawn-batch.test.sh
+tests/fm-supervision-instructions.test.sh
+tests/fm-test-run.test.sh
+tests/fm-tmux-submit-busy.test.sh
+tests/fm-transition-lib.test.sh
+tests/fm-x-mode.test.sh
+
+[blank-value] --list --lane portable-parallel-1 rc=2 listed_scripts=0
+fm-test-run: measured CI duration for proven-isolated script 'tests/fm-lint.test.sh' is not a whole number of milliseconds: '' (refresh it per docs/fm-test-portable-shards.md)
+
+[blank-value] --list --lane portable-parallel-2 rc=2 listed_scripts=0
+fm-test-run: measured CI duration for proven-isolated script 'tests/fm-lint.test.sh' is not a whole number of milliseconds: '' (refresh it per docs/fm-test-portable-shards.md)
+
+[blank-value] --check-coverage rc=1
+fm-test-run: measured CI duration for proven-isolated script 'tests/fm-lint.test.sh' is not a whole number of milliseconds: '' (refresh it per docs/fm-test-portable-shards.md)
+fm-test-run: unusable weight table row: duration='tests/fm-lint.test.sh' script='' (durations must be whole milliseconds; refresh the tables per docs/fm-test-portable-shards.md)
+fm-test-run: measured CI duration for proven-isolated script 'tests/fm-lint.test.sh' is not a whole number of milliseconds: '' (refresh it per docs/fm-test-portable-shards.md)
+fm-test-run: unusable weight table row: duration='tests/fm-lint.test.sh' script='' (durations must be whole milliseconds; refresh the tables per docs/fm-test-portable-shards.md)
+fm-test-run: coverage guard: portable shards must equal the proven-isolated set
+fm-test-run: missing from shards:
+tests/fm-arm-pretool-check.test.sh
+tests/fm-backend-herdr.test.sh
+tests/fm-brief.test.sh
+tests/fm-captain-hold-lifecycle.test.sh
+tests/fm-cd-pretool-check.test.sh
+tests/fm-composer-ghost.test.sh
+tests/fm-composer-lib.test.sh
+tests/fm-crew-state.test.sh
+tests/fm-ensure-agents-md.test.sh
+tests/fm-grok-harness.test.sh
+tests/fm-herdr-lab.test.sh
+tests/fm-lint.test.sh
+tests/fm-pi-primary-types.test.sh
+tests/fm-pr-merge.test.sh
+tests/fm-review-diff.test.sh
+tests/fm-send-popup-settle.test.sh
+tests/fm-send-settle.test.sh
+tests/fm-send-strict.test.sh
+tests/fm-spawn-batch.test.sh
+tests/fm-supervision-instructions.test.sh
+tests/fm-test-run.test.sh
+tests/fm-tmux-submit-busy.test.sh
+tests/fm-transition-lib.test.sh
+tests/fm-x-mode.test.sh
+
+[non-numeric] --list --lane portable-parallel-1 rc=2 listed_scripts=0
+fm-test-run: measured CI duration for proven-isolated script 'tests/fm-lint.test.sh' is not a whole number of milliseconds: '162x434' (refresh it per docs/fm-test-portable-shards.md)
+
+[non-numeric] --list --lane portable-parallel-2 rc=2 listed_scripts=0
+fm-test-run: measured CI duration for proven-isolated script 'tests/fm-lint.test.sh' is not a whole number of milliseconds: '162x434' (refresh it per docs/fm-test-portable-shards.md)
+
+[non-numeric] --check-coverage rc=1
+fm-test-run: measured CI duration for proven-isolated script 'tests/fm-lint.test.sh' is not a whole number of milliseconds: '162x434' (refresh it per docs/fm-test-portable-shards.md)
+fm-test-run: unusable weight table row: duration='tests/fm-lint.test.sh' script='' (durations must be whole milliseconds; refresh the tables per docs/fm-test-portable-shards.md)
+fm-test-run: measured CI duration for proven-isolated script 'tests/fm-lint.test.sh' is not a whole number of milliseconds: '162x434' (refresh it per docs/fm-test-portable-shards.md)
+fm-test-run: unusable weight table row: duration='tests/fm-lint.test.sh' script='' (durations must be whole milliseconds; refresh the tables per docs/fm-test-portable-shards.md)
+fm-test-run: coverage guard: portable shards must equal the proven-isolated set
+fm-test-run: missing from shards:
+tests/fm-arm-pretool-check.test.sh
+tests/fm-backend-herdr.test.sh
+tests/fm-brief.test.sh
+tests/fm-captain-hold-lifecycle.test.sh
+tests/fm-cd-pretool-check.test.sh
+tests/fm-composer-ghost.test.sh
+tests/fm-composer-lib.test.sh
+tests/fm-crew-state.test.sh
+tests/fm-ensure-agents-md.test.sh
+tests/fm-grok-harness.test.sh
+tests/fm-herdr-lab.test.sh
+tests/fm-lint.test.sh
+tests/fm-pi-primary-types.test.sh
+tests/fm-pr-merge.test.sh
+tests/fm-review-diff.test.sh
+tests/fm-send-popup-settle.test.sh
+tests/fm-send-settle.test.sh
+tests/fm-send-strict.test.sh
+tests/fm-spawn-batch.test.sh
+tests/fm-supervision-instructions.test.sh
+tests/fm-test-run.test.sh
+tests/fm-tmux-submit-busy.test.sh
+tests/fm-transition-lib.test.sh
+tests/fm-x-mode.test.sh
+
