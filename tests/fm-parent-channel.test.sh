@@ -207,14 +207,17 @@ test_drain_reports_no_open_decision_for_the_channel_log() {
 # --- the note fold -----------------------------------------------------------
 #
 # fm_parent_channel_clean_note folds arbitrary text onto one bounded line for the
-# channel, so the bound has to land on a UTF-8 character boundary. It used to be
-# `LC_ALL=C cut -c1-1200`, which counts bytes and then cuts at whatever byte came
+# channel, so the bound has to land on a UTF-8 character boundary. The old fold
+# ended in `cut -c1-1200`, which counts bytes in a C/POSIX locale and characters
+# in a UTF-8 one, so under a byte-counting locale it cut at whatever byte came
 # 1200th: a multibyte character straddling the bound was split in half and the
 # channel carried invalid UTF-8, one bad byte that made a consumer strictly
-# decoding the file fail on the whole record. GNU cut counts bytes while BSD cut
-# counts characters, so the split reproduced only on Linux - these cases are a
-# real guard in CI and happen to pass on macOS, where the old code was safe by
-# accident.
+# decoding the file fail on the whole record. The caller's ambient locale decided
+# that, not the platform - which is why it presented as a Linux-only failure in
+# the field - so the alignment cases below run twice, under the ambient locale
+# and under LC_ALL=C. The LC_ALL=C pass is the one that reproduces the old defect
+# on GNU and BSD `cut`; the ambient pass is what pins the BYTE bound, because a
+# UTF-8 locale would otherwise let character counting through.
 
 # utf8_well_formed <file>: true only when <file> is well-formed UTF-8. The
 # assertion is on the fold's OUTPUT BYTES, never on how the fold is written.
@@ -243,8 +246,13 @@ utf8_well_formed() {  # <file>
   [ "$need" -eq 0 ]
 }
 
-test_folded_note_never_splits_a_multibyte_character() {
-  local len pad text folded bytes alignments=0
+# fold_alignment_pass <label>: one pass of the alignment loop, asserting every
+# fold in whatever locale the caller runs under and counting its cases into
+# FOLD_ALIGNMENTS. The caller runs it twice, because the ambient locale is what
+# decides whether the old code split a character at all: the old fold inherited
+# it for `cut -c`, so an ambient UTF-8 runner folded the old code cleanly.
+fold_alignment_pass() {  # <label>
+  local label=$1 len pad text folded bytes
   local intro='修好了：中文不会再被切成半个字 '
   # Every cheap alignment of an ASCII prefix against the 1200-byte bound. With a
   # three-byte character two of every three prefixes push the bound into the
@@ -257,25 +265,31 @@ test_folded_note_never_splits_a_multibyte_character() {
       folded=$(fm_parent_channel_clean_note "$text")
       printf '%s' "$folded" > "$TMP_ROOT/folded-note.bin"
       utf8_well_formed "$TMP_ROOT/folded-note.bin" \
-        || fail "the fold split a multibyte character at ASCII-prefix $len, so the channel line carried invalid UTF-8"
+        || fail "the fold split a multibyte character at ASCII-prefix $len in $label, so the channel line carried invalid UTF-8"
       bytes=$(LC_ALL=C wc -c < "$TMP_ROOT/folded-note.bin" | tr -d ' ')
       [ "$bytes" -le 1200 ] \
-        || fail "the folded line grew past its byte bound: $bytes bytes at ASCII-prefix $len"
+        || fail "the folded line grew past its byte bound: $bytes bytes at ASCII-prefix $len in $label"
       case "$folded" in
-        *$'\n'*) fail "the folded note kept a line break at ASCII-prefix $len" ;;
+        *$'\n'*) fail "the folded note kept a line break at ASCII-prefix $len in $label" ;;
       esac
       assert_contains "$folded" "修好了" \
-        "the fold lost the note's own text at ASCII-prefix $len"
-      alignments=$((alignments + 1))
+        "the fold lost the note's own text at ASCII-prefix $len in $label"
+      FOLD_ALIGNMENTS=$((FOLD_ALIGNMENTS + 1))
     done
   done
+}
+
+test_folded_note_never_splits_a_multibyte_character() {
+  FOLD_ALIGNMENTS=0
+  fold_alignment_pass "the ambient locale"
+  LC_ALL=C fold_alignment_pass "LC_ALL=C"
 
   assert_equals "$(fm_parent_channel_clean_note 'done [key=x]: 修好了')" 'done [key=x]: 修好了' \
     "the fold changed a note that already fits"
   assert_equals "$(fm_parent_channel_clean_note $'第一行\n第二行\t末')" '第一行 第二行 末' \
     "the fold stopped collapsing line breaks and tabs into one line"
 
-  pass "the note fold keeps a bounded one-line note that is valid UTF-8 ($alignments boundary alignments)"
+  pass "the note fold keeps a bounded one-line note that is valid UTF-8 ($FOLD_ALIGNMENTS boundary alignments, ambient locale and LC_ALL=C)"
 }
 
 test_exclusion_is_scoped_to_a_remote_mate_home
