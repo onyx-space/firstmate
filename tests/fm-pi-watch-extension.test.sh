@@ -1700,7 +1700,12 @@ EOF
   pass "Pi clean empty close triggers a bounded continuity retry"
 }
 
-test_pi_established_empty_close_honors_retry_limit() {
+# The fast retry bound exists to restore supervision quickly, never to give up on
+# it. Past the bound the session owns the lock and owes the fleet a cycle, so the
+# retry drops to a slow constant cadence and keeps running while the exhaustion is
+# reported exactly once. Stopping is what left an unattended home with no wake
+# delivery until a human saw the stale beacon (2026-09-11).
+test_pi_established_empty_close_keeps_a_slow_retry_after_the_bound() {
   local repo home plugin log out status
   repo="$TMP_ROOT/pi-established-empty-close-root"
   home="$TMP_ROOT/pi-established-empty-close-home"
@@ -1715,7 +1720,7 @@ printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 exit 0
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 FM_WATCH_REARM_SLOW_MS=15 node --input-type=module 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -1735,20 +1740,23 @@ writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 await tool.execute("tool-call-established-empty", {}, undefined, undefined, {});
-for (let i = 0; i < 250 && !prompt; i += 1) {
+const rowsNow = () => existsSync(process.env.FM_ARM_LOG)
+  ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n").filter(Boolean)
+  : [];
+for (let i = 0; i < 400 && rowsNow().length < 6; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
-const rows = existsSync(process.env.FM_ARM_LOG)
-  ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n")
-  : [];
-if (rows.length !== 3) throw new Error(`retry limit launched ${rows.length} arm cycles: ${rows.join(" | ")}`);
-if (!prompt.includes("after 2 retries")) throw new Error(`retry exhaustion was not surfaced: ${prompt}`);
+const rows = rowsNow();
+if (rows.length < 6) throw new Error(`the continuity retry stopped after the fast bound: ${rows.join(" | ")}`);
+const notices = prompt.split("could not restore watcher continuity").length - 1;
+if (notices === 0) throw new Error(`retry exhaustion was not surfaced: ${prompt}`);
+if (notices > 1) throw new Error(`retry exhaustion was surfaced ${notices} times instead of once: ${prompt}`);
 EOF
 )
   status=$?
-  expect_code 0 "$status" "Pi established clean closes must honor the continuity retry limit"
-  [ -z "$out" ] || fail "Pi established-empty-close retry test printed output: $out"
-  pass "Pi established clean closes stop at the configured retry limit"
+  expect_code 0 "$status" "Pi established clean closes must keep a slow continuity retry past the fast bound"
+  [ -z "$out" ] || fail "Pi established-empty-close slow-retry test printed output: $out"
+  pass "Pi established clean closes keep retrying slowly after the fast bound and report exhaustion once"
 }
 
 test_pi_actionable_close_rechecks_session_lock() {
@@ -3706,7 +3714,7 @@ EOF
   pass "OpenCode clean empty close triggers a bounded continuity retry"
 }
 
-test_opencode_established_empty_close_honors_retry_limit() {
+test_opencode_established_empty_close_keeps_a_slow_retry_after_the_bound() {
   local plugin repo home log out status
   plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
   repo="$TMP_ROOT/opencode-established-empty-close-root"
@@ -3723,7 +3731,7 @@ printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
 exit 0
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 FM_WATCH_REARM_SLOW_MS=15 node 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -3743,20 +3751,23 @@ const hooks = await mod.FmPrimaryWatchArm({
 });
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-for (let i = 0; i < 250 && !prompt; i += 1) {
+const rowsNow = () => existsSync(process.env.FM_ARM_LOG)
+  ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n").filter(Boolean)
+  : [];
+for (let i = 0; i < 400 && rowsNow().length < 6; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
-const rows = existsSync(process.env.FM_ARM_LOG)
-  ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n")
-  : [];
-if (rows.length !== 3) throw new Error(`retry limit launched ${rows.length} arm cycles: ${rows.join(" | ")}`);
-if (!prompt.includes("after 2 retries")) throw new Error(`retry exhaustion was not surfaced: ${prompt}`);
+const rows = rowsNow();
+if (rows.length < 6) throw new Error(`the continuity retry stopped after the fast bound: ${rows.join(" | ")}`);
+const notices = prompt.split("could not restore watcher continuity").length - 1;
+if (notices === 0) throw new Error(`retry exhaustion was not surfaced: ${prompt}`);
+if (notices > 1) throw new Error(`retry exhaustion was surfaced ${notices} times instead of once: ${prompt}`);
 EOF
 )
   status=$?
-  expect_code 0 "$status" "OpenCode established clean closes must honor the continuity retry limit"
-  [ -z "$out" ] || fail "OpenCode established-empty-close retry test printed output: $out"
-  pass "OpenCode established clean closes stop at the configured retry limit"
+  expect_code 0 "$status" "OpenCode established clean closes must keep a slow continuity retry past the fast bound"
+  [ -z "$out" ] || fail "OpenCode established-empty-close slow-retry test printed output: $out"
+  pass "OpenCode established clean closes keep retrying slowly after the fast bound and report exhaustion once"
 }
 
 test_opencode_actionable_close_rechecks_session_lock() {
@@ -3994,7 +4005,7 @@ test_pi_hung_successor_falls_back_to_typed_wake
 test_pi_unretired_successor_falls_back_without_retry
 test_pi_late_unretired_close_resumes_supervision
 test_pi_empty_close_retries_instead_of_disappearing
-test_pi_established_empty_close_honors_retry_limit
+test_pi_established_empty_close_keeps_a_slow_retry_after_the_bound
 test_pi_actionable_close_rechecks_session_lock
 test_pi_arm_distinguishes_session_lock_ownership
 test_pi_session_transition_generation_owner
@@ -4018,7 +4029,7 @@ test_opencode_hung_successor_falls_back_to_typed_wake
 test_opencode_unretired_successor_falls_back_without_retry
 test_opencode_late_unretired_close_resumes_supervision
 test_opencode_empty_close_retries_instead_of_disappearing
-test_opencode_established_empty_close_honors_retry_limit
+test_opencode_established_empty_close_keeps_a_slow_retry_after_the_bound
 test_opencode_actionable_close_rechecks_session_lock
 test_opencode_watch_arm_coordinates_with_turnend_guard
 test_opencode_healthy_arm_output_does_not_suppress_guard

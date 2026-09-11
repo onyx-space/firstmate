@@ -2555,16 +2555,60 @@ test_open_captain_call_bounds_stale_churn() {
 
 
 
-# The other half of the same bound, and the one that decides whether widening the
-# wait was safe: the identical fixtures with NO hold must keep alarming on every
-# new hash, on both branches.
-test_stale_churn_without_a_captain_call_still_alarms() {
-  local spec name line dir state out capture round wakes
+# The other half of the same bound, and the one that decides how far it reaches:
+# a delivery the captain has NOT yet taken in hand carries its own wait in the
+# status log, because its last line is `done:`. That line is the whole record, so
+# the delivered-but-unlanded pane is bounded from the line alone - the same
+# cadence an open captain call gets - and the first sight still alarms. Everything
+# else a terminal-looking pane can say is news rather than a wait firstmate
+# already holds, so a blocker, a failure, and an ordinary worker line keep
+# alarming on every new hash exactly as before.
+test_stale_churn_for_an_unheld_delivery_is_bounded_but_other_terminal_lines_are_not() {
+  local spec name line dir state out capture throttle wakes round
   command -v tasks-axi >/dev/null 2>&1 \
-    || { echo "skip: tasks-axi not found (unheld stale alarm)"; return 0; }
+    || { echo "skip: tasks-axi not found (unheld delivery bound)"; return 0; }
+
+  # Bounded: the delivered line is its own declaration, exactly as the backlog
+  # hold is for a held task.
+  dir=$(make_hold_home unheld-delivery 'done: PR https://example.invalid/pull/1 checks green' nohold) \
+    || fail "could not build an unheld delivery fixture"
+  state="$dir/state"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  throttle="$state/.paused-resurfaced-$(hold_key)"
+  hold_watch_surface "$dir" "$out" "$capture" 'idle, elapsed 1s' \
+    || fail "the first sight of an unheld delivery did not surface"
+  wakes=$(hold_stale_wakes "$state")
+  [ "$wakes" -eq 1 ] || fail "the first delivery sight produced $wakes wakes instead of one"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the first delivery sight"
+  hold_watch_churn "$dir" "$out" "$capture" 'idle, tick' 2 \
+    || fail "the watcher exited during an unheld delivery's pane churn instead of supervising through it"
+  wakes=$(hold_stale_wakes "$state")
+  [ "$wakes" -eq 0 ] \
+    || fail "pane churn re-alarmed an unheld delivery $wakes time(s) inside the re-surface window"
+  [ -e "$throttle" ] || fail "the absorbed delivery churn recorded no re-surface cadence"
+  set_mtime "$(( $(date +%s) - 5000 ))" "$throttle"
+  hold_watch_surface "$dir" "$out" "$capture" 'idle, elapsed 9s' \
+    || fail "the unheld delivery did not re-surface once its re-surface window elapsed"
+  wakes=$(hold_stale_wakes "$state")
+  [ "$wakes" -eq 1 ] || fail "the elapsed window produced $wakes wakes instead of one"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the elapsed delivery re-surface"
+
+  # A genuinely NEW delivery is a new declaration and must alarm again, so the
+  # bound delays repetition without ever swallowing a replacement wait. The
+  # declaration is a size-and-identity fingerprint, so a real append always
+  # changes it.
+  printf 'done: PR https://example.invalid/pull/1044 checks green\n' > "$state/held-merge.status"
+  printf '%s' "$(seen_sig "$state/held-merge.status")" > "$state/.seen-held-merge_status"
+  hold_watch_surface "$dir" "$out" "$capture" 'idle, replacement delivery' \
+    || fail "a replacement delivery inherited the previous delivery's silence: out=<$(tail -2 "$out" | tr '\n' '|')>"
+  wakes=$(hold_stale_wakes "$state")
+  [ "$wakes" -eq 1 ] || fail "the replacement delivery produced $wakes wakes instead of one"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the replacement delivery"
+
+  # Unbounded: the news-carrying terminal lines and the inconclusive worker line
+  # keep alarming on every new hash.
   for spec in \
-    'unheld-delivery|done: PR https://example.invalid/pull/1 checks green' \
     'unheld-blocker|blocked: cannot reach the release host' \
+    'unheld-failure|failed: the build broke' \
     'unheld-worker-line|working: still tidying the branch'
   do
     name=${spec%%|*}; line=${spec#*|}
@@ -2582,7 +2626,46 @@ test_stale_churn_without_a_captain_call_still_alarms() {
       round=$((round + 1))
     done
   done
-  pass "a stale window with no open captain call keeps alarming on every new hash"
+  pass "an unheld delivery is bounded like a hold while its own first sight and a replacement delivery still alarm; blocker, failure, and worker lines keep alarming on every new hash"
+}
+
+
+# Pane stability is a two-poll question, so the idle counter saturates there.
+# Nothing reads a larger value, yet it used to increment once per poll forever:
+# that is how a delivered pane parked for hours reported a two-digit count in the
+# 2026-09-11 done-unlanded report - unbounded state growth with no reader, read as
+# evidence that the watcher was still re-judging the pane every round.
+test_idle_poll_counter_saturates_at_the_stability_floor() {
+  local dir state fakebin out capture_file window key pid i
+  dir=$(make_case idle-counter); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:fm-idle"
+  printf 'a stable idle render' > "$capture_file"
+  printf 'window=%s\nkind=ship\n' "$window" > "$state/idle.meta"
+  printf 'done: PR https://example.test/pr/9\n' > "$state/idle.status"
+  printf '%s' "$(seen_sig "$state/idle.status")" > "$state/.seen-idle_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf '%s' "$(hash_text 'a stable idle render')" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  # The pane is already classified for this hash and has no pending escalation, so
+  # nothing here can wake and the counter is the only thing under test.
+  printf '%s' "$(hash_text 'a stable idle render')" > "$state/.stale-$key"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  i=0
+  while [ "$i" -lt 5 ]; do
+    if ! wait_poll_cycle "$state" "$pid"; then
+      reap "$pid"; fail "watcher exited for an absorbed delivered pane: $(cat "$out")"
+    fi
+    i=$((i + 1))
+  done
+  [ ! -s "$out" ] || fail "an absorbed delivered pane printed a wake reason"
+  [ "$(cat "$state/.count-$key" 2>/dev/null || true)" -le 2 ] \
+    || fail "the idle counter grew past the stability floor: $(cat "$state/.count-$key")"
+  reap "$pid"
+  pass "the pane-stability counter saturates instead of growing without bound"
 }
 
 
@@ -4555,7 +4638,7 @@ test_backlog_hold_never_rechecked_while_away_record_exists() {
   out="$dir/watch.out"; capture="$dir/pane.txt"
   write_away_record "$dir/state"
   # Without the record the FIRST sight of a held delivery alarms
-  # (test_stale_churn_without_a_captain_call_still_alarms and its siblings). With
+  # (test_open_captain_call_bounds_stale_churn and its siblings). With
   # it, even the first sight and every later hash are absorbed.
   hold_watch_churn "$dir" "$out" "$capture" 'held delivery, pane tick' 3 \
     || fail "watcher exited while churning a backlog-held delivery under the away-posture record: $(cat "$out")"
@@ -4748,7 +4831,8 @@ test_absorbed_replacement_wait_does_not_inherit_the_old_throttle
 test_live_declared_wait_churn_honors_the_resurface_throttle
 test_live_paused_until_controls_recheck_time
 test_open_captain_call_bounds_stale_churn
-test_stale_churn_without_a_captain_call_still_alarms
+test_stale_churn_for_an_unheld_delivery_is_bounded_but_other_terminal_lines_are_not
+test_idle_poll_counter_saturates_at_the_stability_floor
 test_failed_wake_append_does_not_arm_the_captain_hold_throttle
 test_reheld_captain_call_starts_its_own_resurface_window
 test_secondmate_paused_resurfaces_in_normal_mode

@@ -101,6 +101,10 @@ type SessionGeneration = {
   retryTimer: ReturnType<typeof setTimeout> | null;
   cleanupTimer: ReturnType<typeof setTimeout> | null;
   retryFailures: number;
+  // Whether the exhausted-retry failure has already been surfaced for the
+  // current failure episode, so a persistent slow retry reports once instead of
+  // prompting on every attempt. Cleared when a successor is established.
+  retryFailureSurfaced: boolean;
   restoring: boolean;
   seq: number;
   pendingActionables: PendingActionableClose[];
@@ -131,6 +135,12 @@ const extensionVersion = `sha256:${createHash("sha256").update(readFileSync(exte
 const retryBaseMs = positiveInteger("FM_WATCH_REARM_RETRY_BASE_MS", 250);
 const retryMaxMs = positiveInteger("FM_WATCH_REARM_RETRY_MAX_MS", 4000);
 const retryLimit = positiveInteger("FM_WATCH_REARM_RETRY_LIMIT", 5);
+// Cadence the continuity retry drops to once the bounded fast retries are spent.
+// The bounded phase exists to restore supervision quickly; past it the session
+// must still never run without a cycle, so the retry continues slowly rather
+// than stopping. Stopping is what left an unattended fleet with no wake delivery
+// until a human noticed a stale beacon (2026-09-11 done-unlanded stale storm).
+const retrySlowMs = positiveInteger("FM_WATCH_REARM_SLOW_MS", 60000);
 // 35s on Windows so the budget stays above arm's MSYS confirm default (30s in
 // bin/fm-watch-arm.sh): a slow but successful Git Bash cold start must not be
 // SIGTERMed mid-confirmation. Conditioned on win32 so other platforms keep 12s.
@@ -408,6 +418,7 @@ function createGeneration(): SessionGeneration {
     retryTimer: null,
     cleanupTimer: null,
     retryFailures: 0,
+    retryFailureSurfaced: false,
     restoring: false,
     seq: 0,
     pendingActionables: [],
@@ -844,18 +855,23 @@ export default function (pi: ExtensionAPI) {
       return;
     }
     owner.retryFailures += 1;
-    if (owner.retryFailures > retryLimit) {
-      surfaceFailure(owner, `watcher: FAILED - omp extension could not restore watcher continuity after ${retryLimit} retries\n${message}`);
-      return;
+    const exhausted = owner.retryFailures > retryLimit;
+    if (exhausted && !owner.retryFailureSurfaced) {
+      owner.retryFailureSurfaced = true;
+      surfaceFailure(owner, `watcher: FAILED - omp extension could not restore watcher continuity after ${retryLimit} retries; it keeps retrying on a slow cadence so this session is never left without a supervision cycle\n${message}`);
     }
+    // Past the fast bound the cadence is constant and slow, but it never stops:
+    // while this session owns the lock a missing cycle is a supervision outage,
+    // and one bounded attempt per slow interval is strictly better than none.
+    const delay = exhausted ? retrySlowMs : retryDelay(owner.retryFailures);
     const timer = setTimeout(() => {
       if (owner.retryTimer === timer) owner.retryTimer = null;
       if (!generationIsLive(owner)) return;
       const result = startArm(owner, predecessorArmPid);
-      if (!result.ok) {
+      if (!result.ok && !owner.retryFailureSurfaced) {
         surfaceFailure(owner, `watcher: FAILED - omp extension could not launch a continuity retry\n${result.message}`);
       }
-    }, retryDelay(owner.retryFailures));
+    }, delay);
     timer.unref();
     owner.retryTimer = timer;
   }
@@ -957,6 +973,9 @@ export default function (pi: ExtensionAPI) {
         enqueuePendingActionable(owner, pending);
         if (!generationIsLive(owner)) return;
         owner.retryFailures = 0;
+        // A delivered wake proves continuity is back, so the next failure episode
+        // gets its own fast budget and its own single exhaustion notice.
+        owner.retryFailureSurfaced = false;
         void processPendingActionables(owner);
         return;
       }
