@@ -114,7 +114,9 @@
 # Family labels, the changed-file map, and production portable-shard composition
 # live in this script only (one owner). The proven-isolated candidate set remains
 # owned by bin/fm-test-isolation-proof.sh; portable parallel shards are a
-# duration-balanced partition of that exact set (see docs/fm-test-portable-shards.md).
+# duration-balanced partition of that exact set, and their balance weights are
+# the portable_parallel_weight_hints table below rather than the historical
+# isolation-proof snapshot (see docs/fm-test-portable-shards.md).
 #
 # portable-serial stays strictly serial. Its CI shards (portable-serial-<k>of<n>)
 # split it across separate runners, so two of its stateful scripts still never
@@ -462,42 +464,169 @@ tests/fm-x-mode.test.sh
 EOF
 }
 
-# Portable parallel shard 1: LPT balance of the proven-isolated set using the
-# current concurrent-proof durations in docs/fm-test-isolation-proof.json.
-# Execution order is longest first so wall-clock stays near the balanced sum.
-list_portable_parallel_1() {
+# Longest-processing-time assignment of "<ms>\t<script>" rows on stdin to
+# <bins> bins, printing "<bin>\t<script>" in the input (longest-first) order.
+# Deterministic: rows must already be sorted by weight descending, and a tie
+# between equally loaded bins always takes the lowest bin index. All or nothing:
+# rows are held until the whole input is read, and one unusable duration prints
+# nothing and returns non-zero, because this is consumed through process
+# substitutions whose status no caller inspects, where a truncated assignment
+# would read as a complete smaller one.
+lpt_bin_assignments() {
+  local bins=$1 ms script i best best_load
+  local -a loads=() rows=()
+  i=1
+  while [ "$i" -le "$bins" ]; do
+    loads[i]=0
+    i=$((i + 1))
+  done
+  while IFS=$'\t' read -r ms script; do
+    [ -n "$ms$script" ] || continue
+    case "$ms" in
+      '' | *[!0-9]*)
+        log "unusable weight table row: duration='$ms' script='$script' (durations must be whole milliseconds; refresh the tables per docs/fm-test-portable-shards.md)"
+        return 1
+        ;;
+    esac
+    [ -n "$script" ] || continue
+    best=1
+    best_load=${loads[1]}
+    i=2
+    while [ "$i" -le "$bins" ]; do
+      if [ "${loads[i]}" -lt "$best_load" ]; then
+        best_load=${loads[i]}
+        best=$i
+      fi
+      i=$((i + 1))
+    done
+    loads[best]=$((best_load + ms))
+    rows+=("$best"$'\t'"$script")
+  done
+  if [ "${#rows[@]}" -gt 0 ]; then
+    printf '%s\n' "${rows[@]}"
+  fi
+}
+
+# Real CI-measured durations for the proven-isolated scripts, in milliseconds.
+# Each value is the slowest measurement retained across the
+# fm-test-timing-portable-parallel-* artifacts of the CI runs recorded in
+# docs/fm-test-portable-shards.md, so the balance holds on a slow runner rather
+# than only on the fastest one measured. These are balance hints only: the
+# partition stays complete and disjoint whatever they say, so a stale hint costs
+# a slower shard rather than lost coverage. A stale hint is still a real defect,
+# because both parallel lanes share one CI job timeout: refresh the table from
+# the lanes' own CI timing artifacts, never from the historical
+# docs/fm-test-isolation-proof.json snapshot, which records membership for a
+# local isolation proof rather than a CI wall-clock measurement.
+portable_parallel_weight_hints() {
   cat <<'EOF'
-tests/fm-x-mode.test.sh
-tests/fm-cd-pretool-check.test.sh
-tests/fm-captain-hold-lifecycle.test.sh
-tests/fm-test-run.test.sh
-tests/fm-composer-ghost.test.sh
-tests/fm-grok-harness.test.sh
-tests/fm-lint.test.sh
-tests/fm-pi-primary-types.test.sh
-tests/fm-review-diff.test.sh
-tests/fm-brief.test.sh
-tests/fm-transition-lib.test.sh
+tests/fm-arm-pretool-check.test.sh 32559
+tests/fm-backend-herdr.test.sh 23740
+tests/fm-brief.test.sh 2305
+tests/fm-captain-hold-lifecycle.test.sh 282342
+tests/fm-cd-pretool-check.test.sh 15799
+tests/fm-composer-ghost.test.sh 1934
+tests/fm-composer-lib.test.sh 4822
+tests/fm-crew-state.test.sh 13643
+tests/fm-ensure-agents-md.test.sh 935
+tests/fm-grok-harness.test.sh 6330
+tests/fm-herdr-lab.test.sh 6977
+tests/fm-lint.test.sh 162434
+tests/fm-pi-primary-types.test.sh 7389
+tests/fm-pr-merge.test.sh 115843
+tests/fm-review-diff.test.sh 3479
+tests/fm-send-popup-settle.test.sh 5256
+tests/fm-send-settle.test.sh 2118
+tests/fm-send-strict.test.sh 4032
+tests/fm-spawn-batch.test.sh 2334
+tests/fm-supervision-instructions.test.sh 303
+tests/fm-test-run.test.sh 87711
+tests/fm-tmux-submit-busy.test.sh 2508
+tests/fm-transition-lib.test.sh 88
+tests/fm-x-mode.test.sh 27295
 EOF
+}
+
+# Balance weight for one proven-isolated script. Unlike the serial remainder
+# there is no default: the proven set only changes through a new isolation
+# proof, which measures durations itself, so a member with no hint is a stale
+# table and must fail loudly instead of being balanced on a guess, and a hint
+# that is not a whole number of milliseconds must fail the same way rather than
+# abort lpt_bin_assignments mid-partition.
+portable_parallel_weight_for() {
+  local want=$1 path ms
+  while read -r path ms; do
+    if [ "$path" = "$want" ]; then
+      case "$ms" in
+        '' | *[!0-9]*)
+          die "measured CI duration for proven-isolated script '$want' is not a whole number of milliseconds: '$ms' (refresh it per docs/fm-test-portable-shards.md)"
+          ;;
+      esac
+      printf '%s\n' "$ms"
+      return 0
+    fi
+  done < <(portable_parallel_weight_hints)
+  die "no measured CI duration for proven-isolated script '$want' (refresh it per docs/fm-test-portable-shards.md)"
+}
+
+# Cover the whole proven set with hints before anything is listed or run. Both
+# shard listings reach portable_parallel_weight_for through command
+# substitutions, where its die() only kills that subshell and the caller cannot
+# see it, so a stale table would silently list a shorter shard. Checked here, in
+# the shell the lane's exit status belongs to.
+require_complete_parallel_weight_hints() {
+  local script
+  while IFS= read -r script; do
+    [ -n "$script" ] || continue
+    portable_parallel_weight_for "$script" >/dev/null
+  done < <(list_proven_isolated)
+}
+
+# Longest-processing-time assignment of the proven-isolated set to the two
+# portable parallel shards, printing "<shard>\t<script>" for every script.
+# Two is the shard count the two list_portable_parallel_<k> lanes below expose;
+# the coverage guard refuses a partition whose union is not the whole proven
+# set, so adding a bin here without a lane fails loudly instead of dropping
+# scripts.
+portable_parallel_assignments() {
+  lpt_bin_assignments 2 < <(
+    while IFS= read -r script; do
+      [ -n "$script" ] || continue
+      printf '%s\t%s\n' "$(portable_parallel_weight_for "$script")" "$script"
+    done < <(list_proven_isolated) | LC_ALL=C sort -t$'\t' -k1,1nr -k2,2
+  )
+}
+
+portable_parallel_shard_members() {
+  local want=$1 idx script
+  while IFS=$'\t' read -r idx script; do
+    [ -n "$script" ] || continue
+    if [ "$idx" = "$want" ]; then
+      printf '%s\n' "$script"
+    fi
+  done < <(portable_parallel_assignments)
+}
+
+# Total balance weight of one portable parallel shard, used by the coverage
+# guard to print both lane estimates so a stale hint table is visible in CI.
+portable_parallel_lane_estimate() {
+  local want=$1 script total=0
+  while IFS= read -r script; do
+    [ -n "$script" ] || continue
+    total=$((total + $(portable_parallel_weight_for "$script")))
+  done < <(portable_parallel_shard_members "$want")
+  printf '%s\n' "$total"
+}
+
+# Portable parallel shard 1: one LPT half of the proven-isolated set, longest
+# first so wall-clock stays near the balanced sum.
+list_portable_parallel_1() {
+  portable_parallel_shard_members 1
 }
 
 # Portable parallel shard 2: the complementary LPT half of the proven set.
 list_portable_parallel_2() {
-  cat <<'EOF'
-tests/fm-backend-herdr.test.sh
-tests/fm-arm-pretool-check.test.sh
-tests/fm-crew-state.test.sh
-tests/fm-herdr-lab.test.sh
-tests/fm-pr-merge.test.sh
-tests/fm-send-popup-settle.test.sh
-tests/fm-tmux-submit-busy.test.sh
-tests/fm-send-settle.test.sh
-tests/fm-send-strict.test.sh
-tests/fm-spawn-batch.test.sh
-tests/fm-supervision-instructions.test.sh
-tests/fm-ensure-agents-md.test.sh
-tests/fm-composer-lib.test.sh
-EOF
+  portable_parallel_shard_members 2
 }
 
 # Families whose scripts are proven safe to run concurrently WITH EACH OTHER
@@ -763,28 +892,7 @@ portable_serial_weight_for() {
 # Deterministic: candidates are ordered by hint descending then path, and ties
 # between equally loaded bins always take the lowest bin index.
 portable_serial_assignments() {
-  local ms script i best best_load
-  local -a loads=()
-  i=1
-  while [ "$i" -le "$PORTABLE_SERIAL_SHARDS" ]; do
-    loads[i]=0
-    i=$((i + 1))
-  done
-  while IFS=$'\t' read -r ms script; do
-    [ -n "$script" ] || continue
-    best=1
-    best_load=${loads[1]}
-    i=2
-    while [ "$i" -le "$PORTABLE_SERIAL_SHARDS" ]; do
-      if [ "${loads[i]}" -lt "$best_load" ]; then
-        best_load=${loads[i]}
-        best=$i
-      fi
-      i=$((i + 1))
-    done
-    loads[best]=$((best_load + ms))
-    printf '%s\t%s\n' "$best" "$script"
-  done < <(
+  lpt_bin_assignments "$PORTABLE_SERIAL_SHARDS" < <(
     while IFS= read -r script; do
       [ -n "$script" ] || continue
       printf '%s\t%s\n' "$(portable_serial_weight_for "$script")" "$script"
@@ -830,19 +938,13 @@ select_proven_isolated() {
 select_lane() {
   local want=$1 s shard idx found=0
   case "$want" in
-    portable-parallel-1)
+    portable-parallel-1 | portable-parallel-2)
+      require_complete_parallel_weight_hints
       while IFS= read -r s; do
         [ -n "$s" ] || continue
         add_script "$s"
         found=1
-      done < <(list_portable_parallel_1)
-      ;;
-    portable-parallel-2)
-      while IFS= read -r s; do
-        [ -n "$s" ] || continue
-        add_script "$s"
-        found=1
-      done < <(list_portable_parallel_2)
+      done < <(portable_parallel_shard_members "${want#portable-parallel-}")
       ;;
     portable-serial)
       while IFS= read -r s; do
@@ -1004,9 +1106,11 @@ run_coverage_guard() {
     fi
   fi
 
-  printf 'FM_TEST_COVERAGE ok total=%s parallel=%s serial=%s serial_shards=%s serial_unhinted=%s herdr=%s\n' \
+  printf 'FM_TEST_COVERAGE ok total=%s parallel=%s parallel_est_1=%s parallel_est_2=%s serial=%s serial_shards=%s serial_unhinted=%s herdr=%s\n' \
     "$(wc -l <"$tmp/all" | tr -d ' ')" \
     "$(wc -l <"$tmp/shards_union" | tr -d ' ')" \
+    "$(portable_parallel_lane_estimate 1)" \
+    "$(portable_parallel_lane_estimate 2)" \
     "$(wc -l <"$tmp/serial" | tr -d ' ')" \
     "$PORTABLE_SERIAL_SHARDS" \
     "$unhinted" \

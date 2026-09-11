@@ -42,14 +42,23 @@ jobs:
       - name: Prove complete regression partition
         run: bin/fm-test-run.sh --check-coverage
 
-  # Two duration-balanced portable parallel shards of the Phase 2 proven-isolated
-  # set only. Composition owner: bin/fm-test-run.sh (docs/fm-test-portable-shards.md).
+  # Two duration-balanced portable parallel shards of the proven-isolated set
+  # only, one shard per runner. Composition and the balance weights both live in
+  # bin/fm-test-run.sh, and docs/fm-test-portable-shards.md owns the measured
+  # table the weights come from.
   tests-portable-parallel-1:
     name: Behavior portable parallel 1
     runs-on: ubuntu-latest
-    # Measured shard wall is ~1 min of serial sum on proven scripts; this cap is
-    # a hang tripwire with margin, not the expected healthy end of the lane.
-    timeout-minutes: 10
+    # Hang tripwire, not the expected healthy end of the lane. The retained
+    # per-script CI maxima balance to ~406 s of script time for this shard plus
+    # ~20 s of job setup, and the slowest re-partitioned run on record is ~399 s,
+    # so 15 minutes leaves a little over 2x margin over the worst healthy wall.
+    # Do not read the cap as the defense against imbalance: the old partition
+    # held both heavyweights here and reached the previous 10-minute cap while
+    # every script exited 0 (run 34586799603 ran 592.7 s of lane wall clock
+    # against it). Change this number only together with a refreshed balance
+    # table.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
@@ -92,7 +101,9 @@ jobs:
   tests-portable-parallel-2:
     name: Behavior portable parallel 2
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Same tripwire as shard 1: ~406 s of balanced script time plus ~15 s of job
+    # setup against a 15-minute cap. See shard 1 for how the number is derived.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
@@ -112,11 +123,21 @@ jobs:
           set -eu
           npm install -g tasks-axi
           tasks-axi --version
+      # Both parallel shards are halves of one duration-balanced set, so either
+      # half can carry the Pi extension tests. Installing the package in both
+      # keeps a rebalance from turning that test into a silent gate skip, and
+      # the matching --fail-on-gate-skip below refuses one if it ever appears.
+      - name: Install the Pi package for the Pi extension tests
+        run: |
+          set -eu
+          npm install -g @earendil-works/pi-coding-agent
+          npm ls -g --depth 0 @earendil-works/pi-coding-agent
       - name: Run portable parallel shard 2
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/fm-test"
           bin/fm-test-run.sh --lane portable-parallel-2 \
+            --fail-on-gate-skip 'Pi extension typecheck prerequisite not found' \
             --json "$RUNNER_TEMP/fm-test/fm-test-timing-portable-parallel-2.json"
       - name: Upload shard 2 timing artifact
         if: always()

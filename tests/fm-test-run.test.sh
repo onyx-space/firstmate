@@ -991,11 +991,56 @@ test_portable_shard_union_and_coverage_guard() {
   # No duplicates across the four partitions.
   [ "$(printf '%s\n' "$s1" "$s2" "$serial" "$herdr" | LC_ALL=C sort | uniq -d | wc -l | tr -d ' ')" = "0" ] \
     || fail "lanes must not duplicate scripts"
-  # LPT order: first script of shard 1 is the longest proven script.
+  # LPT order: first script of shard 1 is the proven script with the largest
+  # portable_parallel_weight_hints weight. Update this literal together with that
+  # table in bin/fm-test-run.sh whenever the measured weights change.
   first=$(printf '%s\n' "$s1" | head -n 1)
-  [ "$first" = "tests/fm-x-mode.test.sh" ] \
-    || fail "shard 1 must start with the longest proven script, got $first"
+  [ "$first" = "tests/fm-captain-hold-lifecycle.test.sh" ] \
+    || fail "shard 1 must start with the heaviest proven script, got $first"
   pass "portable shard union, disjointness, and coverage guard hold"
+}
+
+test_parallel_lane_refuses_a_stale_weight_table() {
+  local tmp rc out lane fixture
+  # Lane listings are packed from the weight table inside command substitutions,
+  # where a failing hint cannot fail loudly: the die() only kills the subshell,
+  # so the listing quietly gets shorter and the lane reports green having run
+  # fewer scripts than the proof covers. The check has to sit in the shell the
+  # lane's exit status belongs to, and it has to reject an unusable weight value
+  # as well as a missing row, because an empty or non-numeric field aborts the
+  # packing mid-stream. Every one of these tables must refuse both lanes.
+  for fixture in missing-row blank-value non-numeric; do
+    tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-hints.XXXXXX")
+    mkdir -p "$tmp/bin"
+    case "$fixture" in
+      missing-row)
+        # The proven-isolated list entry carries no weight, so only the measured
+        # table loses a line here.
+        grep -v '^tests/fm-arm-pretool-check\.test\.sh [0-9]' "$RUNNER" >"$tmp/bin/fm-test-run.sh"
+        ;;
+      blank-value)
+        sed 's|^\(tests/fm-lint\.test\.sh\) [0-9]*$|\1 |' "$RUNNER" >"$tmp/bin/fm-test-run.sh"
+        ;;
+      non-numeric)
+        sed 's|^\(tests/fm-lint\.test\.sh\) [0-9]*$|\1 162x434|' "$RUNNER" >"$tmp/bin/fm-test-run.sh"
+        ;;
+    esac
+    cmp -s "$RUNNER" "$tmp/bin/fm-test-run.sh" \
+      && fail "the $fixture fixture left the runner unchanged; update its pattern"
+    chmod +x "$tmp/bin/fm-test-run.sh"
+    for lane in 1 2; do
+      set +e
+      out=$("$tmp/bin/fm-test-run.sh" --list --lane "portable-parallel-$lane" 2>&1)
+      rc=$?
+      set -e
+      [ "$rc" -eq 2 ] \
+        || fail "a $fixture weight table must be refused (exit 2), got $rc for shard $lane: $out"
+      printf '%s\n' "$out" | grep -Fq 'refresh it per docs/fm-test-portable-shards.md' \
+        || fail "the refusal must point at the refresh procedure: $out"
+    done
+    rm -rf "$tmp"
+  done
+  pass "a missing, blank, or non-numeric parallel weight refuses the lane instead of shrinking it"
 }
 
 test_portable_serial_shards_partition_the_serial_lane() {
@@ -1042,6 +1087,39 @@ test_portable_serial_shards_partition_the_serial_lane() {
     "$("$RUNNER" --list --lane "portable-serial-1of${count}")" ] \
     || fail "portable serial shard membership must be deterministic"
   pass "portable serial shards are a deterministic disjoint cover of the serial lane"
+}
+
+test_serial_shard_lane_refuses_a_malformed_weight() {
+  local tmp rc lanes lane
+  # The serial shard assignment shares lpt_bin_assignments with the parallel
+  # lanes and is consumed the same way, through a process substitution whose
+  # status no caller inspects, so a malformed weight must refuse the shard lane
+  # rather than truncate it into a shorter run that reports green.
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-serial-hints.XXXXXX")
+  mkdir -p "$tmp/bin"
+  ln -s "$ROOT/tests" "$tmp/tests"
+  sed 's|^\(tests/fm-teardown\.test\.sh\) [0-9]*$|\1 97x603|' "$RUNNER" >"$tmp/bin/fm-test-run.sh"
+  cmp -s "$RUNNER" "$tmp/bin/fm-test-run.sh" \
+    && fail "the malformed serial fixture left the runner unchanged; update its pattern"
+  chmod +x "$tmp/bin/fm-test-run.sh"
+
+  lanes=$("$tmp/bin/fm-test-run.sh" --list-lanes | grep '^portable-serial-[0-9]*of[0-9]*$')
+  [ -n "$lanes" ] || fail "no portable serial shard lanes were listed"
+  while IFS= read -r lane; do
+    [ -n "$lane" ] || continue
+    set +e
+    "$tmp/bin/fm-test-run.sh" --list --lane "$lane" >"$tmp/out" 2>"$tmp/err"
+    rc=$?
+    set -e
+    [ "$rc" -eq 2 ] \
+      || fail "a malformed serial weight must be refused (exit 2), got $rc for $lane"
+    [ ! -s "$tmp/out" ] \
+      || fail "$lane listed a partial suite from a malformed weight table: $(cat "$tmp/out")"
+    grep -Fq 'tests/fm-teardown.test.sh' "$tmp/err" \
+      || fail "$lane must name the offending weight table row: $(cat "$tmp/err")"
+  done <<<"$lanes"
+  rm -rf "$tmp"
+  pass "a malformed serial weight refuses the shard lane instead of truncating it"
 }
 
 test_portable_serial_hint_coverage_is_reported_and_bounded() {
@@ -1603,7 +1681,9 @@ test_live_guards_expect_a_capability_skip_class
 test_fail_on_gate_skip_token
 test_exclude_family
 test_portable_shard_union_and_coverage_guard
+test_parallel_lane_refuses_a_stale_weight_table
 test_portable_serial_shards_partition_the_serial_lane
+test_serial_shard_lane_refuses_a_malformed_weight
 test_portable_serial_hint_coverage_is_reported_and_bounded
 test_portable_serial_shard_lane_refusals
 test_jobs_requires_proven_isolated
