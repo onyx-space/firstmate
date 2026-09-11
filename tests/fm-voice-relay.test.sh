@@ -4741,7 +4741,7 @@ pass "a reply that arrives before the end of the clip is named as an unusable cl
 # --- a damaged byte must not defeat the deny list ---------------------------
 #
 # The deny list is enforced with exact substrings over an item's id, title, tags
-# and pull request link, and the durable reads behind a status answer decode
+# and pull request link, and the durable reads that carry those fields decode
 # strictly. A tolerant decode rewrites an undecodable byte to U+FFFD, which
 # breaks such a substring and lets a denied item be named in the answer; strictly
 # decoded, the same line costs the whole answer, which is the fail-closed side of

@@ -183,11 +183,11 @@ fm_parent_channel_is_own_log() {  # <state> <path>
 # - and the cut must land on a UTF-8 character boundary. The old fold ended in
 # `cut -c1-1200` with `LC_ALL=C` scoped to the `tr` only, so `cut` inherited the
 # caller's ambient locale, and `cut -c` counts bytes in a C/POSIX locale and
-# characters in a UTF-8 one (measured on GNU coreutils 9.4 and BSD alike; uutils
-# coreutils counts bytes whatever the locale). Where it counted bytes it cut at
-# whatever byte came 1200th, so a multibyte character straddling the bound was
-# split and the channel carried invalid UTF-8, which makes a consumer that
-# strictly decodes the file fail on the whole record rather than on the note.
+# characters in a UTF-8 one (measured on GNU coreutils 9.4 and BSD alike).
+# Where it counted bytes it cut at whatever byte came 1200th, so a multibyte
+# character straddling the bound was split and the channel carried invalid
+# UTF-8, which makes a consumer that strictly decodes the file fail on the
+# whole record rather than on the note.
 # That is why the failure looked platform-shaped: non-interactive Linux contexts
 # (ssh, cron, CI) usually run a C/POSIX locale while macOS defaults to a UTF-8
 # one. The boundary rule here is explicit and locale-independent, not delegated
