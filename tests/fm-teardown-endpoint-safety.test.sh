@@ -140,18 +140,27 @@ assert_no_mutating_runtime() {  # <case> <description>
   [ -z "$rest" ] || fail "$description: mutating runtime command ran: $rest"
 }
 
-# Everything a shared-slot teardown must leave untouched on a refusal.
-assert_shared_slot_refused() {  # <case> <id> <other> <description>
-  local dir=$1 id=$2 other=$3 description=$4
+# Everything a shared-slot teardown must leave untouched on a refusal. The
+# optional <reading> is "live-co-claimant" only for the one reading where a
+# different record on the slot reads a live agent and this one does not, which
+# is the only reading where the refusal may still offer the release order.
+assert_shared_slot_refused() {  # <case> <id> <other> <description> [<reading>]
+  local dir=$1 id=$2 other=$3 description=$4 reading=${5:-contested}
   assert_present "$dir/home/state/$id.meta" "$description: metadata changed before refusal"
   assert_present "$dir/home/state/$other.meta" "$description: the co-claimant's record was removed"
   assert_present "$dir/worktree/sentinel" "$description: the shared slot was reset"
   grep -Fq "treehouse <return>" "$dir/runtime.log" \
     && fail "$description: the shared slot was returned anyway"
   assert_no_mutating_runtime "$dir" "$description"
-  assert_contains "$(cat "$dir/stderr")" \
-    "Tear down the record whose endpoint is still live first" \
-    "$description: the refusal must point at the one release order that works"
+  assert_contains "$(cat "$dir/stderr")" "Reconcile whichever record is wrong" \
+    "$description: the refusal must name the records to reconcile"
+  if [ "$reading" = live-co-claimant ]; then
+    assert_contains "$(cat "$dir/stderr")" "Tear down task $other first" \
+      "$description: the refusal must name the record whose endpoint is still live"
+  else
+    assert_not_contains "$(cat "$dir/stderr")" "One record can release it:" \
+      "$description: the release order must not be offered where it cannot be followed"
+  fi
 }
 
 assert_refused_without_mutation() {  # <case> <id> <description>
@@ -710,6 +719,10 @@ test_shared_pool_slot_still_refuses_unprovable_live_work() {
   FM_FAKE_TMUX_PANE_PID=999999 run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr" || rc=$?
   [ "$rc" -ne 0 ] || fail "a shared slot was released with an unowned process still rooted in it"
   kill -0 "$worker" 2>/dev/null || fail "the refusal killed a process it could not account for"
+  assert_contains "$(cat "$dir/stderr")" "pid $worker is still rooted in" \
+    "the process proof must name the pid it could not account for"
+  assert_contains "$(cat "$dir/stderr")" "does not own it" \
+    "the process proof must name the blocker instead of only the collision"
   assert_shared_slot_refused "$dir" "$id" "$other" "unowned slot process"
   kill "$worker" 2>/dev/null || true
   wait "$worker" 2>/dev/null || true
@@ -730,6 +743,8 @@ test_shared_pool_slot_still_refuses_unprovable_live_work() {
   rc=0
   run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr" || rc=$?
   [ "$rc" -ne 0 ] || fail "a shared slot was released without a proven pane leader"
+  assert_contains "$(cat "$dir/stderr")" "cannot name the pane leader" \
+    "the pane-leader proof must say that no pane leader could be named"
   assert_shared_slot_refused "$dir" "$id" "$other" "unprovable pane leader"
   kill "$worker" 2>/dev/null || true
   wait "$worker" 2>/dev/null || true
@@ -819,6 +834,32 @@ test_shared_pool_slot_still_refuses_when_neither_record_is_live() {
   wait "$worker" 2>/dev/null || true
 
   pass "fm-teardown: two gone records leave the slot contested instead of guessing which claim is current"
+}
+
+test_shared_pool_slot_refusal_names_the_live_record_to_tear_down_first() {
+  local dir id=stale-task other=live-task rc
+
+  # The collision the captain reported: the stale record is the natural first
+  # pick, and the only record that can release the slot is the one whose
+  # endpoint is still alive.
+  dir=$(make_case slot-contested-one-live)
+  mark_case_as_treehouse_pool "$dir"
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=main:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  write_tmux_agent_stub "$dir" "main:fm-$id=missing" "other:fm-$other=alive"
+
+  set +e
+  run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "a pool slot was released while the record sharing it was still running"
+  assert_shared_slot_refused "$dir" "$id" "$other" "live co-claimant, stale pick" live-co-claimant
+
+  pass "fm-teardown: a refusal names the live record to tear down first"
 }
 
 test_cross_home_pool_slot_collision_refuses() {
@@ -1160,6 +1201,7 @@ test_shared_pool_slot_still_refuses_while_the_co_claimant_runs
 test_shared_pool_slot_still_refuses_an_unprovable_co_claimant
 test_shared_pool_slot_still_refuses_when_neither_record_is_live
 test_shared_pool_slot_still_refuses_unprovable_live_work
+test_shared_pool_slot_refusal_names_the_live_record_to_tear_down_first
 test_cross_home_pool_slot_collision_refuses
 test_sole_slot_record_still_tears_down
 test_recorded_endpoint_that_changed_directory_still_tears_down

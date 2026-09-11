@@ -2191,22 +2191,51 @@ teardown_pid_is_owned_by() {  # <pid> <root>
 # proves nothing and refuses.
 teardown_slot_processes_are_owned() {  # <backend> <target> <slot>
   local backend=$1 target=$2 slot=$3 root pids pid rescan
-  root=$(fm_backend_endpoint_root_pid "$backend" "$target") || return 1
-  case "$root" in ''|*[!0-9]*) return 1 ;; esac
-  pids=$(pids_with_cwd_under "$slot") || return 1
+  root=$(fm_backend_endpoint_root_pid "$backend" "$target") || root=
+  case "$root" in
+    ''|*[!0-9]*)
+      echo "teardown: the $backend backend cannot name the pane leader of $target, so no process in $slot can be shown to belong to this record's endpoint." >&2
+      echo "Confirm that recorded endpoint is still live and readable (bin/fm-crew-state.sh), then re-run teardown." >&2
+      return 1
+      ;;
+  esac
+  if ! pids=$(pids_with_cwd_under "$slot"); then
+    echo "teardown: the process scan of $slot failed, so nothing rooted there can be shown to belong to this record's endpoint." >&2
+    echo "Restore the process scan (lsof), then re-run teardown." >&2
+    return 1
+  fi
   [ -n "$pids" ] || return 0
   while IFS= read -r pid; do
     [ -n "$pid" ] || continue
     if teardown_pid_is_owned_by "$pid" "$root"; then
       continue
     fi
-    rescan=$(pids_with_cwd_under "$slot") || return 1
+    if ! rescan=$(pids_with_cwd_under "$slot"); then
+      echo "teardown: the process scan of $slot failed, so nothing rooted there can be shown to belong to this record's endpoint." >&2
+      echo "Restore the process scan (lsof), then re-run teardown." >&2
+      return 1
+    fi
     if task_pid_list_contains "$rescan" "$pid"; then
+      echo "teardown: pid $pid is still rooted in $slot but is neither the pane leader $root of $target nor a live descendant of it, so this record's endpoint does not own it." >&2
+      echo "Identify that process (ps -o pid,ppid,command -p $pid) and end it once it is confirmed unneeded, then re-run teardown." >&2
       return 1
     fi
   done <<EOF
 $pids
 EOF
+}
+
+# True only in the reading where the refusal may still name the sanctioned
+# release order: a co-claimant that is not a secondmate home reads a live
+# agent while this record's own endpoint does not. Every other reading - both
+# alive, both gone, an unprovable co-claimant, or this record itself refusing
+# on a failed live-work proof - has no such order to offer, and a secondmate
+# co-claimant is never the one that releases a pool slot.
+teardown_slot_release_order_applies() {  # <record-meta> <other-meta>
+  local record_meta=$1 other=$2
+  [ "$(fm_meta_get "$other" kind)" != secondmate ] || return 1
+  [ "$(teardown_record_agent_state "$other")" = alive ] || return 1
+  [ "$(teardown_record_agent_state "$record_meta")" != alive ]
 }
 
 # The copy half of the live-owner proof: the SHARED copy must hold no unlanded
@@ -2271,7 +2300,9 @@ require_exclusive_worktree_slot_record() {
         fi
         echo "REFUSED: task $record_id's recorded worktree $slot is also task $other_id's recorded $field." >&2
         echo "Returning that pool slot would kill $other_id's processes and reset its copy, so nothing was changed - not even with --force." >&2
-        echo "One record can release it: the one whose recorded endpoint is still alive, once the shared copy holds no unlanded work and nothing rooted in the slot belongs to anyone else. Tear down the record whose endpoint is still live first, then re-run this one." >&2
+        if teardown_slot_release_order_applies "$record_meta" "$other"; then
+          echo "One record can release it: task $other_id's recorded endpoint is still alive. Tear down task $other_id first, then re-run this one." >&2
+        fi
         echo "Reconcile whichever record is wrong (bin/fm-crew-state.sh $record_id; bin/fm-crew-state.sh $other_id), then re-run teardown." >&2
         return 1
       done
