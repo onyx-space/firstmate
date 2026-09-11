@@ -1,0 +1,136 @@
+# Parent-channel note fold: publisher-level verification on Linux (w machine: WSL2 x86_64, uutils cut 0.8.0, bash 5.3.9)
+# new = target commit 18f4496; base = full base commit 99e027c; prefix = 18f4496 with the base fold
+
+### environment
+Linux 6.18.40.1-microsoft-standard-WSL2
+cut (uutils coreutils) 0.8.0
+LANG=C.UTF-8
+LANGUAGE=
+LC_CTYPE="C.UTF-8"
+
+### 1. the fold itself, 42 boundary alignments (3-byte and 4-byte shapes), base vs new
+  INVALID-UTF8  len=0 kind=cjk
+  INVALID-UTF8  len=0 kind=emoji
+  INVALID-UTF8  len=1 kind=cjk
+  INVALID-UTF8  len=1 kind=emoji
+  INVALID-UTF8  len=3 kind=cjk
+  INVALID-UTF8  len=3 kind=emoji
+  INVALID-UTF8  len=4 kind=cjk
+  INVALID-UTF8  len=4 kind=emoji
+  INVALID-UTF8  len=5 kind=emoji
+  INVALID-UTF8  len=6 kind=cjk
+  INVALID-UTF8  len=7 kind=cjk
+  INVALID-UTF8  len=7 kind=emoji
+  INVALID-UTF8  len=8 kind=emoji
+  INVALID-UTF8  len=9 kind=cjk
+  INVALID-UTF8  len=9 kind=emoji
+  INVALID-UTF8  len=10 kind=cjk
+  INVALID-UTF8  len=11 kind=emoji
+  INVALID-UTF8  len=12 kind=cjk
+  INVALID-UTF8  len=12 kind=emoji
+  INVALID-UTF8  len=13 kind=cjk
+  INVALID-UTF8  len=13 kind=emoji
+  INVALID-UTF8  len=15 kind=cjk
+  INVALID-UTF8  len=15 kind=emoji
+  INVALID-UTF8  len=16 kind=cjk
+  INVALID-UTF8  len=16 kind=emoji
+  INVALID-UTF8  len=17 kind=emoji
+  INVALID-UTF8  len=18 kind=cjk
+  INVALID-UTF8  len=19 kind=cjk
+  INVALID-UTF8  len=19 kind=emoji
+  INVALID-UTF8  len=20 kind=emoji
+OLD/w/ambient: alignments=42 invalid_utf8=30 over_bound=0 bad_shape=0
+NEW/w/ambient: alignments=42 invalid_utf8=0 over_bound=0 bad_shape=0
+  INVALID-UTF8  len=0 kind=cjk
+  INVALID-UTF8  len=0 kind=emoji
+  INVALID-UTF8  len=1 kind=cjk
+  INVALID-UTF8  len=1 kind=emoji
+  INVALID-UTF8  len=3 kind=cjk
+  INVALID-UTF8  len=3 kind=emoji
+  INVALID-UTF8  len=4 kind=cjk
+  INVALID-UTF8  len=4 kind=emoji
+  INVALID-UTF8  len=5 kind=emoji
+  INVALID-UTF8  len=6 kind=cjk
+  INVALID-UTF8  len=7 kind=cjk
+  INVALID-UTF8  len=7 kind=emoji
+  INVALID-UTF8  len=8 kind=emoji
+  INVALID-UTF8  len=9 kind=cjk
+  INVALID-UTF8  len=9 kind=emoji
+  INVALID-UTF8  len=10 kind=cjk
+  INVALID-UTF8  len=11 kind=emoji
+  INVALID-UTF8  len=12 kind=cjk
+  INVALID-UTF8  len=12 kind=emoji
+  INVALID-UTF8  len=13 kind=cjk
+  INVALID-UTF8  len=13 kind=emoji
+  INVALID-UTF8  len=15 kind=cjk
+  INVALID-UTF8  len=15 kind=emoji
+  INVALID-UTF8  len=16 kind=cjk
+  INVALID-UTF8  len=16 kind=emoji
+  INVALID-UTF8  len=17 kind=emoji
+  INVALID-UTF8  len=18 kind=cjk
+  INVALID-UTF8  len=19 kind=cjk
+  INVALID-UTF8  len=19 kind=emoji
+  INVALID-UTF8  len=20 kind=emoji
+OLD/w/LC_ALL=C: alignments=42 invalid_utf8=30 over_bound=0 bad_shape=0
+NEW/w/LC_ALL=C: alignments=42 invalid_utf8=0 over_bound=0 bad_shape=0
+
+### 2. the repo regression test on Linux, new vs pre-fix fold
+--- new:
+ok - only a remote mate home's own parent-channel log is recognized
+ok - the watcher's scans skip the parent-channel log and keep scanning a task log
+ok - the classifier's fleet-wide scans skip the parent-channel log and keep scanning a task log
+ok - the drain folds no open decision from the mate's own parent-channel log
+ok - the note fold keeps a bounded one-line note that is valid UTF-8 (84 boundary alignments, ambient locale and LC_ALL=C)
+rc=0
+--- pre-fix fold:
+ok - only a remote mate home's own parent-channel log is recognized
+ok - the watcher's scans skip the parent-channel log and keep scanning a task log
+ok - the classifier's fleet-wide scans skip the parent-channel log and keep scanning a task log
+ok - the drain folds no open decision from the mate's own parent-channel log
+rc=1
+
+### 3. the real publisher (bin/fm-inactive-reconcile.sh) on Linux, new
+new-linux/cjk/pad=0 note=1198 bytes chars=400 tail-bytes=173 228 184 173
+PASS(new-linux/cjk/pad=0)
+new-linux/emoji/pad=0 note=1198 bytes chars=304 tail-bytes=240 159 152 128
+PASS(new-linux/emoji/pad=0)
+new-linux/cjk/pad=1 note=1199 bytes chars=401 tail-bytes=173 228 184 173
+PASS(new-linux/cjk/pad=1)
+new-linux/emoji/pad=1 note=1199 bytes chars=305 tail-bytes=240 159 152 128
+PASS(new-linux/emoji/pad=1)
+new-linux/cjk/pad=2 note=1200 bytes chars=402 tail-bytes=173 228 184 173
+PASS(new-linux/cjk/pad=2)
+new-linux/emoji/pad=2 note=1200 bytes chars=306 tail-bytes=240 159 152 128
+PASS(new-linux/emoji/pad=2)
+new-linux/cjk/pad=3 note=1198 bytes chars=402 tail-bytes=173 228 184 173
+PASS(new-linux/cjk/pad=3)
+new-linux/emoji/pad=3 note=1197 bytes chars=306 tail-bytes=240 159 152 128
+PASS(new-linux/emoji/pad=3)
+=== new-linux: alignments=8 failures=0
+rc=0
+
+### 4. the same publisher with the base commit code
+FAIL(base-linux/cjk/pad=0): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode bytes in position 1262-1263: invalid continuation byte
+  bytes at the fault: 228 184 173 228 184 173 228 184 32 109 111 100
+FAIL(base-linux/emoji/pad=0): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode bytes in position 1262-1263: invalid continuation byte
+  bytes at the fault: 152 128 240 159 152 128 240 159 32 109 111 100
+FAIL(base-linux/cjk/pad=1): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode byte 0xe4 in position 1263: invalid continuation byte
+  bytes at the fault: 228 184 173 228 184 173 228 32 109 111 100 101
+FAIL(base-linux/emoji/pad=1): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode byte 0xf0 in position 1263: invalid continuation byte
+  bytes at the fault: 152 128 240 159 152 128 240 32 109 111 100 101
+base-linux/cjk/pad=2 note=1200 bytes chars=402 tail-bytes=173 228 184 173
+PASS(base-linux/cjk/pad=2)
+base-linux/emoji/pad=2 note=1200 bytes chars=306 tail-bytes=240 159 152 128
+PASS(base-linux/emoji/pad=2)
+FAIL(base-linux/cjk/pad=3): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode bytes in position 1262-1263: invalid continuation byte
+  bytes at the fault: 228 184 173 228 184 173 228 184 32 109 111 100
+FAIL(base-linux/emoji/pad=3): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode bytes in position 1261-1263: invalid continuation byte
+  bytes at the fault: 152 128 240 159 152 128 240 159 152 32 109 111
+=== base-linux: alignments=8 failures=6
+rc=1
+ok - only a remote mate home's own parent-channel log is recognized
+ok - the watcher's scans skip the parent-channel log and keep scanning a task log
+ok - the classifier's fleet-wide scans skip the parent-channel log and keep scanning a task log
+ok - the drain folds no open decision from the mate's own parent-channel log
+not ok - the fold split a multibyte character at ASCII-prefix 0 in the ambient locale, so the channel line carried invalid UTF-8
+rc=1

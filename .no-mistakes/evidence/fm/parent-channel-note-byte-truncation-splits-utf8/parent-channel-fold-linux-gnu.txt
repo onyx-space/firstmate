@@ -1,0 +1,144 @@
+# Parent-channel note fold: publisher-level verification on Linux with GNU coreutils 9.4 (h machine, openEuler aarch64)
+# new = target commit 18f4496; prefix = 18f4496 with bin/fm-parent-channel-lib.sh from base 99e027c
+### environment
+Linux 6.6.0-132.0.0.111.oe2403sp3.aarch64
+cut (GNU coreutils) 9.4
+GNU bash, version 5.2.15(1)-release (aarch64-openEuler-linux-gnu)
+LANG=C.UTF-8
+LC_CTYPE="C.UTF-8"
+LC_NUMERIC="C.UTF-8"
+### 1. the fold itself, 42 boundary alignments (3-byte and 4-byte shapes), pre-fix vs new
+  OVER-BOUND   len=0 kind=cjk bytes=1546
+  OVER-BOUND   len=0 kind=emoji bytes=1646
+  OVER-BOUND   len=1 kind=cjk bytes=1547
+  OVER-BOUND   len=1 kind=emoji bytes=1647
+  OVER-BOUND   len=2 kind=cjk bytes=1548
+  OVER-BOUND   len=2 kind=emoji bytes=1648
+  OVER-BOUND   len=3 kind=cjk bytes=1549
+  OVER-BOUND   len=3 kind=emoji bytes=1649
+  OVER-BOUND   len=4 kind=cjk bytes=1550
+  OVER-BOUND   len=4 kind=emoji bytes=1650
+  OVER-BOUND   len=5 kind=cjk bytes=1551
+  OVER-BOUND   len=5 kind=emoji bytes=1651
+  OVER-BOUND   len=6 kind=cjk bytes=1552
+  OVER-BOUND   len=6 kind=emoji bytes=1652
+  OVER-BOUND   len=7 kind=cjk bytes=1553
+  OVER-BOUND   len=7 kind=emoji bytes=1653
+  OVER-BOUND   len=8 kind=cjk bytes=1554
+  OVER-BOUND   len=8 kind=emoji bytes=1654
+  OVER-BOUND   len=9 kind=cjk bytes=1555
+  OVER-BOUND   len=9 kind=emoji bytes=1655
+  OVER-BOUND   len=10 kind=cjk bytes=1556
+  OVER-BOUND   len=10 kind=emoji bytes=1656
+  OVER-BOUND   len=11 kind=cjk bytes=1557
+  OVER-BOUND   len=11 kind=emoji bytes=1657
+  OVER-BOUND   len=12 kind=cjk bytes=1558
+  OVER-BOUND   len=12 kind=emoji bytes=1658
+  OVER-BOUND   len=13 kind=cjk bytes=1559
+  OVER-BOUND   len=13 kind=emoji bytes=1659
+  OVER-BOUND   len=14 kind=cjk bytes=1560
+  OVER-BOUND   len=14 kind=emoji bytes=1660
+  OVER-BOUND   len=15 kind=cjk bytes=1561
+  OVER-BOUND   len=15 kind=emoji bytes=1661
+  OVER-BOUND   len=16 kind=cjk bytes=1562
+  OVER-BOUND   len=16 kind=emoji bytes=1662
+  OVER-BOUND   len=17 kind=cjk bytes=1563
+  OVER-BOUND   len=17 kind=emoji bytes=1663
+  OVER-BOUND   len=18 kind=cjk bytes=1564
+  OVER-BOUND   len=18 kind=emoji bytes=1664
+  OVER-BOUND   len=19 kind=cjk bytes=1565
+  OVER-BOUND   len=19 kind=emoji bytes=1665
+  OVER-BOUND   len=20 kind=cjk bytes=1566
+  OVER-BOUND   len=20 kind=emoji bytes=1666
+OLD/h/ambient: alignments=42 invalid_utf8=0 over_bound=42 bad_shape=0
+NEW/h/ambient: alignments=42 invalid_utf8=0 over_bound=0 bad_shape=0
+  INVALID-UTF8  len=0 kind=cjk
+  INVALID-UTF8  len=0 kind=emoji
+  INVALID-UTF8  len=1 kind=cjk
+  INVALID-UTF8  len=1 kind=emoji
+  INVALID-UTF8  len=3 kind=cjk
+  INVALID-UTF8  len=3 kind=emoji
+  INVALID-UTF8  len=4 kind=cjk
+  INVALID-UTF8  len=4 kind=emoji
+  INVALID-UTF8  len=5 kind=emoji
+  INVALID-UTF8  len=6 kind=cjk
+  INVALID-UTF8  len=7 kind=cjk
+  INVALID-UTF8  len=7 kind=emoji
+  INVALID-UTF8  len=8 kind=emoji
+  INVALID-UTF8  len=9 kind=cjk
+  INVALID-UTF8  len=9 kind=emoji
+  INVALID-UTF8  len=10 kind=cjk
+  INVALID-UTF8  len=11 kind=emoji
+  INVALID-UTF8  len=12 kind=cjk
+  INVALID-UTF8  len=12 kind=emoji
+  INVALID-UTF8  len=13 kind=cjk
+  INVALID-UTF8  len=13 kind=emoji
+  INVALID-UTF8  len=15 kind=cjk
+  INVALID-UTF8  len=15 kind=emoji
+  INVALID-UTF8  len=16 kind=cjk
+  INVALID-UTF8  len=16 kind=emoji
+  INVALID-UTF8  len=17 kind=emoji
+  INVALID-UTF8  len=18 kind=cjk
+  INVALID-UTF8  len=19 kind=cjk
+  INVALID-UTF8  len=19 kind=emoji
+  INVALID-UTF8  len=20 kind=emoji
+OLD/h/LC_ALL=C: alignments=42 invalid_utf8=30 over_bound=0 bad_shape=0
+NEW/h/LC_ALL=C: alignments=42 invalid_utf8=0 over_bound=0 bad_shape=0
+### 2. the repo regression test on Linux, new vs pre-fix fold
+--- new:
+ok - only a remote mate home's own parent-channel log is recognized
+ok - the watcher's scans skip the parent-channel log and keep scanning a task log
+ok - the classifier's fleet-wide scans skip the parent-channel log and keep scanning a task log
+ok - the drain folds no open decision from the mate's own parent-channel log
+ok - the note fold keeps a bounded one-line note that is valid UTF-8 (84 boundary alignments, ambient locale and LC_ALL=C)
+rc=0
+--- pre-fix fold:
+ok - only a remote mate home's own parent-channel log is recognized
+ok - the watcher's scans skip the parent-channel log and keep scanning a task log
+ok - the classifier's fleet-wide scans skip the parent-channel log and keep scanning a task log
+ok - the drain folds no open decision from the mate's own parent-channel log
+not ok - the folded line grew past its byte bound: 1546 bytes at ASCII-prefix 0 in the ambient locale
+rc=1
+### 3. the real publisher (bin/fm-inactive-reconcile.sh) on Linux, new
+new-h/cjk/pad=0 note=1198 bytes chars=400 tail-bytes=173 228 184 173
+PASS(new-h/cjk/pad=0)
+new-h/emoji/pad=0 note=1198 bytes chars=304 tail-bytes=240 159 152 128
+PASS(new-h/emoji/pad=0)
+new-h/cjk/pad=1 note=1199 bytes chars=401 tail-bytes=173 228 184 173
+PASS(new-h/cjk/pad=1)
+new-h/emoji/pad=1 note=1199 bytes chars=305 tail-bytes=240 159 152 128
+PASS(new-h/emoji/pad=1)
+new-h/cjk/pad=2 note=1200 bytes chars=402 tail-bytes=173 228 184 173
+PASS(new-h/cjk/pad=2)
+new-h/emoji/pad=2 note=1200 bytes chars=306 tail-bytes=240 159 152 128
+PASS(new-h/emoji/pad=2)
+new-h/cjk/pad=3 note=1198 bytes chars=402 tail-bytes=173 228 184 173
+PASS(new-h/cjk/pad=3)
+new-h/emoji/pad=3 note=1197 bytes chars=306 tail-bytes=240 159 152 128
+PASS(new-h/emoji/pad=3)
+=== new-h: alignments=8 failures=0
+rc=0
+### 4. the same publisher with the pre-fix fold
+FAIL(prefix-h/cjk/pad=0): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode bytes in position 1262-1263: invalid continuation byte
+  bytes at the fault: 228 184 173 228 184 173 228 184 32 109 111 100
+FAIL(prefix-h/emoji/pad=0): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode bytes in position 1262-1263: invalid continuation byte
+  bytes at the fault: 152 128 240 159 152 128 240 159 32 109 111 100
+FAIL(prefix-h/cjk/pad=1): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode byte 0xe4 in position 1263: invalid continuation byte
+  bytes at the fault: 228 184 173 228 184 173 228 32 109 111 100 101
+FAIL(prefix-h/emoji/pad=1): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode byte 0xf0 in position 1263: invalid continuation byte
+  bytes at the fault: 152 128 240 159 152 128 240 32 109 111 100 101
+prefix-h/cjk/pad=2 note=1200 bytes chars=402 tail-bytes=173 228 184 173
+PASS(prefix-h/cjk/pad=2)
+prefix-h/emoji/pad=2 note=1200 bytes chars=306 tail-bytes=240 159 152 128
+PASS(prefix-h/emoji/pad=2)
+FAIL(prefix-h/cjk/pad=3): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode bytes in position 1262-1263: invalid continuation byte
+  bytes at the fault: 228 184 173 228 184 173 228 184 32 109 111 100
+FAIL(prefix-h/emoji/pad=3): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode bytes in position 1261-1263: invalid continuation byte
+  bytes at the fault: 152 128 240 159 152 128 240 159 152 32 109 111
+=== prefix-h: alignments=8 failures=6
+rc=1
+### 5. the changed call site suite: tests/fm-inactive-reconcile.test.sh on Linux
+actionable: inactive terminal outcome awaiting captain presentation: child=child state=done pr=https://example.test/owner/repo/pull/1
+ok - reconciliation makes zero forge or PR API calls
+all inactive reconciliation tests passed
+rc=0

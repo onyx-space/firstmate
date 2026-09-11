@@ -1,0 +1,79 @@
+# Parent-channel note fold: the 2-byte character shape at the publisher level
+# Same driver as fm-fold-e2e.sh, restricted to FM_E2E_SHAPES=two-byte (U+00E9), because the
+# in-tree regression test sweeps only 3-byte and 4-byte shapes.
+
+### macOS, change
+macOS-change/two-byte/pad=0 note=1200 bytes chars=593 tail-bytes=195 169 195 169
+PASS(macOS-change/two-byte/pad=0)
+macOS-change/two-byte/pad=1 note=1199 bytes chars=593 tail-bytes=195 169 195 169
+PASS(macOS-change/two-byte/pad=1)
+macOS-change/two-byte/pad=2 note=1200 bytes chars=594 tail-bytes=195 169 195 169
+PASS(macOS-change/two-byte/pad=2)
+macOS-change/two-byte/pad=3 note=1199 bytes chars=594 tail-bytes=195 169 195 169
+PASS(macOS-change/two-byte/pad=3)
+=== macOS-change: alignments=4 failures=0
+### macOS, pre-fix fold
+macOS-pre-fix/two-byte/pad=0 note=1200 bytes chars=593 tail-bytes=195 169 195 169
+PASS(macOS-pre-fix/two-byte/pad=0)
+FAIL(macOS-pre-fix/two-byte/pad=1): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode byte 0xc3 in position 1263: invalid continuation byte
+  bytes at the fault: 195 169 195 169 195 169 195 32 109 111 100 101
+macOS-pre-fix/two-byte/pad=2 note=1200 bytes chars=594 tail-bytes=195 169 195 169
+PASS(macOS-pre-fix/two-byte/pad=2)
+FAIL(macOS-pre-fix/two-byte/pad=3): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode byte 0xc3 in position 1263: invalid continuation byte
+  bytes at the fault: 195 169 195 169 195 169 195 32 109 111 100 101
+=== macOS-pre-fix: alignments=4 failures=2
+
+### Linux h (GNU coreutils 9.4), change
+
+bash: /Users/onyx/.no-mistakes/evidence/01M27MAMWSMW3AFA2QXPXHCJ32/fm-fold-e2e.sh: No such file or directory
+### Linux h, pre-fix fold
+
+bash: /Users/onyx/.no-mistakes/evidence/01M27MAMWSMW3AFA2QXPXHCJ32/fm-fold-e2e.sh: No such file or directory
+
+### Linux w (uutils cut 0.8.0), change
+bash: /Users/onyx/.no-mistakes/evidence/01M27MAMWSMW3AFA2QXPXHCJ32/fm-fold-e2e.sh: No such file or directory
+### Linux w, pre-fix fold
+bash: /Users/onyx/.no-mistakes/evidence/01M27MAMWSMW3AFA2QXPXHCJ32/fm-fold-e2e.sh: No such file or directory
+### Linux h (GNU coreutils 9.4), change
+
+linux-gnu-change/two-byte/pad=0 note=1200 bytes chars=593 tail-bytes=195 169 195 169
+PASS(linux-gnu-change/two-byte/pad=0)
+linux-gnu-change/two-byte/pad=1 note=1199 bytes chars=593 tail-bytes=195 169 195 169
+PASS(linux-gnu-change/two-byte/pad=1)
+linux-gnu-change/two-byte/pad=2 note=1200 bytes chars=594 tail-bytes=195 169 195 169
+PASS(linux-gnu-change/two-byte/pad=2)
+linux-gnu-change/two-byte/pad=3 note=1199 bytes chars=594 tail-bytes=195 169 195 169
+PASS(linux-gnu-change/two-byte/pad=3)
+=== linux-gnu-change: alignments=4 failures=0
+### Linux h, pre-fix fold
+
+linux-gnu-pre-fix/two-byte/pad=0 note=1200 bytes chars=593 tail-bytes=195 169 195 169
+PASS(linux-gnu-pre-fix/two-byte/pad=0)
+FAIL(linux-gnu-pre-fix/two-byte/pad=1): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode byte 0xc3 in position 1263: invalid continuation byte
+  bytes at the fault: 195 169 195 169 195 169 195 32 109 111 100 101
+linux-gnu-pre-fix/two-byte/pad=2 note=1200 bytes chars=594 tail-bytes=195 169 195 169
+PASS(linux-gnu-pre-fix/two-byte/pad=2)
+FAIL(linux-gnu-pre-fix/two-byte/pad=3): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode byte 0xc3 in position 1263: invalid continuation byte
+  bytes at the fault: 195 169 195 169 195 169 195 32 109 111 100 101
+=== linux-gnu-pre-fix: alignments=4 failures=2
+
+### Linux w (uutils cut 0.8.0), change
+linux-uutils-change/two-byte/pad=0 note=1200 bytes chars=593 tail-bytes=195 169 195 169
+PASS(linux-uutils-change/two-byte/pad=0)
+linux-uutils-change/two-byte/pad=1 note=1199 bytes chars=593 tail-bytes=195 169 195 169
+PASS(linux-uutils-change/two-byte/pad=1)
+linux-uutils-change/two-byte/pad=2 note=1200 bytes chars=594 tail-bytes=195 169 195 169
+PASS(linux-uutils-change/two-byte/pad=2)
+linux-uutils-change/two-byte/pad=3 note=1199 bytes chars=594 tail-bytes=195 169 195 169
+PASS(linux-uutils-change/two-byte/pad=3)
+=== linux-uutils-change: alignments=4 failures=0
+### Linux w, pre-fix fold
+linux-uutils-pre-fix/two-byte/pad=0 note=1200 bytes chars=593 tail-bytes=195 169 195 169
+PASS(linux-uutils-pre-fix/two-byte/pad=0)
+FAIL(linux-uutils-pre-fix/two-byte/pad=1): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode byte 0xc3 in position 1263: invalid continuation byte
+  bytes at the fault: 195 169 195 169 195 169 195 32 109 111 100 101
+linux-uutils-pre-fix/two-byte/pad=2 note=1200 bytes chars=594 tail-bytes=195 169 195 169
+PASS(linux-uutils-pre-fix/two-byte/pad=2)
+FAIL(linux-uutils-pre-fix/two-byte/pad=3): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode byte 0xc3 in position 1263: invalid continuation byte
+  bytes at the fault: 195 169 195 169 195 169 195 32 109 111 100 101
+=== linux-uutils-pre-fix: alignments=4 failures=2

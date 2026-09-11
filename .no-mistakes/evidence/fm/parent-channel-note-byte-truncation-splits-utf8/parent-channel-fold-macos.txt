@@ -1,0 +1,83 @@
+# Parent-channel note fold: publisher-level verification on macOS (Darwin 25.6.0, BSD cut)
+# tree under test: this worktree at 18f4496; pre-fix comparisons: bin/fm-parent-channel-lib.sh from 99e027c
+# driver: fm-fold-e2e.sh (drives the real bin/fm-inactive-reconcile.sh, then strict-decodes the channel file)
+
+## $ cut: BSD usage: cut -b list [-n] [file ...] ; locale LANG=C.UTF-8
+
+### 1. change (18f4496): 8 boundary alignments through the real publisher
+new-macOS/cjk/pad=0 note=1198 bytes chars=400 tail-bytes=173 228 184 173
+PASS(new-macOS/cjk/pad=0)
+new-macOS/emoji/pad=0 note=1198 bytes chars=304 tail-bytes=240 159 152 128
+PASS(new-macOS/emoji/pad=0)
+new-macOS/cjk/pad=1 note=1199 bytes chars=401 tail-bytes=173 228 184 173
+PASS(new-macOS/cjk/pad=1)
+new-macOS/emoji/pad=1 note=1199 bytes chars=305 tail-bytes=240 159 152 128
+PASS(new-macOS/emoji/pad=1)
+new-macOS/cjk/pad=2 note=1200 bytes chars=402 tail-bytes=173 228 184 173
+PASS(new-macOS/cjk/pad=2)
+new-macOS/emoji/pad=2 note=1200 bytes chars=306 tail-bytes=240 159 152 128
+PASS(new-macOS/emoji/pad=2)
+new-macOS/cjk/pad=3 note=1198 bytes chars=402 tail-bytes=173 228 184 173
+PASS(new-macOS/cjk/pad=3)
+new-macOS/emoji/pad=3 note=1197 bytes chars=306 tail-bytes=240 159 152 128
+PASS(new-macOS/emoji/pad=3)
+=== new-macOS: alignments=8 failures=0
+rc=0
+
+### 2. same driver against the pre-fix fold (base commit 99e027c)
+FAIL(pref-fix-macOS/cjk/pad=0): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode bytes in position 1262-1263: invalid continuation byte
+  bytes at the fault: 228 184 173 228 184 173 228 184 32 109 111 100
+FAIL(pref-fix-macOS/emoji/pad=0): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode bytes in position 1262-1263: invalid continuation byte
+  bytes at the fault: 152 128 240 159 152 128 240 159 32 109 111 100
+FAIL(pref-fix-macOS/cjk/pad=1): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode byte 0xe4 in position 1263: invalid continuation byte
+  bytes at the fault: 228 184 173 228 184 173 228 32 109 111 100 101
+FAIL(pref-fix-macOS/emoji/pad=1): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode byte 0xf0 in position 1263: invalid continuation byte
+  bytes at the fault: 152 128 240 159 152 128 240 32 109 111 100 101
+pref-fix-macOS/cjk/pad=2 note=1200 bytes chars=402 tail-bytes=173 228 184 173
+PASS(pref-fix-macOS/cjk/pad=2)
+pref-fix-macOS/emoji/pad=2 note=1200 bytes chars=306 tail-bytes=240 159 152 128
+PASS(pref-fix-macOS/emoji/pad=2)
+FAIL(pref-fix-macOS/cjk/pad=3): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode bytes in position 1262-1263: invalid continuation byte
+  bytes at the fault: 228 184 173 228 184 173 228 184 32 109 111 100
+FAIL(pref-fix-macOS/emoji/pad=3): strict UTF-8 decode of the whole channel file failed: 'utf-8' codec can't decode bytes in position 1261-1263: invalid continuation byte
+  bytes at the fault: 152 128 240 159 152 128 240 159 152 32 109 111
+=== pref-fix-macOS: alignments=8 failures=6
+rc=1
+
+### 3. second publisher: bin/fm-captain-hold.sh --reason <long CJK> (a different call site, no LC_ALL override)
+hold exit=0 out=fold-call|
+new-hold-macOS note=1199 bytes chars=401 lines=1 tail-bytes=173 228 184 173
+PASS(new-hold-macOS): the captain-hold publisher writes a valid, bounded channel note
+=== new-hold-macOS rc=0
+### pre-fix fold, same publisher
+hold exit=0 out=fold-call|
+pref-hold-macOS note=2747 bytes chars=917 lines=1 tail-bytes=173 228 184 173
+FAIL(pref-hold-macOS): the folded note is 2747 bytes, past its 1200-byte bound
+=== pref-hold-macOS rc=1
+
+### 4. framing: a CRLF ledger line carrying a tab stays one clean channel line
+new-framing: 1 line, no CR, no tab, note reads 'ne: pick one 重来'
+PASS(new-framing): a CRLF ledger line with a tab stays one clean channel line
+pref-framing: 1 line, no CR, no tab, note reads 'ne: pick one 重来'
+PASS(pref-framing): a CRLF ledger line with a tab stays one clean channel line
+
+### 5. a channel file already carrying an invalid byte from an earlier write
+reconcile exit=0 stderr=
+new-damaged: the seeded damaged line is untouched and the new line is 135 valid bytes: 'done [key=child-outcome-child-done-a3c34df4]: '
+PASS(new-damaged): a channel already carrying an invalid byte still accepts published lines
+
+### 6. the repo's own regression test, this tree
+ok - only a remote mate home's own parent-channel log is recognized
+ok - the watcher's scans skip the parent-channel log and keep scanning a task log
+ok - the classifier's fleet-wide scans skip the parent-channel log and keep scanning a task log
+ok - the drain folds no open decision from the mate's own parent-channel log
+ok - the note fold keeps a bounded one-line note that is valid UTF-8 (84 boundary alignments, ambient locale and LC_ALL=C)
+rc=0
+
+### 7. the repo's own regression test with the pre-fix fold (bin/fm-parent-channel-lib.sh from 99e027c)
+ok - only a remote mate home's own parent-channel log is recognized
+ok - the watcher's scans skip the parent-channel log and keep scanning a task log
+ok - the classifier's fleet-wide scans skip the parent-channel log and keep scanning a task log
+ok - the drain folds no open decision from the mate's own parent-channel log
+not ok - the folded line grew past its byte bound: 1546 bytes at ASCII-prefix 0 in the ambient locale
+rc=1

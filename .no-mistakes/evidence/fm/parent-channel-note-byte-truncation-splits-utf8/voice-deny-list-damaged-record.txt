@@ -1,0 +1,23 @@
+# Voice relay: a damaged durable record must not defeat the deny list (tests/fm-voice-relay.test.sh)
+# The case drives the real CLI: python3 bin/fm_voice_records.py status --home <home> --scope full
+
+### 1. this tree (strict decode restored, 032d0cd): the whole suite
+ok - the desktop's own check answers from the records and times it from the talk end
+ok - a reply that arrives before the end of the clip is named as an unusable clock
+ok - an undecodable byte in a durable record cannot defeat the deny list
+all voice relay cases passed
+rc=0
+
+### 2. the same suite with the tolerant-decode version of bin/fm_voice_records.py (from d2a336d, before the review fix)
+284:        with open(path, encoding="utf-8", errors="replace") as handle:
+333:             window.decode("utf-8", errors="replace").splitlines() if text.strip()]
+358:            with open(os.path.join(state_dir, name), encoding="utf-8", errors="replace") as handle:
+ok - the desktop's own check answers from the records and times it from the talk end
+ok - a reply that arrives before the end of the clip is named as an unusable clock
+a denied item with an undecodable title was named
+not ok - an undecodable byte defeated the deny list
+rc=1
+
+### 3. the CLI answer itself, damaged title in data/backlog.md vs config/voice-read-deny, this tree
+clean denied item -> exit=0 named_in_answer=False withheld=1
+denied title with a raw 0xff inside the deny word -> exit=1 named_in_answer=False withheld=read refused

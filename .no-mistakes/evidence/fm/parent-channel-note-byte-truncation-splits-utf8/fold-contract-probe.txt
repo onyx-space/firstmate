@@ -1,0 +1,121 @@
+# Fold contract probe: exact output vs an independently computed whole-character prefix
+# Case set: 2-byte, 3-byte and 4-byte boundary shapes, exact-bound values, framing characters.
+
+### macOS (Darwin 25.6.0, BSD cut), change
+PASS 2-byte char, ASCII prefix 0                    out=1200 bytes
+PASS 2-byte char, ASCII prefix 1                    out=1199 bytes
+PASS 2-byte char, ASCII prefix 2                    out=1200 bytes
+PASS 2-byte char, ASCII prefix 3                    out=1199 bytes
+PASS exact 1200 ASCII bytes                         out=1200 bytes
+PASS 1201 ASCII bytes                               out=1200 bytes
+PASS 1199 ASCII bytes                               out=1199 bytes
+PASS 1197 ASCII + 3-byte char (exactly 1200)        out=1200 bytes
+PASS 1198 ASCII + 3-byte char (1201, split)         out=1198 bytes
+PASS 1199 ASCII + 3-byte char                       out=1199 bytes
+PASS 1196 ASCII + 4-byte char (exactly 1200)        out=1200 bytes
+PASS 1197 ASCII + 4-byte char (1201, split)         out=1197 bytes
+PASS 1198 ASCII + 4-byte char (1202, split)         out=1198 bytes
+PASS mixed CJK/ASCII/emoji over the bound           out=1199 bytes
+PASS tabs, CR and newlines collapse to spaces       out=30 bytes
+PASS newline at the bound                           out=1200 bytes
+PASS note that exactly fits is unchanged            out=23 bytes
+=== macOS/change: failures=0
+### macOS, pre-fix fold
+FAIL 2-byte char, ASCII prefix 0                    got 1400 bytes, expected 1200 bytes
+FAIL 2-byte char, ASCII prefix 1                    got 1401 bytes, expected 1199 bytes
+FAIL 2-byte char, ASCII prefix 2                    got 1402 bytes, expected 1200 bytes
+FAIL 2-byte char, ASCII prefix 3                    got 1403 bytes, expected 1199 bytes
+PASS exact 1200 ASCII bytes                         out=1200 bytes
+PASS 1201 ASCII bytes                               out=1200 bytes
+PASS 1199 ASCII bytes                               out=1199 bytes
+PASS 1197 ASCII + 3-byte char (exactly 1200)        out=1200 bytes
+FAIL 1198 ASCII + 3-byte char (1201, split)         got 1201 bytes, expected 1198 bytes
+FAIL 1199 ASCII + 3-byte char                       got 1202 bytes, expected 1199 bytes
+PASS 1196 ASCII + 4-byte char (exactly 1200)        out=1200 bytes
+FAIL 1197 ASCII + 4-byte char (1201, split)         got 1201 bytes, expected 1197 bytes
+FAIL 1198 ASCII + 4-byte char (1202, split)         got 1202 bytes, expected 1198 bytes
+FAIL mixed CJK/ASCII/emoji over the bound           got 3288 bytes, expected 1199 bytes
+PASS tabs, CR and newlines collapse to spaces       out=30 bytes
+PASS newline at the bound                           out=1200 bytes
+PASS note that exactly fits is unchanged            out=23 bytes
+=== macOS/pre-fix: failures=9
+
+### Linux h (GNU coreutils 9.4), change
+
+PASS 2-byte char, ASCII prefix 0                    out=1200 bytes
+PASS 2-byte char, ASCII prefix 1                    out=1199 bytes
+PASS 2-byte char, ASCII prefix 2                    out=1200 bytes
+PASS 2-byte char, ASCII prefix 3                    out=1199 bytes
+PASS exact 1200 ASCII bytes                         out=1200 bytes
+PASS 1201 ASCII bytes                               out=1200 bytes
+PASS 1199 ASCII bytes                               out=1199 bytes
+PASS 1197 ASCII + 3-byte char (exactly 1200)        out=1200 bytes
+PASS 1198 ASCII + 3-byte char (1201, split)         out=1198 bytes
+PASS 1199 ASCII + 3-byte char                       out=1199 bytes
+PASS 1196 ASCII + 4-byte char (exactly 1200)        out=1200 bytes
+PASS 1197 ASCII + 4-byte char (1201, split)         out=1197 bytes
+PASS 1198 ASCII + 4-byte char (1202, split)         out=1198 bytes
+PASS mixed CJK/ASCII/emoji over the bound           out=1199 bytes
+PASS tabs, CR and newlines collapse to spaces       out=30 bytes
+PASS newline at the bound                           out=1200 bytes
+PASS note that exactly fits is unchanged            out=23 bytes
+=== linux-gnu/change: failures=0
+### Linux h, pre-fix fold
+
+FAIL 2-byte char, ASCII prefix 0                    got 1400 bytes, expected 1200 bytes
+FAIL 2-byte char, ASCII prefix 1                    got 1401 bytes, expected 1199 bytes
+FAIL 2-byte char, ASCII prefix 2                    got 1402 bytes, expected 1200 bytes
+FAIL 2-byte char, ASCII prefix 3                    got 1403 bytes, expected 1199 bytes
+PASS exact 1200 ASCII bytes                         out=1200 bytes
+PASS 1201 ASCII bytes                               out=1200 bytes
+PASS 1199 ASCII bytes                               out=1199 bytes
+PASS 1197 ASCII + 3-byte char (exactly 1200)        out=1200 bytes
+FAIL 1198 ASCII + 3-byte char (1201, split)         got 1201 bytes, expected 1198 bytes
+FAIL 1199 ASCII + 3-byte char                       got 1202 bytes, expected 1199 bytes
+PASS 1196 ASCII + 4-byte char (exactly 1200)        out=1200 bytes
+FAIL 1197 ASCII + 4-byte char (1201, split)         got 1201 bytes, expected 1197 bytes
+FAIL 1198 ASCII + 4-byte char (1202, split)         got 1202 bytes, expected 1198 bytes
+FAIL mixed CJK/ASCII/emoji over the bound           got 3288 bytes, expected 1199 bytes
+PASS tabs, CR and newlines collapse to spaces       out=30 bytes
+PASS newline at the bound                           out=1200 bytes
+PASS note that exactly fits is unchanged            out=23 bytes
+=== linux-gnu/pre-fix: failures=9
+
+### Linux w (uutils cut 0.8.0), change
+PASS 2-byte char, ASCII prefix 0                    out=1200 bytes
+PASS 2-byte char, ASCII prefix 1                    out=1199 bytes
+PASS 2-byte char, ASCII prefix 2                    out=1200 bytes
+PASS 2-byte char, ASCII prefix 3                    out=1199 bytes
+PASS exact 1200 ASCII bytes                         out=1200 bytes
+PASS 1201 ASCII bytes                               out=1200 bytes
+PASS 1199 ASCII bytes                               out=1199 bytes
+PASS 1197 ASCII + 3-byte char (exactly 1200)        out=1200 bytes
+PASS 1198 ASCII + 3-byte char (1201, split)         out=1198 bytes
+PASS 1199 ASCII + 3-byte char                       out=1199 bytes
+PASS 1196 ASCII + 4-byte char (exactly 1200)        out=1200 bytes
+PASS 1197 ASCII + 4-byte char (1201, split)         out=1197 bytes
+PASS 1198 ASCII + 4-byte char (1202, split)         out=1198 bytes
+PASS mixed CJK/ASCII/emoji over the bound           out=1199 bytes
+PASS tabs, CR and newlines collapse to spaces       out=30 bytes
+PASS newline at the bound                           out=1200 bytes
+PASS note that exactly fits is unchanged            out=23 bytes
+=== linux-uutils/change: failures=0
+### Linux w, pre-fix fold
+PASS 2-byte char, ASCII prefix 0                    out=1200 bytes
+FAIL 2-byte char, ASCII prefix 1                    got 1200 bytes, expected 1199 bytes
+PASS 2-byte char, ASCII prefix 2                    out=1200 bytes
+FAIL 2-byte char, ASCII prefix 3                    got 1200 bytes, expected 1199 bytes
+PASS exact 1200 ASCII bytes                         out=1200 bytes
+PASS 1201 ASCII bytes                               out=1200 bytes
+PASS 1199 ASCII bytes                               out=1199 bytes
+PASS 1197 ASCII + 3-byte char (exactly 1200)        out=1200 bytes
+FAIL 1198 ASCII + 3-byte char (1201, split)         got 1200 bytes, expected 1198 bytes
+FAIL 1199 ASCII + 3-byte char                       got 1200 bytes, expected 1199 bytes
+PASS 1196 ASCII + 4-byte char (exactly 1200)        out=1200 bytes
+FAIL 1197 ASCII + 4-byte char (1201, split)         got 1200 bytes, expected 1197 bytes
+FAIL 1198 ASCII + 4-byte char (1202, split)         got 1200 bytes, expected 1198 bytes
+FAIL mixed CJK/ASCII/emoji over the bound           got 1200 bytes, expected 1199 bytes
+PASS tabs, CR and newlines collapse to spaces       out=30 bytes
+PASS newline at the bound                           out=1200 bytes
+PASS note that exactly fits is unchanged            out=23 bytes
+=== linux-uutils/pre-fix: failures=7
