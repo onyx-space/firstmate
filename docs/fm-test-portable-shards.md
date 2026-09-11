@@ -13,7 +13,7 @@ It answers *which* scripts may run concurrently.
 
 **Balance weights** for the two portable parallel shards come from those lanes' own CI timing artifacts, listed under [Parallel lanes](#parallel-lanes).
 The proof's file `fm-test-isolation-proof.json` keeps its local wall clocks as the historical record of that proof; those clocks are not CI durations and are no longer used for packing.
-Keeping the two apart is the whole point: the local proof's wall clocks were up to 18x below what the same script costs on a CI runner (`tests/fm-pr-merge.test.sh` 6290 ms there, 115843 ms in CI) and a few were above it, so packing from them left one shard holding both of the real heavyweights and three times the other shard's work on run 34586799603 (592.3 s against 197.4 s of script time, both lanes under one 600 s job cap, which shard 1's 592.7 s wall clock plus job setup then exceeded).
+Keeping the two apart is the whole point: the local proof's wall clocks were up to 18x below what the same script costs on a CI runner (`tests/fm-pr-merge.test.sh` 6290 ms there, 115843 ms in CI) and eleven of the 24 were above it, so packing from them left one shard holding both of the real heavyweights and three times the other shard's work on run 34586799603 (592.3 s against 197.4 s of script time, both lanes under one 600 s job cap, which shard 1's 592.7 s wall clock plus job setup then exceeded).
 
 ## Parallel lanes
 
