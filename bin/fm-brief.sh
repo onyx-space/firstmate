@@ -419,8 +419,8 @@ IFS= read -r -d '' ARTIFACT_PLACEMENT_RULES <<'EOF' || true
 - Experiment artifacts (probe, proof of concept, spike): a tracked `experiments/<topic>/` path, or the repo's existing equivalent, opening with a status marker saying it is experimental and may be rewritten or deleted.
   Once anything depends on it, promote it to production maintenance - tracked, documented, verified - rather than leaving it "just an experiment".
 - Production artifacts: the repo's normal path, with tests and docs, shipped through this task's delivery path.
-- Build output (`obj/`, `bin/`, `*.user`, and the like) is ignored, never delivered.
-  Because it is ignored, `obj/` or `bin/` surviving with no source beside it means something was cleaned, not that no source was ever written.
+- Build output (`obj/`, `*.user`, `obj/Release/**/*.dll`, and anything else the repo's ignore rules already cover) is ignored, never delivered.
+  Because it is ignored, ignored build output surviving with no source beside it means something was cleaned, not that no source was ever written.
 - Every path your report names is a claim: `ls` it before you write the path down.
 EOF
 ARTIFACT_PLACEMENT_RULES=${ARTIFACT_PLACEMENT_RULES%$'\n'}
