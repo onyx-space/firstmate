@@ -931,24 +931,42 @@ test_artifact_placement_contract() {
     assert_grep "# Artifact placement" "$brief" "$kind brief is missing the artifact-placement section"
     assert_grep "Untracked files are not a deliverable" "$brief" \
       "$kind brief lost the untracked-work rule"
-    assert_grep "experiments/<topic>/" "$brief" "$kind brief lost the experiment home"
     assert_grep "experimental and may be rewritten or deleted" "$brief" \
       "$kind brief lost the experiment status marker"
     assert_grep "ignored, never delivered" "$brief" "$kind brief lost the build-output rule"
     assert_grep "it before you write the path down" "$brief" \
       "$kind brief lost the report-path verification rule"
-    assert_grep "Rule 2 below is the only grant of what you may write" "$brief" \
-      "$kind brief must defer the outside-worktree permission to rule 2"
-    assert_grep "outside it you may write only this task's own data directory" "$brief" \
-      "$kind rule 2 must grant the narrowed data-directory exception"
+    # Rule 2 must grant every outside-worktree write the brief itself mandates
+    # (data directory, inbox ack, status file), never contradict them.
+    assert_grep "outside it you may write only the paths this brief names" "$brief" \
+      "$kind rule 2 must grant the brief-named paths"
+    assert_grep "this task's own data directory (\`$home/data/brief-artifact-$kind/\` - " "$brief" \
+      "$kind rule 2 must name the task data directory it grants"
+    assert_grep "the instruction inbox (\`$home/state/brief-artifact-$kind.inbox/\`, including its \`handled/\` directory), and the status file (\`$home/state/brief-artifact-$kind.status\`)" "$brief" \
+      "$kind rule 2 must grant the inbox acknowledgement and the status file"
+    assert_no_grep "No other path outside this worktree" "$brief" \
+      "$kind rule 2 still claims an exhaustive outside-worktree grant"
+    assert_no_grep "is the only grant of what you may write" "$brief" \
+      "$kind placement section still claims rule 2 is the sole permission"
     if [ "$kind" = scout ]; then
       assert_grep "A tracked path in a scout's scratch worktree is NOT delivery" "$brief" \
         "scout brief must call a tracked path in the dying worktree non-delivery"
+      assert_grep "not a scout's to place" "$brief" \
+        "scout brief must keep production placement out of the scout's remit"
+      assert_no_grep "promote it to production maintenance" "$brief" \
+        "scout brief still orders a promotion it cannot perform"
+      assert_no_grep "shipped through this task's delivery path" "$brief" \
+        "scout brief still routes a production artifact through a delivery path it lacks"
       assert_no_grep "the only files you may write outside it are the report and the status file" "$brief" \
         "scout rule 2 still contradicts the artifact-placement section"
     else
+      assert_grep "experiments/<topic>/" "$brief" "$kind brief lost the experiment home"
       assert_grep "counts only once that branch lands" "$brief" \
         "$kind brief must tie ship durability to the landed branch"
+      assert_grep "promote it to production maintenance" "$brief" \
+        "$kind brief must keep the promotion rule for a worker with a delivery path"
+      assert_grep "shipped through this task's delivery path" "$brief" \
+        "$kind brief must keep the production delivery rule"
       assert_no_grep "modify nothing outside it" "$brief" \
         "$kind rule 2 still contradicts the artifact-placement section"
     fi

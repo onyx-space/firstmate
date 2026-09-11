@@ -64,17 +64,19 @@
 # process state/<id>.inbox/*.msg in order and acknowledge each by moving it to
 # handled/ (record, doorbell, and ladder owned by bin/fm-task-inbox-lib.sh).
 # Every scaffold also carries the artifact-placement contract (this file is its
-# single owner): untracked work is not a deliverable, the durable home is
-# role-specific (a ship task's tracked work once its branch lands; a scout's
-# self-contained report and the task data directory, never a tracked path inside
-# the scratch worktree that dies with the slot), experiment artifacts go to a
-# tracked experiments/<topic>/ path with a status marker until something depends
-# on them, production artifacts go through the delivery path, and build output is
-# ignored rather than delivered. Each scaffold's rule 2 is the one place granting
-# the narrowed exception for what a worker may write outside its worktree. It sits
-# here because the brief is the only surface every worker actually reads; AGENTS.md
-# section 7 states only the firstmate-side gate (verify the artifact paths a report
-# names are durable homes with ls).
+# single owner), split by role because a scout has no delivery path: a ship task's
+# durable home is its branch once that lands, a scout's is its self-contained
+# report and the shared task data directory (never a tracked path inside the
+# scratch worktree that dies with the slot), experiment artifacts keep a status
+# marker until something depends on them, production artifacts go through the
+# delivery path (a scout recommends that in its report instead), and build output
+# is ignored rather than delivered. Rule 2 of each scaffold is the one place
+# granting the paths a worker may write outside its worktree - the brief-named
+# data directory, inbox, status file, and any --herdr-lab session state - so the
+# placement section itself grants no permission. It sits here because the brief is
+# the only surface every worker actually reads; AGENTS.md section 7 states only the
+# firstmate-side gate (verify the artifact paths a report names are durable homes
+# with ls).
 # Ship tasks include a project-memory section so durable project-intrinsic
 # learnings can be committed to AGENTS.md through the project's delivery path;
 # it carries the AGENTS.md authoring bar (widely useful knowledge only, pointers
@@ -390,44 +392,45 @@ CE_BOUNDARY_SECTION=${CE_BOUNDARY_SECTION%$'\n'}
 # Worker-facing artifact-placement contract. This file is its single owner: the
 # brief is the only surface every worker reads, whereas firstmate states only the
 # acceptance-side gate in AGENTS.md section 7. Built with quoted heredocs so no
-# backtick in the prose needs escaping, and assembled from three parts because the
-# durable-home bullet is role-specific: a scout that is never promoted must not be
-# sent to a tracked path inside the scratch worktree it loses at teardown.
-IFS= read -r -d '' ARTIFACT_PLACEMENT_INTRO <<'EOF' || true
+# backtick in the prose needs escaping, and role-split because a scout that is
+# never promoted has no delivery path: its durable homes are the report and the
+# task data directory, while a ship task's are the landed branch and that same
+# directory. Rule 2 in each scaffold names the paths this brief lets a worker
+# write outside its worktree, so this section grants no permission of its own.
+if [ "$KIND" = scout ]; then
+IFS= read -r -d '' ARTIFACT_ROLE_SECTION <<'EOF' || true
 # Artifact placement
 Untracked files are not a deliverable: this worktree is discarded at teardown, and so is every untracked file in it.
-Anything another person or a later task needs - proof-of-concept source, scripts, probe harnesses, generated data - must land in one of the durable homes below and must be rebuildable from what is tracked.
-EOF
-ARTIFACT_PLACEMENT_INTRO=${ARTIFACT_PLACEMENT_INTRO%$'\n'}
-
-if [ "$KIND" = scout ]; then
-IFS= read -r -d '' ARTIFACT_DURABLE_HOMES <<'EOF' || true
+Anything another person or a later task needs - proof-of-concept source, scripts, probe harnesses, generated data - must land in one of the durable homes below, complete enough for the next task to rebuild or rerun from what is there.
 - Durable homes: your self-contained report and this task's own data directory (`data/<task-id>/`).
-  A tracked path in a scout's scratch worktree is NOT delivery - it is destroyed with the slot - so the experiment home below means that data directory, not a path in this worktree.
-  Rule 2 below is the only grant of what you may write outside this worktree.
+  A tracked path in a scout's scratch worktree is NOT delivery - it is destroyed with the slot - so the experiment home below means that data directory, never a path tracked only in this worktree.
+- Experiment artifacts (probe, proof of concept, spike): they are delivered in this task's data directory - the source, launcher, and probe script there, or their complete text in the report - opening with a status marker saying they are experimental and may be rewritten or deleted.
+  Building them in the scratch worktree is fine; that directory copy is what makes them durable, and the report must say enough to rebuild and rerun them.
+- Production artifacts: not a scout's to place. Say in the report which production change the experiment implies and let firstmate route that recommendation, rather than committing a production-shaped version into a worktree whose commits are discarded with it.
 EOF
 else
-IFS= read -r -d '' ARTIFACT_DURABLE_HOMES <<'EOF' || true
+IFS= read -r -d '' ARTIFACT_ROLE_SECTION <<'EOF' || true
+# Artifact placement
+Untracked files are not a deliverable: this worktree is discarded at teardown, and so is every untracked file in it.
+Anything another person or a later task needs - proof-of-concept source, scripts, probe harnesses, generated data - must land in one of the durable homes below, and anything the repo is meant to carry must be rebuildable from what is tracked in it.
 - Durable homes: a git-tracked path on your `fm/<task-id>` branch counts only once that branch lands - pushed and opened as a PR where your delivery mode allows it, or merged by firstmate under `local-only` - and until it lands the path is a claim rather than a delivery.
   This task's own data directory (`data/<task-id>/`) is the only durable home outside this worktree.
-  Rule 2 below is the only grant of what you may write there.
-EOF
-fi
-ARTIFACT_DURABLE_HOMES=${ARTIFACT_DURABLE_HOMES%$'\n'}
-
-IFS= read -r -d '' ARTIFACT_PLACEMENT_RULES <<'EOF' || true
 - Experiment artifacts (probe, proof of concept, spike): a tracked `experiments/<topic>/` path, or the repo's existing equivalent, opening with a status marker saying it is experimental and may be rewritten or deleted.
   Once anything depends on it, promote it to production maintenance - tracked, documented, verified - rather than leaving it "just an experiment".
 - Production artifacts: the repo's normal path, with tests and docs, shipped through this task's delivery path.
+EOF
+fi
+ARTIFACT_ROLE_SECTION=${ARTIFACT_ROLE_SECTION%$'\n'}
+
+IFS= read -r -d '' ARTIFACT_SHARED_RULES <<'EOF' || true
 - Build output (`obj/`, `*.user`, `obj/Release/**/*.dll`, and anything else the repo's ignore rules already cover) is ignored, never delivered.
   Because it is ignored, ignored build output surviving with no source beside it means something was cleaned, not that no source was ever written.
 - Every path your report names is a claim: `ls` it before you write the path down.
 EOF
-ARTIFACT_PLACEMENT_RULES=${ARTIFACT_PLACEMENT_RULES%$'\n'}
+ARTIFACT_SHARED_RULES=${ARTIFACT_SHARED_RULES%$'\n'}
 
-ARTIFACT_PLACEMENT_SECTION="$ARTIFACT_PLACEMENT_INTRO
-$ARTIFACT_DURABLE_HOMES
-$ARTIFACT_PLACEMENT_RULES"
+ARTIFACT_PLACEMENT_SECTION="$ARTIFACT_ROLE_SECTION
+$ARTIFACT_SHARED_RULES"
 
 if [ "$KIND" = scout ]; then
 cat > "$BRIEF" <<EOF
@@ -447,7 +450,7 @@ $ARTIFACT_PLACEMENT_SECTION
 
 # Rules
 1. Never push to any remote and never open a PR.
-2. Stay inside this worktree; outside it you may write only this task's own data directory (\`$DATA/$ID/\` - the report, evidence, and artifacts) and the status file below. No other path outside this worktree.
+2. Stay inside this worktree; outside it you may write only the paths this brief names: this task's own data directory (\`$DATA/$ID/\` - the report, evidence, and artifacts), the instruction inbox (\`$STATE/$ID.inbox/\`, including its \`handled/\` directory), and the status file (\`$STATE/$ID.status\`), plus, in a \`--herdr-lab\` brief, the Herdr session state its helper commands manage.
 3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
 4. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
@@ -540,7 +543,7 @@ $ARTIFACT_PLACEMENT_SECTION
 
 # Rules
 $RULE1
-2. Stay inside this worktree; outside it you may write only this task's own data directory (\`$DATA/$ID/\` - evidence and artifacts) and the status file. No other path outside this worktree, and never the primary checkout.
+2. Stay inside this worktree; outside it you may write only the paths this brief names: this task's own data directory (\`$DATA/$ID/\` - evidence and artifacts), the instruction inbox (\`$STATE/$ID.inbox/\`, including its \`handled/\` directory), and the status file (\`$STATE/$ID.status\`), plus, in a \`--herdr-lab\` brief, the Herdr session state its helper commands manage. Never the primary checkout.
 3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
 4. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
