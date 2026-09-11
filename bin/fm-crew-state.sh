@@ -495,14 +495,17 @@ nm_reclassify_failed_run_as_held_green() {
   return 0
 }
 
-# This task's PR URL, for a run-level detail line: the task's own recorded
-# state/<id>.meta pr= wins (bin/fm-pr-check.sh records it from the crew's ready
-# signal), falling back to the run's own `pr` field, which is populated even
-# before that record exists.
+# This run's PR URL, for a run-level detail line. The attributed run's own `pr`
+# field wins: the claim is about THAT run, so only its own PR identity may be
+# proved. The task's recorded state/<id>.meta pr= (bin/fm-pr-check.sh records it
+# from the crew's ready signal) is used only when the run records none - it can
+# lag behind a reused task (a merged earlier PR still named there while the run
+# works a new one), and using it first would let the earlier PR's merge record
+# prove the wrong PR.
 nm_pr_url() {
   local url
-  url=$(meta_value pr)
-  [ -n "$url" ] || url=$(strip_quotes "$(nm_field pr)")
+  url=$(strip_quotes "$(nm_field pr)")
+  [ -n "$url" ] || url=$(meta_value pr)
   printf '%s\n' "$url"
 }
 
@@ -730,7 +733,7 @@ if [ "$HAVE_RUN" = 1 ]; then
           RUN_STATE="done"
           pr_url=$(nm_pr_url)
           if nm_pr_merge_proven "$pr_url"; then
-            RUN_DETAIL="run passed: PR merged"
+            RUN_DETAIL="run passed: PR merged: $pr_url"
           else
             RUN_DETAIL="run passed: PR held for merge"
             [ -n "$pr_url" ] && RUN_DETAIL="$RUN_DETAIL: $pr_url"

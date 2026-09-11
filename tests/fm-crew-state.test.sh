@@ -368,6 +368,19 @@ outcome: passed
 EOF
 }
 
+run_passed_pr() {  # <branch> <pr-url>
+  cat <<EOF
+run:
+  id: "01RUN"
+  branch: $1
+  status: completed
+  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
+  pr: "$2"
+  findings: none
+outcome: passed
+EOF
+}
+
 run_failed() {  # <branch>
   cat <<EOF
 run:
@@ -986,29 +999,53 @@ test_terminal_passed_with_merge_record_says_merged() {
   # Exact line, not a substring: the previous wording ("run passed: PR
   # merged/closed") also contained "PR merged", so only the exact detail
   # distinguishes a proven merge from the old unconditional claim.
-  assert_equals "state: done · source: run-step · run passed: PR merged" "$out" \
-    "a proven merge is reported with the merged wording and nothing else"
+  assert_equals "state: done · source: run-step · run passed: PR merged: https://github.com/o/r/pull/1" "$out" \
+    "a proven merge is reported with the merged wording, naming the proved PR"
   assert_not_contains "$out" "held for merge" "a proven merge is not hedged as held for merge"
   pass "terminal passed run with a proven merge record reads PR merged"
 }
 
-# A merge record for a DIFFERENT PR of the same task is not proof for this PR:
-# the marker is canonical-identity-bound, so a replaced PR starts at
-# held-for-merge rather than inheriting the earlier merge.
+# A merge record for a DIFFERENT PR than the one this run works is not proof:
+# the task's meta pr= can still name an earlier, already-merged PR while a
+# reused task runs again on a new one, so the run's own `pr` field decides and
+# the marker is canonical-identity-bound to it. Direct regression for the
+# stale-meta shape: the old order (meta first) proved #1's merge and printed
+# `run passed: PR merged` for a run whose #2 was still open.
 test_terminal_passed_merge_record_for_other_pr_is_not_proof() {
   reset_fakes
   local d; d=$(new_case passed-merged-other-pr)
   make_repo_on_branch "$d/wt" fm/feat-d-other
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/feat-d-other.meta" "window=fm:fm-feat-d-other" "worktree=$d/wt" "kind=ship" \
-    "pr=https://github.com/o/r/pull/2"
+    "pr=https://github.com/o/r/pull/1"
   fm_pr_poll_merge_mark_notified "$d/state" feat-d-other github github.com o/r 1 \
     || fail "could not record the merge-notified marker for the other-PR case"
-  FM_FAKE_AXI_STATUS="$(run_passed fm/feat-d-other)"
+  FM_FAKE_AXI_STATUS="$(run_passed_pr fm/feat-d-other https://github.com/o/r/pull/2)"
   local out; out=$(run_crew_state "$d" feat-d-other)
-  assert_contains "$out" "run passed: PR held for merge" "a merge record for another PR is not proof for this one"
+  assert_contains "$out" "run passed: PR held for merge: https://github.com/o/r/pull/2" \
+    "the run's own open PR reads held for merge even when the task's meta PR is merged"
   assert_not_contains "$out" "PR merged" "another PR's merge record never proves this PR merged"
+  assert_not_contains "$out" "pull/1" "the held-for-merge detail names this run's PR, not the stale merged one"
   pass "an identity-mismatched merge record does not prove this PR merged"
+}
+
+# The run's own `pr` wins over the task's meta: an attributed run recording a
+# PR that IS durably merged reports the merge for that PR, even when meta still
+# names a different one.
+test_run_pr_wins_over_stale_meta_pr() {
+  reset_fakes
+  local d; d=$(new_case passed-merged-run-pr)
+  make_repo_on_branch "$d/wt" fm/feat-d-run-pr
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-d-run-pr.meta" "window=fm:fm-feat-d-run-pr" "worktree=$d/wt" "kind=ship" \
+    "pr=https://github.com/o/r/pull/9"
+  fm_pr_poll_merge_mark_notified "$d/state" feat-d-run-pr github github.com o/r 1 \
+    || fail "could not record the merge-notified marker for the run-pr case"
+  FM_FAKE_AXI_STATUS="$(run_passed_pr fm/feat-d-run-pr https://github.com/o/r/pull/1)"
+  local out; out=$(run_crew_state "$d" feat-d-run-pr)
+  assert_equals "state: done · source: run-step · run passed: PR merged: https://github.com/o/r/pull/1" "$out" \
+    "the run's own PR identity is the one proved and named"
+  pass "the attributed run's PR identity outranks a stale task meta PR"
 }
 
 test_terminal_failed() {
@@ -2519,6 +2556,7 @@ test_terminal_passed
 test_terminal_passed_without_merge_record_says_held_for_merge
 test_terminal_passed_with_merge_record_says_merged
 test_terminal_passed_merge_record_for_other_pr_is_not_proof
+test_run_pr_wins_over_stale_meta_pr
 test_terminal_failed
 test_terminal_failed_ci_orphan_after_green_reads_done
 test_terminal_failed_ci_orphan_status_only_reads_done
