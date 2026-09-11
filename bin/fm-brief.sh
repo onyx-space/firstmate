@@ -63,6 +63,20 @@
 # Every scaffold also carries the steering-inbox receive-and-ack section:
 # process state/<id>.inbox/*.msg in order and acknowledge each by moving it to
 # handled/ (record, doorbell, and ladder owned by bin/fm-task-inbox-lib.sh).
+# Every ship and scout scaffold also carries the artifact-placement contract (this
+# file is its single owner), split by role because a scout has no delivery path: a
+# ship task's durable home is its branch once that lands, a scout's is its
+# report and the shared task data directory (never a tracked path inside the
+# scratch worktree that dies with the slot), experiment artifacts keep a status
+# marker until something depends on them, production artifacts go through the
+# delivery path (a scout recommends that in its report instead), and build output
+# is ignored rather than delivered. Rule 2 of each scaffold is the one place
+# granting the paths a worker may write outside its worktree - the brief-named
+# data directory, inbox, status file, and any --herdr-lab session state - so the
+# placement section itself grants no permission. It sits here because the brief is
+# the only surface every worker actually reads; AGENTS.md section 7 states only the
+# firstmate-side gate (verify the artifact paths a report names are durable homes
+# with ls).
 # Ship tasks include a project-memory section so durable project-intrinsic
 # learnings can be committed to AGENTS.md through the project's delivery path;
 # it carries the AGENTS.md authoring bar (widely useful knowledge only, pointers
@@ -375,6 +389,52 @@ Neither holds for you, so these rules override anything a CE skill tells you.
 EOF
 CE_BOUNDARY_SECTION=${CE_BOUNDARY_SECTION%$'\n'}
 
+# Worker-facing artifact-placement contract. This file is its single owner: the
+# brief is the only surface every worker reads, whereas firstmate states only the
+# acceptance-side gate in AGENTS.md section 7. Built with quoted heredocs so no
+# backtick in the prose needs escaping, and role-split because a scout that is
+# never promoted has no delivery path: its durable homes are the report and the
+# task data directory, while a ship task's are the landed branch and that same
+# directory. Rule 2 in each scaffold names the paths this brief lets a worker
+# write outside its worktree, so this section grants no permission of its own. The
+# scout production ban stays scoped to the scout role because bin/fm-promote.sh
+# promotes that task in place without rewriting this brief, and its ship
+# instructions supersede the scout-time placement rules separately.
+if [ "$KIND" = scout ]; then
+IFS= read -r -d '' ARTIFACT_ROLE_SECTION <<'EOF' || true
+# Artifact placement
+Untracked files are not a deliverable: this worktree is discarded at teardown, and so is every untracked file in it.
+Anything another person or a later task needs - proof-of-concept source, scripts, probe harnesses, generated data - must land in one of the durable homes below, complete enough for the next task to rebuild or rerun from what is there.
+- Durable homes: your self-contained report and this task's own data directory (`data/<task-id>/`).
+  A tracked path in a scout's scratch worktree is NOT delivery - it is destroyed with the slot - so the experiment home below means that data directory, never a path tracked only in this worktree.
+- Experiment artifacts (probe, proof of concept, spike): they are delivered in this task's data directory - the source, launcher, and probe script there, or their complete text in the report - opening with a status marker saying they are experimental and may be rewritten or deleted.
+  Building them in the scratch worktree is fine; that directory copy is what makes them durable, and the report must say enough to rebuild and rerun them.
+- Production artifacts: while this task is still a scout, they are not yours to place. Say in the report which production change the experiment implies and let firstmate route that recommendation, rather than committing a production-shaped version into a worktree whose commits are discarded with it. A promotion to a ship task supersedes this bullet, and production artifacts then follow that task's ship-time delivery path.
+EOF
+else
+IFS= read -r -d '' ARTIFACT_ROLE_SECTION <<'EOF' || true
+# Artifact placement
+Untracked files are not a deliverable: this worktree is discarded at teardown, and so is every untracked file in it.
+Anything another person or a later task needs - proof-of-concept source, scripts, probe harnesses, generated data - must land in one of the durable homes below, and anything the repo is meant to carry must be rebuildable from what is tracked in it.
+- Durable homes: a git-tracked path on your `fm/<task-id>` branch counts only once that branch lands - pushed and opened as a PR where your delivery mode allows it, or merged by firstmate under `local-only` - and until it lands the path is a claim rather than a delivery.
+  This task's own data directory (`data/<task-id>/`) is the only durable home outside this worktree.
+- Experiment artifacts (probe, proof of concept, spike): a tracked `experiments/<topic>/` path, or the repo's existing equivalent, opening with a status marker saying it is experimental and may be rewritten or deleted.
+  Once anything depends on it, promote it to production maintenance - tracked, documented, verified - rather than leaving it "just an experiment".
+- Production artifacts: the repo's normal path, with tests and docs, shipped through this task's delivery path.
+EOF
+fi
+ARTIFACT_ROLE_SECTION=${ARTIFACT_ROLE_SECTION%$'\n'}
+
+IFS= read -r -d '' ARTIFACT_SHARED_RULES <<'EOF' || true
+- Build output (`obj/`, `*.user`, `obj/Release/**/*.dll`, and anything else the repo's ignore rules already cover) is ignored, never delivered.
+  Because it is ignored, ignored build output surviving with no source beside it means something was cleaned, not that no source was ever written.
+- Every path your report names is a claim: `ls` it before you write the path down.
+EOF
+ARTIFACT_SHARED_RULES=${ARTIFACT_SHARED_RULES%$'\n'}
+
+ARTIFACT_PLACEMENT_SECTION="$ARTIFACT_ROLE_SECTION
+$ARTIFACT_SHARED_RULES"
+
 if [ "$KIND" = scout ]; then
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
@@ -387,11 +447,13 @@ $HERDR_SECTION
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
 This is a SCOUT task: the deliverable is a written report, not a PR.
 The worktree is your laboratory - install, run, edit, and make scratch commits freely; all of it is discarded at teardown.
-The report is the only thing that survives, so anything worth keeping must be in it.
+Your data directory is the only thing that survives teardown: the report in it must stand alone, and anything else worth keeping goes in that directory beside it.
+
+$ARTIFACT_PLACEMENT_SECTION
 
 # Rules
 1. Never push to any remote and never open a PR.
-2. Stay inside this worktree; the only files you may write outside it are the report and the status file below.
+2. Stay inside this worktree; outside it you may write only the paths this brief names: this task's own data directory (\`$DATA/$ID/\` - the report, evidence, and artifacts), the instruction inbox (\`$STATE/$ID.inbox/\`, including its \`handled/\` directory), and the status file (\`$STATE/$ID.status\`), plus, in a \`--herdr-lab\` brief, the Herdr session state its helper commands manage.
 3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
 4. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
@@ -480,9 +542,11 @@ If the top-level path is the primary checkout or not the worktree you were launc
 
 1. First action: create your branch: \`git checkout -b fm/$ID\`$SETUP2
 
+$ARTIFACT_PLACEMENT_SECTION
+
 # Rules
 $RULE1
-2. Stay inside this worktree; modify nothing outside it.
+2. Stay inside this worktree; outside it you may write only the paths this brief names: this task's own data directory (\`$DATA/$ID/\` - evidence and artifacts), the instruction inbox (\`$STATE/$ID.inbox/\`, including its \`handled/\` directory), and the status file (\`$STATE/$ID.status\`), plus, in a \`--herdr-lab\` brief, the Herdr session state its helper commands manage. Never the primary checkout.
 3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
 4. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`

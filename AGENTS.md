@@ -390,6 +390,7 @@ For any custom `state/<id>.check.sh` you write yourself, keep it an ordinary sin
 Retire a custom check only through `bin/fm-check-unregister.sh <id>` (or `bin/fm-teardown.sh` for a spawned task); never hand-compose an `rm` with `$STATE`/`$ID`.
 
 Tear down a ship task only after landing is confirmed.
+A ship artifact's durable home is the branch once it lands - pushed and opened as a PR where the mode allows it, or merged by firstmate under `local-only` - so a path that exists only in the worktree is a claim, not a delivery.
 A teardown refusal for uncommitted or unlanded work is a stop-and-investigate result, never an obstacle to bypass.
 Never force teardown without explicit discard authority.
 After successful teardown, record completion, retain only the configured recent Done history, and re-evaluate queued work whose blockers and time gates have cleared.
@@ -399,7 +400,9 @@ Retire one only on an explicit captain or main-firstmate decision, after loading
 
 ### Scout outcome and promotion
 
-A completed scout must leave a self-contained report before its scratch worktree can be discarded; read and relay its findings, record the report as the Done artifact, and re-evaluate the queue.
+An artifact is delivered only once it has landed in a durable home, so a completed scout's durable homes are its self-contained report and the task's own `data/<task-id>/` directory; a tracked path inside the scout's scratch worktree is not delivery and fails this gate, because the slot is destroyed with it.
+Firstmate verifies with `ls` every artifact path a report names before the scratch worktree can be discarded; a path that does not exist is work still owed, not a reported-done result.
+Read and relay its findings, record the report as the Done artifact, and re-evaluate the queue.
 A report may recommend implementation but does not authorize it.
 Before treating the investigation or any visual review as complete, load `captain-hold-lifecycle`; teardown enforces that shared completion gate.
 When a scout's deliverable is a visual artifact the captain will iterate on, prefer keeping that scout alive to host its own Lavish loop rather than tearing it down and mediating from firstmate, so the scout keeps its investigation context and the captain iterates in one continuous session.
@@ -532,7 +535,7 @@ Preserve durable structured identifiers, dependencies, and completion artifact l
 
 ## 11. Crewmate briefs
 
-`bin/fm-brief.sh` and its help own scaffold syntax, generated variants, status protocol, delivery-mode definitions of done, and exact safety mechanics.
+`bin/fm-brief.sh` and its help own scaffold syntax, generated variants, status protocol, artifact placement, delivery-mode definitions of done, and exact safety mechanics.
 Use its scaffold as the contract, then fill `## Captain's intent` (`{TASK}`) with the captain's own ask plus the context needed to read it, including the substance of any report, decision, or PR the ask refers to, and fill `## Firstmate spec` (`{FIRSTMATE_SPEC}`) with Firstmate's build instructions.
 `bin/fm-dod-lib.sh` owns what a no-mistakes worker may pass as `--intent` and its rule that the string must be self-sufficient.
 Keep additions task-specific rather than repeating lifecycle instructions, and alter generated sections only when the task genuinely differs from the standard shape.
