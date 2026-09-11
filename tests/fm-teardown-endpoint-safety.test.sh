@@ -149,6 +149,9 @@ assert_shared_slot_refused() {  # <case> <id> <other> <description>
   grep -Fq "treehouse <return>" "$dir/runtime.log" \
     && fail "$description: the shared slot was returned anyway"
   assert_no_mutating_runtime "$dir" "$description"
+  assert_contains "$(cat "$dir/stderr")" \
+    "Tear down the record whose endpoint is still live first" \
+    "$description: the refusal must point at the one release order that works"
 }
 
 assert_refused_without_mutation() {  # <case> <id> <description>
