@@ -270,18 +270,11 @@ def _denied(denies, *fields):
 
 
 def _parse_backlog(path):
-    """Return (section, item) pairs for every task line in the backlog.
-
-    Decoded tolerantly: a task title or note is free text another process
-    wrote, and one invalid byte must cost that byte rather than the whole
-    answer. A strict decode raises UnicodeDecodeError, which no caller here
-    handles, so a single bad byte in the queue would take out every voice
-    answer that reads it.
-    """
+    """Return (section, item) pairs for every task line in the backlog."""
     items = []
     section = ""
     try:
-        with open(path, encoding="utf-8", errors="replace") as handle:
+        with open(path, encoding="utf-8") as handle:
             lines = handle.read().splitlines()
     except FileNotFoundError:
         return items
@@ -353,9 +346,7 @@ def _workers(state_dir):
         task_id = name[: -len(".meta")]
         meta = {}
         try:
-            # Tolerant for the same reason as the backlog read above: one bad
-            # byte in one task's metadata must not cost every task's record.
-            with open(os.path.join(state_dir, name), encoding="utf-8", errors="replace") as handle:
+            with open(os.path.join(state_dir, name), encoding="utf-8") as handle:
                 for line in handle:
                     if "=" in line:
                         key, value = line.rstrip("\n").split("=", 1)

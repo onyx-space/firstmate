@@ -4738,31 +4738,88 @@ for mark in ("tool_use", "first_audio", "reply_end"):
 PY
 pass "a reply that arrives before the end of the clip is named as an unusable clock"
 
-# --- one bad byte must cost one byte ----------------------------------------
+# --- a damaged byte must not defeat the deny list ---------------------------
 #
-# Both durable reads behind a status answer decode tolerantly. They used to be
-# strict, so a single invalid byte anywhere in the queue or in one task's
-# metadata raised UnicodeDecodeError out of the whole read and the voice agent
-# answered nothing at all. The field incident that produced such a byte was the
-# parent-channel note fold splitting a multibyte character on its byte bound;
-# tests/fm-parent-channel.test.sh owns that half of the regression, and this
-# pins the reader's half.
+# The deny list is enforced with exact substrings over an item's id, title, tags
+# and pull request link, and the durable reads behind a status answer decode
+# strictly. A tolerant decode rewrites an undecodable byte to U+FFFD, which
+# breaks such a substring and lets a denied item be named in the answer; strictly
+# decoded, the same line costs the whole answer, which is the fail-closed side of
+# the same boundary. Either is acceptable here, naming the item is not.
 
-BAD_HOME="$TMP_ROOT/bad-bytes-home"
-mkdir -p "$BAD_HOME/data" "$BAD_HOME/state"
-printf '# Backlog\n\n## In flight\n- [ ] bad-one - \xff\xfe a broken title\n- [ ] good-two - a sound title\n' \
-  > "$BAD_HOME/data/backlog.md"
-fm_write_meta "$BAD_HOME/state/good-two.meta" kind=ship mode=no-mistakes
-printf 'task=bad-three\nmode=ship\nnote=\xff\xfe\n' > "$BAD_HOME/state/bad-three.meta"
+python3 - "$ROOT" "$TMP_ROOT" <<'PY' || fail "an undecodable byte defeated the deny list"
+import json, os, subprocess, sys
 
-bad_out=$(python3 "$ROOT/bin/fm_voice_records.py" status --home "$BAD_HOME" --scope full 2>&1) \
-  || fail "one invalid byte in a durable record made the whole status answer fail: $bad_out"
-assert_contains "$bad_out" '"in_flight": 2' \
-  "one invalid byte in a backlog line cost the queue read"
-assert_contains "$bad_out" '"workers_on_deck": 2' \
-  "one invalid byte in one task's metadata cost every task's record"
-assert_contains "$bad_out" 'good-two' \
-  "the sound task stopped being reported beside a damaged one"
-pass "an invalid byte in a durable record costs one byte, not the whole answer"
+root, tmp = sys.argv[1], sys.argv[2]
+home = os.path.join(tmp, "damaged-record-home")
+
+
+def write(rel, data):
+    path = os.path.join(home, rel)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as handle:
+        handle.write(data)
+
+
+def status():
+    return subprocess.run(
+        [sys.executable, os.path.join(root, "bin", "fm_voice_records.py"),
+         "status", "--home", home, "--scope", "full"],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+
+def check(cond, label):
+    if not cond:
+        sys.exit(label)
+
+
+write("config/voice-read-deny", b"acmecorp\n")
+
+# The control first, so a refusal below cannot be blamed on a deny list that
+# never matched anything: the deny word alone still withholds an item.
+write("data/backlog.md",
+      b"# Backlog\n\n## In flight\n"
+      b"- [ ] clean-two - acmecorp renewal decision\n")
+res = status()
+check(res.returncode == 0, "a clean denied item broke the status answer: " + res.stdout)
+answer = json.loads(res.stdout)
+check(answer["withheld_as_confidential"] == 1, "a clean denied item stopped being withheld")
+check("acmecorp" not in res.stdout, "a clean denied title reached the answer")
+
+# One: the bad byte inside a backlog title splits the deny word.
+write("data/backlog.md",
+      b"# Backlog\n\n## In flight\n"
+      b"- [ ] damaged-one - acm\xffecorp renewal decision\n")
+res = status()
+if res.returncode == 0:
+    check("damaged-one" not in res.stdout,
+          "a denied item with an undecodable title was named")
+    check("acmecorp" not in res.stdout,
+          "a denied title with an undecodable byte was spoken")
+else:
+    check("damaged-one" not in res.stdout and "acmecorp" not in res.stdout,
+          "a failed read still leaked the queue")
+
+# Two: the same, with the bad byte inside a state/*.meta pr= link, which the
+# deny list matches just as a title is matched.
+write("data/backlog.md",
+      b"# Backlog\n\n## In flight\n"
+      b"- [ ] damaged-three - a sound title\n"
+      b"- [ ] clean-four - another sound title\n")
+write("state/clean-four.meta", b"kind=ship\npr=https://example/clean/pull/8\n")
+write("state/damaged-three.meta",
+      b"kind=ship\npr=https://example/acm\xffecorp/pull/7\n")
+res = status()
+if res.returncode == 0:
+    check("example/acm" not in res.stdout,
+          "a denied pull request link with an undecodable byte was spoken")
+    check("damaged-three" not in res.stdout, "the damaged pull request was named")
+    check("clean-four" in res.stdout,
+          "sound work beside a damaged record stopped being reported")
+else:
+    check("damaged-three" not in res.stdout and "example/acm" not in res.stdout,
+          "a failed read still leaked the queue")
+PY
+pass "an undecodable byte in a durable record cannot defeat the deny list"
 
 printf 'all voice relay cases passed\n'
