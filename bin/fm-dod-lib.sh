@@ -5,6 +5,9 @@
 # receives. Both paths must hand the worker the same contract: a promoted
 # no-mistakes worker that never received the ask-user escalation rule or the
 # `--yes` ban is the exact delivery hole this single owner exists to close.
+# It is also the single owner of the worker-facing PR-description pointer block
+# (fm_pr_description_block) so a briefed worker and a promoted one receive it from
+# one source rather than two copies that drift.
 # fm_dod_block <no-mistakes|direct-PR|local-only> <task-id> prints the block on
 # stdout with no trailing blank line. The caller validates the mode; an unknown
 # mode is refused rather than silently rendered as the pipeline contract.
@@ -187,6 +190,23 @@ fm_ask_user_escalation_block() {  # <data-dir> <task-id>
    For a no-mistakes ask-user gate specifically, escalate all ask-user findings as one event plus one snapshot file, using that same shape even when the gate holds only a single ask-user finding: write only the ask-user findings, verbatim and unparaphrased (id, severity, file, line, description, authority), to \`$data/$id/nm-<run>-findings.txt\`, then report the gate with
    \`needs-decision [key=nm-<run>-<step>]: ask-user findings=<id1>,<id2>,... file=$data/$id/nm-<run>-findings.txt\`
    naming every ask-user finding id from that gate. The status line only points at the file; it never restates or summarizes a finding's content.
+EOF
+}
+
+# Owner of the worker-facing PR-description language discipline. The separately
+# installed `pr-description` skill is the single owner of that contract, so this
+# block only wires the worker to it instead of restating the format.
+# bin/fm-brief.sh renders it into a ship brief and bin/fm-promote.sh into the ship
+# instructions a promoted scout receives, so both PR-opening paths carry it.
+# `local-only` opens no PR, so it renders nothing: there the discipline would
+# describe work the task cannot do.
+fm_pr_description_block() {  # <mode>
+  local mode=$1
+  [ "$mode" = local-only ] && return 0
+  cat <<'EOF'
+# PR description
+Before you write or edit a pull request description, read the `pr-description` skill (`~/.agents/skills/pr-description/SKILL.md`); it is the single owner of that contract.
+Do not use `ce-translate` for a PR description.
 EOF
 }
 
