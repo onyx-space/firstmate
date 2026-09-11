@@ -1048,6 +1048,22 @@ test_run_pr_wins_over_stale_meta_pr() {
   pass "the attributed run's PR identity outranks a stale task meta PR"
 }
 
+# With no PR identity anywhere - a passed run on a branch with no PR, and no
+# task meta pr= - the not-proven branch has no URL it may name, so the line
+# carries the hedge alone: no invented URL, and still no merge claim.
+test_terminal_passed_without_pr_identity_names_no_url() {
+  reset_fakes
+  local d; d=$(new_case passed-no-pr)
+  make_repo_on_branch "$d/wt" fm/feat-d-nopr
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-d-nopr.meta" "window=fm:fm-feat-d-nopr" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_passed_pr fm/feat-d-nopr "")"
+  local out; out=$(run_crew_state "$d" feat-d-nopr)
+  assert_equals "state: done · source: run-step · run passed: PR held for merge" "$out" \
+    "no PR identity: held for merge with no URL to name"
+  pass "a passed run with no PR identity claims no merge and names no URL"
+}
+
 test_terminal_failed() {
   reset_fakes
   local d; d=$(new_case failed)
@@ -2557,6 +2573,7 @@ test_terminal_passed_without_merge_record_says_held_for_merge
 test_terminal_passed_with_merge_record_says_merged
 test_terminal_passed_merge_record_for_other_pr_is_not_proof
 test_run_pr_wins_over_stale_meta_pr
+test_terminal_passed_without_pr_identity_names_no_url
 test_terminal_failed
 test_terminal_failed_ci_orphan_after_green_reads_done
 test_terminal_failed_ci_orphan_status_only_reads_done

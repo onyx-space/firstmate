@@ -20,10 +20,13 @@
 # Status vocabulary (single owner: this header). Every word this helper says
 # about the world OUTSIDE the run is fixed here, so a new branch copies the
 # right word instead of inventing one:
-#   "PR merged"       the merge is PROVEN for this task's canonical PR identity,
-#                     i.e. the merge-notified record bin/fm-pr-lib.sh owns exists
-#                     (bin/fm-merge-outcome-lib.sh publishes it when a merge is
-#                     actually observed - merged here, or detected by the poll).
+#   "PR merged"       the merge is PROVEN for the PR identity this helper
+#                     resolved for the run (nm_pr_url: the attributed run's own
+#                     `pr` field first, else the task's meta pr=), i.e. the
+#                     merge-notified record bin/fm-pr-lib.sh owns exists for that
+#                     identity (bin/fm-merge-outcome-lib.sh publishes it when a
+#                     merge is actually observed - merged here, or detected by
+#                     the poll).
 #   "PR held for merge"
 #                     the pipeline is through but no merge is proven: green
 #                     checks with the merge still awaiting the captain's approval
