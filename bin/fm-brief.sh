@@ -63,9 +63,9 @@
 # Every scaffold also carries the steering-inbox receive-and-ack section:
 # process state/<id>.inbox/*.msg in order and acknowledge each by moving it to
 # handled/ (record, doorbell, and ladder owned by bin/fm-task-inbox-lib.sh).
-# Every scaffold also carries the artifact-placement contract (this file is its
-# single owner), split by role because a scout has no delivery path: a ship task's
-# durable home is its branch once that lands, a scout's is its self-contained
+# Every ship and scout scaffold also carries the artifact-placement contract (this
+# file is its single owner), split by role because a scout has no delivery path: a
+# ship task's durable home is its branch once that lands, a scout's is its
 # report and the shared task data directory (never a tracked path inside the
 # scratch worktree that dies with the slot), experiment artifacts keep a status
 # marker until something depends on them, production artifacts go through the
