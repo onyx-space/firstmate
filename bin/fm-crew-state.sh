@@ -38,10 +38,12 @@
 #   "run failed"              the run's own verdict is failure.
 # HARD RULE: a no-mistakes terminal `outcome: passed` means the PIPELINE
 # finished, never that the PR merged - with merge authority off, the merge is
-# still the captain's to give. So no detail line may contain "merged" unless
-# nm_pr_merge_proven confirms it from the merge-notified record. Claiming an
-# unproven merge is the same refusal bin/fm-pr-merge.sh makes when it declines
-# to report an unproved merge as landed.
+# still the captain's to give. So no run-outcome detail line (source: run-step)
+# may contain "merged" unless nm_pr_merge_proven confirms it from the
+# merge-notified record. Claiming an unproven merge is the same refusal
+# bin/fm-pr-merge.sh makes when it declines to report an unproved merge as
+# landed. A relayed status-log note (source: status-log) is the crew's own
+# claim, carried verbatim as such and not attributed to the pipeline.
 #
 # Logic, in order:
 #   1. Resolve worktree + backend target + kind from state/<id>.meta. A meta
@@ -557,9 +559,11 @@ nm_effective_ci_step_status() {
 # Root cause of the PR #252 incident (2026-07): for a repo where merge is left
 # to the captain, no-mistakes' ci step (and therefore top-level status/outcome)
 # stays "running" for the ENTIRE CI-monitor phase, including long after GitHub
-# reports every check green - it only reaches outcome=passed once the PR is
-# actually merged (or failed/cancelled if closed). `axi status`'s steps[] table
-# never distinguishes "still waiting on checks" from "checks green, waiting on
+# reports every check green. A terminal outcome ends that phase without saying
+# whether the merge landed: passed means the pipeline is through, and with merge
+# authority off the PR can still be open awaiting approval (PR #4, 2026-09 -
+# status vocabulary above); failed/cancelled means the run ended that way.
+# `axi status`'s steps[] table never distinguishes "still waiting on checks" from "checks green, waiting on
 # merge": both read as plain `ci,running,...`. The only place that transition is
 # recorded is the ci step's own log text, e.g. "all CI checks passed - still
 # monitoring until merged or closed" or "no CI checks reported - still
