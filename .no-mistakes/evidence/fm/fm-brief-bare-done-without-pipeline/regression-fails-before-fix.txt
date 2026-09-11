@@ -1,0 +1,12 @@
+### Regression reproduction: the new test case run against the PRE-CHANGE Definition-of-done builder
+
+Setup: a full copy of the target tree with only bin/fm-dod-lib.sh reverted to base e6b0f2a;
+the updated tests/fm-brief.test.sh is run against the real bin/fm-brief.sh from that copy.
+
+$ bash tests/fm-brief.test.sh   # in the reverted copy
+8:not ok - explicit no-mistakes brief did not render the pipeline completion signal
+exit=1  (fails before the fix)
+
+### After the fix, the same suite passes:
+12:ok - fm-brief.sh: no-mistakes completion is the pipeline PR, and the other modes stay distinct
+exit=0

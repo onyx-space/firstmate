@@ -1,0 +1,77 @@
+# Test-phase scenario dispositions (round 2)
+
+Change under test: the generated no-mistakes Definition of done (`bin/fm-dod-lib.sh`),
+its AGENTS.md supervisor-contract alignment, and `tests/fm-brief.test.sh`.
+Tree: target e8fa804 + this round's narrowing. Everything below was driven live
+through the real `bin/fm-brief.sh`, `bin/fm-promote.sh`, and `bin/fm-crew-state.sh`.
+
+## Scenario 1 - a pipeline PR (not a commit) is the completion signal: DRIVABLE, driven
+
+Disposition (a). Artifact: the Definition of done the real `bin/fm-brief.sh --mode no-mistakes`
+generates (see `generated-brief-no-mistakes-dod.txt`) and the message the real
+`bin/fm-promote.sh --mode no-mistakes` delivers (see `delivered-worker-definition-of-done.txt`).
+Both say, verbatim:
+
+    **Completion for mode=no-mistakes is a PR the no-mistakes pipeline pushed and opened, never a commit.**
+    A commit, a clean branch, or "ready for the run" is NOT completion; stopping there leaves the task unfinished and firstmate has to chase it.
+    The one completion claim is `done: PR {url} checks green`, written with the PR's full `https://` URL once the run reports CI green.
+
+The base tree said the opposite ("The task is complete only when committed on your branch.");
+`before-after-no-mistakes-definition-of-done.txt` shows the two side by side.
+
+## Scenario 2 - a harness-agnostic start still owns the pipeline PR: DRIVABLE, driven
+
+Disposition (a). The generated no-mistakes brief contains 0 hard-coded
+`/no-mistakes` invocations (`generated-brief-no-mistakes-dod.txt`, last lines) and defers
+the invocation form to `harness-adapters`:
+
+    Running the pipeline belongs to this task, not to a later instruction: once your implementation is committed, start this task's no-mistakes pipeline yourself in your own harness's skill-invocation form, and keep driving its gates until that green result or a terminal failure.
+    The exact skill-invocation form is harness-specific and owned by `harness-adapters`; when you are unsure of it, state the action in natural language and proceed.
+
+Ownership recognition is observable on the real supervisor classifier: the workspace-aware
+worker writes that pinned claim, and `bin/fm-crew-state.sh` reads it back as
+`state: done · source: status-log` (`crew-state-classifies-new-completion-line.txt`).
+
+## Scenario 3 - anti-duplication / pipeline-ownership rejection: RESIDUAL, not drivable in-repo
+
+Disposition (b). Nothing in this repository rejects a second worker, or a non-owning
+worker, that tries to start a validation run on a branch that already has one. That
+refusal is issued by the external `no-mistakes` binary at run start, and no in-repo
+surface can be driven to observe it.
+Substitute evidence: the worker-side rule is delivered as prompt text
+(`generated-brief-no-mistakes-dod.txt`):
+
+    Never start a second validation run while one is already active on this branch.
+    Treat a firstmate delivery of this task's no-mistakes skill that arrives mid-run as a nudge to reattach and poll, not as a second start.
+    If a start is refused because a run is already active on this branch, follow the pipeline's own status and help lines instead of reporting the task blocked.
+
+and the supervisor-side rule lives in AGENTS.md section 7.
+Risk while unverified: a worker that ignores the rule could start a duplicate run, and
+the refusal text the external pipeline actually prints is not pinned by any test here.
+Wording narrowed this round so the brief no longer asserts a "pipeline ownership"
+refusal surface or tells the worker to certify run ownership it cannot check; the two
+assertions that pinned those claims were replaced and now pin their absence.
+
+## Scenario 4 - non-pipeline workers are not regressed: DRIVABLE, driven
+
+Disposition (a). The real generator and the real delivery path keep each mode's own signal
+and receive no pipeline claim:
+
+    direct-PR:  Do NOT start the no-mistakes pipeline. ... append `done: PR {url}` ...
+    local-only: ... append `done: ready in branch fm/<id>` ...
+    pipeline-completion-claim count in each of the two artifacts: 0
+
+See `delivered-worker-dod-direct-pr.txt` and `generated-brief-no-mistakes-dod.txt`.
+`bash tests/fm-task-delivery.test.sh` also passes end to end, including
+`test_promotion_delivers_the_real_definition_of_done`.
+
+## Regression
+
+`regression-fails-before-fix.txt`: with only `bin/fm-dod-lib.sh` reverted to base e6b0f2a,
+the updated `tests/fm-brief.test.sh` fails (`not ok - explicit no-mistakes brief did not
+render the pipeline completion signal`, exit 1) and passes on the fixed tree (exit 0).
+
+## Focused verification run this round
+
+    $ bash tests/fm-brief.test.sh        -> exit 0 (26/26 ok)
+    $ bash tests/fm-task-delivery.test.sh -> exit 0 (all passed)

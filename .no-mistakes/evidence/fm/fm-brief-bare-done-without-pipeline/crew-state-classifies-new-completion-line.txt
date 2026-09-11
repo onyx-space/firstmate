@@ -1,0 +1,25 @@
+| status-line shape the generated brief instructs | real fm-crew-state.sh verdict |
+
+### pinned claim only (pre-change brief shape)
+line: done: PR https://github.com/o/r/pull/2 checks green
+state: done · source: status-log · PR https://github.com/o/r/pull/2 checks green · run still monitoring PR
+
+### claim + head + CI appended, comma separated
+line: done: PR https://github.com/o/r/pull/2 checks green, head 2cb79ca002d4b24c15345b5e6f19eb0ea1f55772, CI green
+state: done · source: status-log · PR https://github.com/o/r/pull/2 checks green, head 2cb79ca002d4b24c15345b5e6f19eb0ea1f55772, CI green · run still monitoring PR
+
+### claim + head + CI appended, space separated
+line: done: PR https://github.com/o/r/pull/2 checks green head 2cb79ca002d4b24c15345b5e6f19eb0ea1f55772 CI green
+state: done · source: status-log · PR https://github.com/o/r/pull/2 checks green head 2cb79ca002d4b24c15345b5e6f19eb0ea1f55772 CI green · run still monitoring PR
+
+### claim + head + CI appended, semicolons
+line: done: PR https://github.com/o/r/pull/2 checks green; head 2cb79ca002d4b24c15345b5e6f19eb0ea1f55772; CI green
+state: done · source: status-log · PR https://github.com/o/r/pull/2 checks green; head 2cb79ca002d4b24c15345b5e6f19eb0ea1f55772; CI green · run still monitoring PR
+
+### NEGATIVE CONTROL: commit-only report (the chased failure mode)
+line: done: fix committed on branch fm/feat-live - ready for the run
+state: working · source: run-step · validating (running)
+
+branch: fm/feat-live   head: 2cb79ca002d4b24c15345b5e6f19eb0ea1f55772
+driver: /tmp/fm-live-crewstate/run.sh
+product: /Users/onyx/.no-mistakes/worktrees/9573b29b9316/01M27QX175STCFKBR9AFS4W4FV/bin/fm-crew-state.sh

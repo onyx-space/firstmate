@@ -1,0 +1,5 @@
+status log written three ways; supervisor verdict from the real bin/fm-crew-state.sh:
+
+claim last       | state: done · source: status-log · PR https://github.com/example/repo/pull/123 checks green · run still monitoring PR
+claim, then explanation | state: working · source: run-step · validating (running)
+explanation, then claim | state: done · source: status-log · PR https://github.com/example/repo/pull/123 checks green · run still monitoring PR

@@ -1,0 +1,13 @@
+### pipeline run present (ci: running) - the state the intent's 3 chases happened in ###
+pinned claim         | log: done: PR https://github.com/example/repo/pull/123 checks green
+                     | supervisor: state: done · source: status-log · PR https://github.com/example/repo/pull/123 checks green · run still monitoring PR
+
+commit-only          | log: done: fix committed on branch fm/ev-join, ready for the run
+                     | supervisor: state: working · source: run-step · validating (running)
+
+PR not green yet     | log: done: PR https://github.com/example/repo/pull/123 opened, checks running
+                     | supervisor: state: working · source: run-step · validating (running)
+
+pinned + head/CI     | log: done: PR https://github.com/example/repo/pull/123 checks green head abc1234 CI green
+                     | supervisor: state: done · source: status-log · PR https://github.com/example/repo/pull/123 checks green head abc1234 CI green · run still monitoring PR
+
