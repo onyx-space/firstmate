@@ -60,7 +60,7 @@ A missed-reply escalation includes the complete first sighting path and line num
 `tests/fm-teardown.test.sh` covers teardown delivering a child's final line and refusing when the channel cannot be written.
 `tests/fm-brief.test.sh` pins the charter's channel rule.
 `tests/fm-pending-reply.test.sh` covers helper-selected local routing, remote-channel classification, same-basename restatement before false escalation, readable wrong-home diagnostics, and the rule that arbitrary mate-home sightings never acknowledge a reply.
-`tests/fm-parent-channel.test.sh` covers the ownership predicate's scope (remote mate home recognized, main home and local-route mate home not) and, in a remote mate home, that the per-wake signal scan, the heartbeat backstop, the open-decision folds, the unread scan, the presentation snapshot, and the real wake drain all skip the channel log while still reporting a real task log beside it.
+`tests/fm-parent-channel.test.sh` covers the ownership predicate's scope (remote mate home recognized, main home and local-route mate home not) and, in a remote mate home, that the per-wake signal scan, the heartbeat backstop, the open-decision folds, the unread scan, the presentation snapshot, and the real wake drain all skip the channel log while still reporting a real task log beside it, and that the note fold keeps a note on one bounded line without splitting a multibyte character across its byte bound.
 `tests/fm-session-start.test.sh` covers the digest leaving a mate home's parent-channel log out of its task and orphan listings.
 
 ## Live verification

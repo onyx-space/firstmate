@@ -4738,4 +4738,31 @@ for mark in ("tool_use", "first_audio", "reply_end"):
 PY
 pass "a reply that arrives before the end of the clip is named as an unusable clock"
 
+# --- one bad byte must cost one byte ----------------------------------------
+#
+# Both durable reads behind a status answer decode tolerantly. They used to be
+# strict, so a single invalid byte anywhere in the queue or in one task's
+# metadata raised UnicodeDecodeError out of the whole read and the voice agent
+# answered nothing at all. The field incident that produced such a byte was the
+# parent-channel note fold splitting a multibyte character on its byte bound;
+# tests/fm-parent-channel.test.sh owns that half of the regression, and this
+# pins the reader's half.
+
+BAD_HOME="$TMP_ROOT/bad-bytes-home"
+mkdir -p "$BAD_HOME/data" "$BAD_HOME/state"
+printf '# Backlog\n\n## In flight\n- [ ] bad-one - \xff\xfe a broken title\n- [ ] good-two - a sound title\n' \
+  > "$BAD_HOME/data/backlog.md"
+fm_write_meta "$BAD_HOME/state/good-two.meta" kind=ship mode=no-mistakes
+printf 'task=bad-three\nmode=ship\nnote=\xff\xfe\n' > "$BAD_HOME/state/bad-three.meta"
+
+bad_out=$(python3 "$ROOT/bin/fm_voice_records.py" status --home "$BAD_HOME" --scope full 2>&1) \
+  || fail "one invalid byte in a durable record made the whole status answer fail: $bad_out"
+assert_contains "$bad_out" '"in_flight": 2' \
+  "one invalid byte in a backlog line cost the queue read"
+assert_contains "$bad_out" '"workers_on_deck": 2' \
+  "one invalid byte in one task's metadata cost every task's record"
+assert_contains "$bad_out" 'good-two' \
+  "the sound task stopped being reported beside a damaged one"
+pass "an invalid byte in a durable record costs one byte, not the whole answer"
+
 printf 'all voice relay cases passed\n'

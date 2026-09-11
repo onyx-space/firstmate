@@ -177,8 +177,42 @@ fm_parent_channel_is_own_log() {  # <state> <path>
 
 # Fold <text> onto one bounded line, so a note copied from a child ledger or a
 # hold reason cannot break the channel's line framing.
+#
+# The bound is a BYTE bound - the channel's line framing, its at-most-once
+# append, and the remote reader's position-plus-prefix cursor all reason in bytes
+# - and the cut must land on a UTF-8 character boundary. `LC_ALL=C cut -c1-1200`
+# counted bytes but cut at whatever byte came 1200th, so a multibyte character
+# straddling the bound was split and the channel carried invalid UTF-8, which
+# makes a consumer that strictly decodes the file fail on the whole record
+# rather than on the note. GNU cut counts bytes while BSD cut counts characters,
+# so the split reproduced only on Linux and a macOS check cannot see it. The
+# boundary rule here is explicit and locale-independent, not delegated to `cut`.
+# It bounds the note; it does not repair invalid bytes the caller already had.
 fm_parent_channel_clean_note() {  # <text>
-  printf '%s' "$1" | LC_ALL=C tr '\t\r\n' '   ' | cut -c1-1200
+  local folded bytes lead need have i
+  local -a tail
+  folded=$(printf '%s' "$1" | LC_ALL=C tr '\t\r\n' '   ')
+  bytes=$(printf '%s' "$folded" | LC_ALL=C wc -c | tr -d ' ')
+  if [ "$bytes" -gt 1200 ]; then
+    folded=$(printf '%s' "$folded" | head -c 1200)
+    # The last four bytes cover the longest UTF-8 sequence, so scanning back
+    # from the end finds the leading byte of a character the bound split.
+    read -r -a tail <<<"$(printf '%s' "$folded" | tail -c 4 | LC_ALL=C od -An -v -tu1)"
+    i=$((${#tail[@]} - 1))
+    while [ "$i" -gt 0 ] && [ $((tail[i] & 192)) -eq 128 ]; do i=$((i - 1)); done
+    lead=${tail[i]}
+    # How many bytes that character needs, by its leading byte.
+    need=1
+    [ "$lead" -lt 192 ] || need=2
+    [ "$lead" -lt 224 ] || need=3
+    [ "$lead" -lt 240 ] || need=4
+    [ "$lead" -lt 248 ] || need=5
+    # A sequence with fewer bytes present than it needs is the one the bound
+    # cut; its bytes come off with it, and only they do.
+    have=$((${#tail[@]} - i))
+    [ "$have" -ge "$need" ] || folded=$(printf '%s' "$folded" | head -c "$((1200 - have))")
+  fi
+  printf '%s\n' "$folded"
 }
 
 # Append <line> to <path> unless that exact line is already there.
