@@ -1,0 +1,90 @@
+Firstmate brief tool-timeout discipline - live product checks
+branch fm/fm-brief-tool-timeout-discipline  base 463799a  target dccf1dc
+
+1) fm-brief.sh generated briefs (real product, isolated FM_HOME=/tmp/fm-brief-live.SxsFVw/home)
+   t-no-mistakes            occurrences=1  lines=151
+   t-direct-PR              occurrences=1  lines=116
+   t-local-only             occurrences=1  lines=115
+   t-scout                  occurrences=1  lines=101
+   t-secondmate             occurrences=1  lines=78
+   t-secondmate-projects    occurrences=1  lines=79
+   t-herdr-ship             occurrences=1  lines=165
+   t-herdr-scout            occurrences=1  lines=115
+
+2) Regression proof - same command against the base commit script
+   base 463799a no-mistakes brief occurrences=0
+   target dccf1dc no-mistakes brief occurrences=1
+
+3) Structural check - top-level headings, base vs target no-mistakes brief
+   base   # Task
+   base   # Herdr lifecycle declaration - NOT ENABLED
+   base   # Setup
+   base   # Artifact placement
+   base   # Rules
+   base   # Firstmate instruction inbox
+   base   # CE workflow boundary
+   base   # Project memory
+   base   # PR description
+   base   # Definition of done
+   target # Task
+   target # Herdr lifecycle declaration - NOT ENABLED
+   target # Setup
+   target # Artifact placement
+   target # Tool call timeouts
+   target # Rules
+   target # Firstmate instruction inbox
+   target # CE workflow boundary
+   target # Project memory
+   target # PR description
+   target # Definition of done
+
+4) Required content of the emitted section (target no-mistakes brief)
+   # Tool call timeouts
+   Bound every command with a short timeout: a stuck call must fail fast rather than idle.
+   - Default 30 seconds: reading a file, a single query, a small command.
+   - 60 seconds for an ordinary command, or a few commands chained into one check.
+   - 120 seconds is the cap, and only for work that is genuinely slow, such as an ssh round-trip or a firstmate script (`fm-fleet-sync`, `fm-teardown`, `fm-spawn`).
+   - Never use 300 or 600.
+   - Anything that can take longer than 120 seconds belongs in a background job (`job_run`, `dsh-jobs run`) that you poll, never behind a longer timeout.
+   A short timeout that fails and is rerun costs less than a long timeout spent waiting, so when in doubt take the shorter bound and rerun.
+   
+
+5) End-to-end: real fm-spawn -> emitted launch command -> final prompt delivered to the worker
+TMP_ROOT=/private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-timeout-live.Avee4r
+=== no-mistakes final prompt ===
+section count: 1
+  OK  Default 30 seconds
+  OK  60 seconds for an ordinary command
+  OK  120 seconds is the cap
+  OK  Never use 300 or 600
+  OK  belongs in a background job
+  OK  job_run
+  OK  dsh-jobs run
+=== direct-PR final prompt ===
+section count: 1
+  OK  Default 30 seconds
+  OK  60 seconds for an ordinary command
+  OK  120 seconds is the cap
+  OK  Never use 300 or 600
+  OK  belongs in a background job
+  OK  job_run
+  OK  dsh-jobs run
+=== local-only final prompt ===
+section count: 1
+  OK  Default 30 seconds
+  OK  60 seconds for an ordinary command
+  OK  120 seconds is the cap
+  OK  Never use 300 or 600
+  OK  belongs in a background job
+  OK  job_run
+  OK  dsh-jobs run
+=== scout final prompt ===
+section count: 1
+  OK  Default 30 seconds
+  OK  60 seconds for an ordinary command
+  OK  120 seconds is the cap
+  OK  Never use 300 or 600
+  OK  belongs in a background job
+  OK  job_run
+  OK  dsh-jobs run
+OVERALL=0

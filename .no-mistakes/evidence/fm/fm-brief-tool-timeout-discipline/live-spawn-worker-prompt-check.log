@@ -1,0 +1,38 @@
+TMP_ROOT=/private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-timeout-live.Avee4r
+=== no-mistakes final prompt ===
+section count: 1
+  OK  Default 30 seconds
+  OK  60 seconds for an ordinary command
+  OK  120 seconds is the cap
+  OK  Never use 300 or 600
+  OK  belongs in a background job
+  OK  job_run
+  OK  dsh-jobs run
+=== direct-PR final prompt ===
+section count: 1
+  OK  Default 30 seconds
+  OK  60 seconds for an ordinary command
+  OK  120 seconds is the cap
+  OK  Never use 300 or 600
+  OK  belongs in a background job
+  OK  job_run
+  OK  dsh-jobs run
+=== local-only final prompt ===
+section count: 1
+  OK  Default 30 seconds
+  OK  60 seconds for an ordinary command
+  OK  120 seconds is the cap
+  OK  Never use 300 or 600
+  OK  belongs in a background job
+  OK  job_run
+  OK  dsh-jobs run
+=== scout final prompt ===
+section count: 1
+  OK  Default 30 seconds
+  OK  60 seconds for an ordinary command
+  OK  120 seconds is the cap
+  OK  Never use 300 or 600
+  OK  belongs in a background job
+  OK  job_run
+  OK  dsh-jobs run
+OVERALL=0
