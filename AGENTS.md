@@ -357,7 +357,7 @@ After an autonomous merge, give the captain a one-line full-URL or local-main ou
 ### Validate
 
 For a no-mistakes ship, the task's own worker starts validation itself after its implementation commit, using the harness invocation owned by `harness-adapters`.
-Sending that worker this task's no-mistakes skill invocation, in the harness-specific form `harness-adapters` owns, is firstmate's fallback nudge for a worker that has not started its run, never a second start for one already driving it.
+Sending that worker this task's no-mistakes skill invocation, in the harness-specific form `harness-adapters` owns, is firstmate's fallback nudge for a worker that has not started its run; never send it as a second start to a worker already driving its run.
 The task worker that starts a no-mistakes run drives the pipeline and owns every `no-mistakes axi run` and `no-mistakes axi respond` call through the next gate or outcome.
 Firstmate never invokes `no-mistakes axi respond` for a crew-owned run.
 When the captain adds or changes an ask mid-task, append the captain's words to that brief's `## Captain's intent` and steer the worker; Firstmate build constraints stay in `## Firstmate spec` or the steer.

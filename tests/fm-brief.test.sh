@@ -406,10 +406,15 @@ test_no_mistakes_completion_is_a_pr_not_a_commit() {
     "no-mistakes brief handed the worker a harness-specific slash invocation"
   assert_grep "Never start a second validation run while one is already active on this branch." "$brief" \
     "no-mistakes brief must forbid a duplicate validation run on the branch"
-  assert_grep "A firstmate delivery of this task's no-mistakes skill that arrives mid-run is a nudge to reattach and poll, not a second start." "$brief" \
+  assert_grep "Treat a firstmate delivery of this task's no-mistakes skill that arrives mid-run as a nudge to reattach and poll, not as a second start." "$brief" \
     "no-mistakes brief must treat a mid-run firstmate delivery as a nudge, not a second start"
-  assert_grep "If a start is refused for pipeline ownership, check whether the active run is this task's own run and follow its status and help lines instead of reporting the task blocked." "$brief" \
-    "no-mistakes brief must route a pipeline-ownership refusal to the active run's status rather than a blocked report"
+  assert_grep "If a start is refused because a run is already active on this branch, follow the pipeline's own status and help lines instead of reporting the task blocked." "$brief" \
+    "no-mistakes brief must route an already-active-run refusal to the pipeline's own status rather than a blocked report"
+  # The brief must not assert a refusal surface or an ownership check the repo cannot verify.
+  assert_no_grep "pipeline ownership" "$brief" \
+    "no-mistakes brief must not assert a pipeline-ownership refusal the repo cannot verify"
+  assert_no_grep "check whether the active run is this task's own run" "$brief" \
+    "no-mistakes brief must not tell the worker to certify run ownership it cannot check"
   assert_grep "First run in a repo the pipeline has never seen: run \`no-mistakes doctor\`, then \`no-mistakes init\`" "$brief" \
     "no-mistakes Definition of done must carry its own first-run initialization step"
   assert_grep "Write the completion line as the pinned claim first, then the validated head commit and the CI result on that same line, leaving the claim itself intact." "$brief" \

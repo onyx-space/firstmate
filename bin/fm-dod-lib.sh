@@ -247,8 +247,8 @@ The one completion claim is \`done: PR {url} checks green\`, written with the PR
 Running the pipeline belongs to this task, not to a later instruction: once your implementation is committed, start this task's no-mistakes pipeline yourself in your own harness's skill-invocation form, and keep driving its gates until that green result or a terminal failure.
 The exact skill-invocation form is harness-specific and owned by \`harness-adapters\`; when you are unsure of it, state the action in natural language and proceed.
 Never start a second validation run while one is already active on this branch.
-A firstmate delivery of this task's no-mistakes skill that arrives mid-run is a nudge to reattach and poll, not a second start.
-If a start is refused for pipeline ownership, check whether the active run is this task's own run and follow its status and help lines instead of reporting the task blocked.
+Treat a firstmate delivery of this task's no-mistakes skill that arrives mid-run as a nudge to reattach and poll, not as a second start.
+If a start is refused because a run is already active on this branch, follow the pipeline's own status and help lines instead of reporting the task blocked.
 First run in a repo the pipeline has never seen: run \`no-mistakes doctor\`, then \`no-mistakes init\` if it reports the repo is not initialized here, before the first run.
 Write the completion line as the pinned claim first, then the validated head commit and the CI result on that same line, leaving the claim itself intact.
 The completion line is the LAST line in the status log: put any supplementary explanation before it, or in \`data/<task-id>/\`, never after it.
