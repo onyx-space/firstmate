@@ -2244,14 +2244,19 @@ teardown_slot_release_order_applies() {  # <record-meta> <other-meta>
 # openings - --force, which only ever authorized discarding THIS record's work,
 # and the scout/secondmate carve-out, which is a property of one record rather
 # than of a copy two records name. An unprovable copy refuses.
+# The proof runs in a subshell, so nothing it sets can reach this record's own
+# flow: neither the WT/FORCE/KIND it overrides below, nor the PR_URL the
+# landed-work proof may resolve, nor its branch cache. Those three overrides are
+# locals, so the landed-work proof reads them through that call while it never
+# reads this record's own WT/FORCE/KIND.
 teardown_slot_copy_is_landed() {  # <slot>
-  local slot=$1
-  (
-    WT=$slot
-    FORCE=
-    KIND=ship
-    validate_worktree_teardown_safety
-  )
+  ( teardown_slot_copy_proof "$1" )
+}
+
+teardown_slot_copy_proof() {  # <slot>
+  local WT=$1 KIND=ship
+  local FORCE=
+  validate_worktree_teardown_safety
 }
 
 # True when this record is the uncontested claimant of the live slot the OTHER
