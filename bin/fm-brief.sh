@@ -6,6 +6,11 @@
 # boundary` section (shipping authority, banned and allowed CE skills, review
 # ownership, decision routing, knowledge placement), which this script owns;
 # AGENTS.md's delivery-path section only points at it.
+# Ship briefs also carry the fixed `# PR description` section, rendered from
+# bin/fm-dod-lib.sh's fm_pr_description_block rather than owned here, like the
+# Definition of done: it points the worker at the separately installed
+# `pr-description` skill, which owns that contract, and is omitted for `local-only`,
+# which opens no PR.
 # Ship and scout `# Task` sections have two subsections Firstmate
 # fills before dispatch: `{TASK}` under `## Captain's intent` (the captain's
 # own ask plus the context needed to read it, including the substance of any
