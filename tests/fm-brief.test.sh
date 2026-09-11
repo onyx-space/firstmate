@@ -260,8 +260,8 @@ test_ship_mode_is_explicit_not_registry() {
   brief="$home/data/brief-explicit-a5/brief.md"
   grep -qx "Delivery contract: mode=no-mistakes" "$brief" \
     || fail "registered direct-PR posture overrode the explicit --mode"
-  assert_grep "Firstmate will then instruct you to run /no-mistakes" "$brief" \
-    "explicit no-mistakes brief did not render the pipeline definition of done"
+  assert_grep "Completion for mode=no-mistakes is a PR the no-mistakes pipeline pushed and opened, never a commit." "$brief" \
+    "explicit no-mistakes brief did not render the pipeline completion signal"
 
   # An unregistered project is not a blocker either, because nothing is looked up.
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-explicit-a6 never-registered --mode local-only >/dev/null 2>&1 \
@@ -370,6 +370,82 @@ test_no_mistakes_dod_wording() {
   assert_no_grep "no-mistakes refuses" "$brief" \
     "no-mistakes DOD must not claim the tool itself refuses --yes"
   pass "fm-brief.sh: no-mistakes DOD keeps its apostrophe prose and bans --yes outright"
+}
+
+# Regression pin for the delivered-then-abandoned failure: three no-mistakes
+# workers committed, read a commit as completion, and stopped without ever
+# running the pipeline. The generated no-mistakes brief must name the PR as the
+# completion signal, say a commit is not one, and keep the other modes' signals
+# distinct from it. It must also hand the worker its own start in a harness-agnostic
+# form, without letting a firstmate nudge collide with one already active.
+test_no_mistakes_completion_is_a_pr_not_a_commit() {
+  local home id brief
+  home="$TMP_ROOT/completion-signal-home"
+  write_registry "$home"
+
+  id="brief-completion-c1"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "no-mistakes brief was not scaffolded"
+  assert_grep "Completion for mode=no-mistakes is a PR the no-mistakes pipeline pushed and opened, never a commit." "$brief" \
+    "no-mistakes brief must say the pipeline PR, not a commit, is the completion signal"
+  assert_grep 'A commit, a clean branch, or "ready for the run" is NOT completion' "$brief" \
+    "no-mistakes brief must say plainly that committed work is not completion"
+  # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+  assert_grep 'The one completion claim is `done: PR {url} checks green`' "$brief" \
+    "no-mistakes brief must pin the one completion claim"
+  assert_no_grep 'state the honest real result instead of "checks green"' "$brief" \
+    "no-mistakes brief must keep the single pinned completion claim instead of accepting a second spelling"
+  assert_grep "Running the pipeline belongs to this task, not to a later instruction" "$brief" \
+    "no-mistakes brief must make running the pipeline the worker's own step"
+  assert_grep "start this task's no-mistakes pipeline yourself in your own harness's skill-invocation form" "$brief" \
+    "no-mistakes brief must hand the worker its own start in a harness-agnostic form"
+  assert_grep "when you are unsure of it, state the action in natural language and proceed" "$brief" \
+    "no-mistakes brief must let a worker unsure of the invocation form proceed in natural language"
+  assert_no_grep "/no-mistakes" "$brief" \
+    "no-mistakes brief handed the worker a harness-specific slash invocation"
+  assert_grep "Never start a second validation run while one is already active on this branch." "$brief" \
+    "no-mistakes brief must forbid a duplicate validation run on the branch"
+  assert_grep "Treat a firstmate delivery of this task's no-mistakes skill that arrives mid-run as a nudge to reattach and poll, not as a second start." "$brief" \
+    "no-mistakes brief must treat a mid-run firstmate delivery as a nudge, not a second start"
+  assert_grep "If a start is refused because a run is already active on this branch, follow the pipeline's own status and help lines instead of reporting the task blocked." "$brief" \
+    "no-mistakes brief must route an already-active-run refusal to the pipeline's own status rather than a blocked report"
+  # The brief must not assert a refusal surface or an ownership check the repo cannot verify.
+  assert_no_grep "pipeline ownership" "$brief" \
+    "no-mistakes brief must not assert a pipeline-ownership refusal the repo cannot verify"
+  assert_no_grep "check whether the active run is this task's own run" "$brief" \
+    "no-mistakes brief must not tell the worker to certify run ownership it cannot check"
+  assert_grep "First run in a repo the pipeline has never seen: run \`no-mistakes doctor\`, then \`no-mistakes init\`" "$brief" \
+    "no-mistakes Definition of done must carry its own first-run initialization step"
+  assert_grep "Write the completion line as the pinned claim first, then the validated head commit and the CI result on that same line, leaving the claim itself intact." "$brief" \
+    "no-mistakes brief must keep the pinned claim intact and append head and CI after it on the same line"
+  assert_no_grep "report all three" "$brief" \
+    "no-mistakes brief still asks for a second shape of the completion claim"
+  assert_grep "The completion line is the LAST line in the status log" "$brief" \
+    "no-mistakes brief must keep the completion claim as the last status line"
+  assert_no_grep "The task is complete only when committed on your branch." "$brief" \
+    "no-mistakes brief still declares a commit as the completion bar"
+
+  # Mode separation: direct-PR and local-only complete on different artifacts,
+  # so the no-mistakes pipeline claim must not leak into either of them.
+  local mode
+  for mode in direct-PR local-only; do
+    id="brief-completion-c2-$mode"
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" >/dev/null 2>&1
+    brief="$home/data/$id/brief.md"
+    assert_no_grep "Completion for mode=no-mistakes" "$brief" \
+      "$mode brief received the no-mistakes completion signal"
+    assert_no_grep 'done: PR {url} checks green' "$brief" \
+      "$mode brief received the no-mistakes CI-green completion claim"
+  done
+  brief="$home/data/brief-completion-c2-direct-PR/brief.md"
+  # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+  assert_grep 'then append `done: PR {url}` to the status file and stop.' "$brief" \
+    "direct-PR brief lost its own opening-a-PR completion signal"
+  brief="$home/data/brief-completion-c2-local-only/brief.md"
+  assert_grep 'When it is implemented and committed, append `done: ready in branch fm/' "$brief" \
+    "local-only brief lost its ready-branch completion signal"
+  pass "fm-brief.sh: no-mistakes completion is the pipeline PR, and the other modes stay distinct"
 }
 
 test_ask_user_escalation_format() {
@@ -1050,6 +1126,7 @@ test_ship_mode_is_explicit_not_registry
 test_delivery_flags_are_refused_where_they_do_not_apply
 test_faster_paths_use_configured_authority_without_stacked_review
 test_no_mistakes_dod_wording
+test_no_mistakes_completion_is_a_pr_not_a_commit
 test_ask_user_escalation_format
 test_ship_project_memory_wording
 test_herdr_lab_contract_is_explicit_and_complete
