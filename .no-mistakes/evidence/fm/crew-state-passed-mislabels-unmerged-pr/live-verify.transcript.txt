@@ -1,0 +1,55 @@
+=== live inputs ===
+$ no-mistakes axi status            (in /Users/onyx/code/cbm-axi)
+run:
+  id: "01M0T63R4GYMW1BVJG7HJ48SPY"
+  branch: docs/agent-pr-axi-usage
+  status: completed
+  head: 8b3782b8
+  head_sha: 8b3782b828cbe8100ffa140b1c018810cb48b107
+  pr: "https://github.com/onyx-space/cbm-axi/pull/2"
+  findings: none
+outcome: passed
+$ gh pr view 2 --json state
+{"state":"MERGED","url":"https://github.com/onyx-space/cbm-axi/pull/2"}
+branch: docs/agent-pr-axi-usage
+head:   8b3782b
+
+=== A. terminal passed run, NO merge record: no merge may be claimed ===
+$ fm-crew-state.sh live-a   (fixed, this branch)
+state: done · source: run-step · run passed: PR held for merge: https://github.com/onyx-space/cbm-axi/pull/2
+$ fm-crew-state.sh live-a   (base aba68fc, before the change)
+state: done · source: run-step · run passed: PR merged/closed
+PASS  A1 fixed: unproven merge reads held-for-merge and names the PR
+PASS  A2 fixed: the line never claims a merge
+PASS  A3 base revision really did mislabel a passed run (the reported defect)
+
+=== B. same run, merge now PROVEN by the real poll -> merged may be claimed ===
+NOTE  live-b: merge observed on the real forge (onyx-space/cbm-axi/2) and recorded via fm_merge_outcome_report
+$ cat $STATE/live-b.pr-poll-merge-notified
+    fm-pr-poll-merge-notified-v1
+    github
+    github.com
+    onyx-space/cbm-axi
+    2
+$ fm-crew-state.sh live-b   (fixed)
+state: done · source: run-step · run passed: PR merged: https://github.com/onyx-space/cbm-axi/pull/2
+PASS  B1 a proven merge is reported as merged, naming the proved PR
+
+=== C. adversarial: task meta names another (merged) PR, the run works a different one ===
+NOTE  live-c: merge observed on the real forge (onyx-space/tasks-axi/1) and recorded via fm_merge_outcome_report
+$ fm-crew-state.sh live-c   (fixed)
+state: done · source: run-step · run passed: PR held for merge: https://github.com/onyx-space/cbm-axi/pull/2
+$ fm-crew-state.sh live-c   (meta-first revision e40b4b4, the reviewed defect)
+state: done · source: run-step · run passed: PR merged
+PASS  C1 fixed: only the run's own PR identity can be proved; a stale meta PR proves nothing
+PASS  C2 fixed: no merge claim when the run's own PR has no merge record
+PASS  C3 fixed: the stale merged PR is never named
+PASS  C4 meta-first revision really did claim a merge for the stale meta PR (live repro of the reviewed finding)
+
+=== D. adversarial: no merge record, unreadable/absent proof stays a hedge ===
+$ fm-crew-state.sh live-d   (fixed, empty merge record)
+state: done · source: run-step · run passed: PR held for merge: https://github.com/onyx-space/cbm-axi/pull/2
+PASS  D1 an unreadable merge record is not proof
+
+=== result: ALL-PASS ===
+workdir (removed): /var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T//fm-crew-state-live.5q78A0
