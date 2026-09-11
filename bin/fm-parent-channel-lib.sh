@@ -195,8 +195,9 @@ fm_parent_channel_is_own_log() {  # <state> <path>
 # already had.
 fm_parent_channel_clean_note() {  # <text>
   # The local LC_ALL=C is deliberate: it is what makes ${#text} and ${text:0:1200}
-  # count and slice BYTES in every bash, whatever locale the caller runs in, and
-  # it keeps the fold itself free of any external process.
+  # count and slice BYTES in every bash, whatever locale the caller runs in. The
+  # common at-or-under-bound path is then process-free; only a note over the
+  # bound forks, piping through tail and od to inspect the cut.
   local LC_ALL=C text=$1
   local lead need have i
   # A scoped name, not the obvious `tail`: this array's type is visible to
