@@ -764,10 +764,11 @@ test_shared_pool_slot_still_refuses_while_the_co_claimant_runs() {
 }
 
 test_shared_pool_slot_still_refuses_an_unprovable_co_claimant() {
-  local dir id=surviving-task other=unreadable-task rc
+  local dir id=surviving-task other=unreadable-task rc worker
 
   dir=$(make_case slot-contested-unreadable)
   mark_case_as_treehouse_pool "$dir"
+  make_slot_copy_landed "$dir"
   fm_write_meta "$dir/home/state/$id.meta" \
     "window=main:fm-$id" "endpoint_task_id=$id" \
     "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
@@ -775,13 +776,17 @@ test_shared_pool_slot_still_refuses_an_unprovable_co_claimant() {
     "window=other:fm-$other" "endpoint_task_id=$other" \
     "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
   write_tmux_agent_stub "$dir" "main:fm-$id=alive" "other:fm-$other=unreadable"
+  ( cd "$dir/worktree" && exec sleep 30 ) &
+  worker=$!
 
   set +e
-  run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr"
+  FM_FAKE_TMUX_PANE_PID=$worker run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr"
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "a pool slot was released on an unreadable co-claimant endpoint"
   assert_shared_slot_refused "$dir" "$id" "$other" "unreadable co-claimant"
+  kill "$worker" 2>/dev/null || true
+  wait "$worker" 2>/dev/null || true
 
   pass "fm-teardown: an unreadable co-claimant endpoint still refuses rather than reading as gone"
 }
@@ -789,24 +794,29 @@ test_shared_pool_slot_still_refuses_an_unprovable_co_claimant() {
 # Two gone records leave nothing proving which claim is current, so the
 # collision stays unresolved until they are reconciled by hand.
 test_shared_pool_slot_still_refuses_when_neither_record_is_live() {
-  local dir id=gone-task other=departed-task rc
+  local dir id=gone-task other=departed-task rc worker
 
   dir=$(make_case slot-contested-both-gone)
   mark_case_as_treehouse_pool "$dir"
+  make_slot_copy_landed "$dir"
   fm_write_meta "$dir/home/state/$id.meta" \
     "window=main:fm-$id" "endpoint_task_id=$id" \
     "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
   fm_write_meta "$dir/home/state/$other.meta" \
     "window=other:fm-$other" "endpoint_task_id=$other" \
     "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
-  write_tmux_agent_stub "$dir" "main:fm-$id=missing" "other:fm-$other=missing"
+  write_tmux_agent_stub "$dir" "main:fm-$id=dead" "other:fm-$other=dead"
+  ( cd "$dir/worktree" && exec sleep 30 ) &
+  worker=$!
 
   set +e
-  run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr"
+  FM_FAKE_TMUX_PANE_PID=$worker run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr"
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "a pool slot was released with no live claimant to prove ownership"
   assert_shared_slot_refused "$dir" "$id" "$other" "two gone records"
+  kill "$worker" 2>/dev/null || true
+  wait "$worker" 2>/dev/null || true
 
   pass "fm-teardown: two gone records leave the slot contested instead of guessing which claim is current"
 }

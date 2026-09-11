@@ -2190,14 +2190,20 @@ teardown_pid_is_owned_by() {  # <pid> <root>
 # backend that cannot name the pane leader, or an unreadable process scan,
 # proves nothing and refuses.
 teardown_slot_processes_are_owned() {  # <backend> <target> <slot>
-  local backend=$1 target=$2 slot=$3 root pids pid
+  local backend=$1 target=$2 slot=$3 root pids pid rescan
   root=$(fm_backend_endpoint_root_pid "$backend" "$target") || return 1
   case "$root" in ''|*[!0-9]*) return 1 ;; esac
   pids=$(pids_with_cwd_under "$slot") || return 1
   [ -n "$pids" ] || return 0
   while IFS= read -r pid; do
     [ -n "$pid" ] || continue
-    teardown_pid_is_owned_by "$pid" "$root" || return 1
+    if teardown_pid_is_owned_by "$pid" "$root"; then
+      continue
+    fi
+    rescan=$(pids_with_cwd_under "$slot") || return 1
+    if task_pid_list_contains "$rescan" "$pid"; then
+      return 1
+    fi
   done <<EOF
 $pids
 EOF
