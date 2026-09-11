@@ -17,6 +17,37 @@
 #
 #   state: <working|parked|done|blocked|paused|failed|unknown> · source: <run-step|pane|status-log|remote-endpoint|none> · <detail>
 #
+# Status vocabulary (single owner: this header). Every word this helper says
+# about the world OUTSIDE the run is fixed here, so a new branch copies the
+# right word instead of inventing one:
+#   "PR merged"       the merge is PROVEN for the PR identity this helper
+#                     resolved for the run (nm_pr_url: the attributed run's own
+#                     `pr` field first, else the task's meta pr=), i.e. the
+#                     merge-notified record bin/fm-pr-lib.sh owns exists for that
+#                     identity (bin/fm-merge-outcome-lib.sh publishes it when a
+#                     merge is actually observed - merged here, or detected by
+#                     the poll).
+#   "PR held for merge"
+#                     the pipeline is through but no merge is proven: green
+#                     checks with the merge still awaiting the captain's approval
+#                     (AGENTS.md section 7's merge authority). This is the safe
+#                     word whenever the merge record is absent or unreadable.
+#   "checks green: PR ready for review"
+#                     checks are green and the pipeline is monitoring; says
+#                     nothing about merging either way.
+#   "parked at <gate>"        the run waits at a named gate for a decision.
+#   "validating (running|fixing)"  a live validation round is under way.
+#   "ci running"              the run is waiting on checks.
+#   "run failed"              the run's own verdict is failure.
+# HARD RULE: a no-mistakes terminal `outcome: passed` means the PIPELINE
+# finished, never that the PR merged - with merge authority off, the merge is
+# still the captain's to give. So no run-outcome detail line (source: run-step)
+# may contain "merged" unless nm_pr_merge_proven confirms it from the
+# merge-notified record. Claiming an unproven merge is the same refusal
+# bin/fm-pr-merge.sh makes when it declines to report an unproved merge as
+# landed. A relayed status-log note (source: status-log) is the crew's own
+# claim, carried verbatim as such and not attributed to the pipeline.
+#
 # Logic, in order:
 #   1. Resolve worktree + backend target + kind from state/<id>.meta. A meta
 #      recording remote_host= is a remote secondmate: its worktree and endpoint
@@ -50,7 +81,10 @@
 #      the ledger has been asked whether a live sibling run exists.
 #      The run-step is AUTHORITATIVE: running/fixing -> working, ci -> working,
 #      awaiting_approval/fix_review -> parked (with gate findings), terminal
-#      passed/checks-passed -> done, failed/cancelled -> failed. EXCEPT: while
+#      passed/checks-passed -> done, failed/cancelled -> failed. A terminal
+#      passed run states only what is PROVEN about its PR (status vocabulary
+#      above): its own outcome says the pipeline is through, so the merge record
+#      decides between "PR merged" and "PR held for merge". EXCEPT: while
 #      the active step is ci, `axi status` alone cannot tell "still waiting on
 #      checks" from "checks green, waiting on merge" (see nm_ci_checks_state) -
 #      a ci-step log-tail check overrides working -> done once checks read
@@ -108,6 +142,11 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-busy-lib.sh"
 # shellcheck source=bin/fm-nm-run-lib.sh
 . "$SCRIPT_DIR/fm-nm-run-lib.sh"
+# shellcheck source=bin/fm-pr-lib.sh
+# Read-only consumer: fm_pr_url_parse canonicalizes a PR URL and
+# fm_pr_poll_merge_already_notified reads the merge-notified record this script
+# accepts as the only proof of a merge. Neither helper writes anything.
+. "$SCRIPT_DIR/fm-pr-lib.sh"
 
 ID=${1:-}
 [ -n "$ID" ] || { echo "usage: fm-crew-state.sh <id>" >&2; exit 2; }
@@ -459,6 +498,34 @@ nm_reclassify_failed_run_as_held_green() {
   return 0
 }
 
+# This run's PR URL, for a run-level detail line. The attributed run's own `pr`
+# field wins: the claim is about THAT run, so only its own PR identity may be
+# proved. The task's recorded state/<id>.meta pr= (bin/fm-pr-check.sh records it
+# from the crew's ready signal) is used only when the run records none - it can
+# lag behind a reused task (a merged earlier PR still named there while the run
+# works a new one), and using it first would let the earlier PR's merge record
+# prove the wrong PR.
+nm_pr_url() {
+  local url
+  url=$(strip_quotes "$(nm_field pr)")
+  [ -n "$url" ] || url=$(meta_value pr)
+  printf '%s\n' "$url"
+}
+
+# 0 when this task's PR merge is DURABLY PROVEN for the URL in $1. The only
+# accepted proof is the merge-notified record bin/fm-pr-lib.sh owns, which
+# bin/fm-merge-outcome-lib.sh writes when a merge has actually been observed.
+# An unknown/unparseable URL, or any failure to read that record, is NOT proof:
+# the caller must then use the held-for-merge wording rather than claim a merge
+# (see the status vocabulary in this file's header).
+nm_pr_merge_proven() {  # <pr-url>
+  local url=$1
+  [ -n "$url" ] || return 1
+  fm_pr_url_parse "$url" || return 1
+  fm_pr_poll_merge_already_notified "$STATE" "$ID" \
+    "$FM_PR_PROVIDER" "$FM_PR_HOST" "$FM_PR_PATH" "$FM_PR_NUMBER"
+}
+
 # 0 when an explicit probe proves the shared daemon down: `no-mistakes daemon
 # status` is the canonical down-probe (the same one fm-brief.sh hands crews
 # before a blocked append) and exits non-zero when the daemon is not running.
@@ -498,9 +565,11 @@ nm_effective_ci_step_status() {
 # Root cause of the PR #252 incident (2026-07): for a repo where merge is left
 # to the captain, no-mistakes' ci step (and therefore top-level status/outcome)
 # stays "running" for the ENTIRE CI-monitor phase, including long after GitHub
-# reports every check green - it only reaches outcome=passed once the PR is
-# actually merged (or failed/cancelled if closed). `axi status`'s steps[] table
-# never distinguishes "still waiting on checks" from "checks green, waiting on
+# reports every check green. A terminal outcome ends that phase without saying
+# whether the merge landed: passed means the pipeline is through, and with merge
+# authority off the PR can still be open awaiting approval (PR #4, 2026-09 -
+# status vocabulary above); failed/cancelled means the run ended that way.
+# `axi status`'s steps[] table never distinguishes "still waiting on checks" from "checks green, waiting on
 # merge": both read as plain `ci,running,...`. The only place that transition is
 # recorded is the ci step's own log text, e.g. "all CI checks passed - still
 # monitoring until merged or closed" or "no CI checks reported - still
@@ -661,7 +730,17 @@ if [ "$HAVE_RUN" = 1 ]; then
 
     if [ -n "$outcome" ]; then
       case "$outcome" in
-        passed)        RUN_STATE="done"; RUN_DETAIL="run passed: PR merged/closed" ;;
+        passed)
+          # The run is through; the merge is a separate, externally confirmed
+          # event (status vocabulary in this file's header).
+          RUN_STATE="done"
+          pr_url=$(nm_pr_url)
+          if nm_pr_merge_proven "$pr_url"; then
+            RUN_DETAIL="run passed: PR merged: $pr_url"
+          else
+            RUN_DETAIL="run passed: PR held for merge"
+            [ -n "$pr_url" ] && RUN_DETAIL="$RUN_DETAIL: $pr_url"
+          fi ;;
         checks-passed) RUN_STATE="done"; RUN_DETAIL="checks green: PR ready for review" ;;
         failed)
           if nm_reclassify_failed_run_as_held_green; then :; else
