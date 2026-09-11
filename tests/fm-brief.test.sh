@@ -404,8 +404,8 @@ test_no_mistakes_completion_is_a_pr_not_a_commit() {
     "no-mistakes brief must treat a mid-run firstmate delivery as a nudge, not a second start"
   assert_grep "If a start is refused for pipeline ownership, check whether the active run is this task's own run and follow its status and help lines instead of reporting the task blocked." "$brief" \
     "no-mistakes brief must route a pipeline-ownership refusal to the active run's status rather than a blocked report"
-  assert_grep "if it reports the repo is not initialized here" "$brief" \
-    "no-mistakes brief must carry the first-run initialization step"
+  assert_grep "First run in a repo the pipeline has never seen: run \`no-mistakes doctor\`, then \`no-mistakes init\`" "$brief" \
+    "no-mistakes Definition of done must carry its own first-run initialization step"
   assert_grep "report all three: the PR's full" "$brief" \
     "no-mistakes brief must require URL, head, and CI result on completion"
   assert_grep "The completion line is the LAST line in the status log" "$brief" \
