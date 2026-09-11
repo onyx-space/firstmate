@@ -79,7 +79,19 @@
 # cleanup step, teardown verifies record exclusivity: no OTHER task record in
 # this home or any locally registered Firstmate home may name the same live path
 # in its worktree= or home=. One live path with two task records is the reuse
-# collision itself, whichever record is stale. The recorded endpoint's exact
+# collision itself, whichever record is stale. The guard asks which record
+# genuinely owns the live slot, and exactly one reading resolves it: the
+# co-claimant's recorded endpoint is provably gone while this record's recorded
+# endpoint is provably alive, both read through the shared recovery-grade
+# classifier (bin/fm-backend.sh's fm_backend_agent_state). A gone co-claimant
+# then has no live work to protect, and an alive owner proves this record is the
+# surviving claimant, so returning the slot no longer deadlocks two records that
+# can both only be collected by it. Every other combination keeps the refusal: a
+# live, ambiguous, unreadable, unverified, or endpoint-less co-claimant, an
+# unprovable own endpoint, and two gone records, where nothing proves which
+# claim is current. A secondmate co-claimant always keeps it, on either field,
+# because that path may hold its durable home rather than a disposable pool
+# slot. The recorded endpoint's exact
 # task identity and the record's spawn incarnation are validated separately
 # before cleanup. Its current working directory is only incidental process
 # state: the same worker remains the owner after changing directory, so cwd can
@@ -94,9 +106,11 @@
 # gap; forced secondmate teardown takes it and runs the same checks for every
 # descendant Treehouse slot before touching any child.
 # This refusal is not relaxed by --force: --force authorizes discarding THIS
-# task's unlanded work, never another task's live work. Reconcile whichever
-# record is wrong and re-run. Orca is not a pool slot and proves its path through
-# require_orca_worktree_path_match instead.
+# task's unlanded work, never another task's live work. The single uncontested
+# reading above is not a relaxation of it - a co-claimant proven gone is not
+# live work - so --force still changes nothing about a live co-claimant.
+# Reconcile whichever record is wrong and re-run. Orca is not a pool slot and
+# proves its path through require_orca_worktree_path_match instead.
 # Orca tasks use the same safety checks, then close the recorded terminal and
 # remove the recorded worktree through `orca worktree rm`; teardown never guesses
 # an Orca target from ambient CLI state.
@@ -2133,6 +2147,35 @@ collect_local_firstmate_states() {
   done
 }
 
+# The recovery-grade agent state of one cleanup record's own endpoint, or
+# empty when the record carries no resolvable endpoint (no window, no known
+# backend, or a failed classifier read). Empty proves nothing and is treated
+# as such by every caller.
+teardown_record_agent_state() {  # <meta>
+  local meta=$1 backend target
+  backend=$(fm_backend_of_meta "$meta")
+  target=$(fm_backend_target_of_meta "$meta")
+  [ -n "$target" ] || return 1
+  fm_backend_is_known "$backend" || return 1
+  fm_backend_agent_state "$backend" "$target" 2>/dev/null
+}
+
+# True when this record is the uncontested claimant of the live slot the OTHER
+# record also names: the co-claimant's endpoint reads dead or missing - the same
+# two verdicts that license a legacy-record teardown, and the only ones that
+# show no agent bound - while this record's own endpoint reads alive. A
+# secondmate co-claimant is never one: its durable home, not a pool slot, may be
+# what that path holds.
+teardown_slot_claim_is_uncontested() {  # <record-meta> <other-meta>
+  local record_meta=$1 other=$2
+  [ "$(fm_meta_get "$other" kind)" != secondmate ] || return 1
+  case "$(teardown_record_agent_state "$other")" in
+    dead|missing) ;;
+    *) return 1 ;;
+  esac
+  [ "$(teardown_record_agent_state "$record_meta")" = alive ]
+}
+
 require_exclusive_worktree_slot_record() {
   local record_meta=$1 record_id=$2 record_state=$3 worktree=$4
   local slot state_dir other other_id field other_path other_slot
@@ -2148,6 +2191,10 @@ require_exclusive_worktree_slot_record() {
         [ -n "$other_path" ] || continue
         other_slot=$(canonical_existing_dir "$other_path") || continue
         [ "$other_slot" = "$slot" ] || continue
+        if [ "$field" = worktree ] && teardown_slot_claim_is_uncontested "$record_meta" "$other"; then
+          echo "teardown: task $other_id also records $slot but its recorded endpoint reads no live agent, while task $record_id's endpoint is live, so $record_id is the surviving claimant of that pool slot; continuing" >&2
+          continue
+        fi
         echo "REFUSED: task $record_id's recorded worktree $slot is also task $other_id's recorded $field." >&2
         echo "Returning that pool slot would kill $other_id's processes and reset its copy, so nothing was changed - not even with --force." >&2
         echo "Reconcile whichever record is wrong (bin/fm-crew-state.sh $record_id; bin/fm-crew-state.sh $other_id), then re-run teardown." >&2
