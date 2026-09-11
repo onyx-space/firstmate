@@ -117,6 +117,7 @@ After that alarm, the Stop auto-arm suppresses further exit-2 continuations unti
 The alarm cannot repeat during that failure episode, and a later unhealthy stop blocks again.
 A positively verified healthy watcher clears the failure notice, alarm, and block budget for a future independent episode.
 A Claude failure notice describes the automatic mechanism as broken and does not direct a routine manual background arm.
+That terminal fail-open is deliberate for Claude and for Cursor's awaited stop-hook park, and it is never wired into the watcher continuity retry: the session it releases is left with no automatic continuation, and model-mediated repair owns recovery, because the model reads the fail-open alarm and re-arms through its supervision-protocol entry, exactly as the restoration-exhaustion path in [`watcher-continuity.md`](watcher-continuity.md#actionable-wake-ordering) does.
 
 OpenCode, Pi, and pi-signed expose passive callbacks for this purpose.
 Their adapters fail open at the hook boundary to protect the user session but schedule one bounded follow-up when the predicate blocks.
