@@ -937,6 +937,21 @@ test_artifact_placement_contract() {
     assert_grep "ignored, never delivered" "$brief" "$kind brief lost the build-output rule"
     assert_grep "it before you write the path down" "$brief" \
       "$kind brief lost the report-path verification rule"
+    assert_grep "Rule 2 below is the only grant of what you may write" "$brief" \
+      "$kind brief must defer the outside-worktree permission to rule 2"
+    assert_grep "outside it you may write only this task's own data directory" "$brief" \
+      "$kind rule 2 must grant the narrowed data-directory exception"
+    if [ "$kind" = scout ]; then
+      assert_grep "A tracked path in a scout's scratch worktree is NOT delivery" "$brief" \
+        "scout brief must call a tracked path in the dying worktree non-delivery"
+      assert_no_grep "the only files you may write outside it are the report and the status file" "$brief" \
+        "scout rule 2 still contradicts the artifact-placement section"
+    else
+      assert_grep "counts only once that branch lands" "$brief" \
+        "$kind brief must tie ship durability to the landed branch"
+      assert_no_grep "modify nothing outside it" "$brief" \
+        "$kind rule 2 still contradicts the artifact-placement section"
+    fi
   done
   FM_HOME="$home" FM_SECONDMATE_CHARTER='Supervise assigned work.' \
     "$ROOT/bin/fm-brief.sh" supervisor-placement --secondmate --no-projects >/dev/null \

@@ -390,6 +390,7 @@ For any custom `state/<id>.check.sh` you write yourself, keep it an ordinary sin
 Retire a custom check only through `bin/fm-check-unregister.sh <id>` (or `bin/fm-teardown.sh` for a spawned task); never hand-compose an `rm` with `$STATE`/`$ID`.
 
 Tear down a ship task only after landing is confirmed.
+A ship artifact's durable home is the branch once it lands - pushed and opened as a PR where the mode allows it, or merged by firstmate under `local-only` - so a path that exists only in the worktree is a claim, not a delivery.
 A teardown refusal for uncommitted or unlanded work is a stop-and-investigate result, never an obstacle to bypass.
 Never force teardown without explicit discard authority.
 After successful teardown, record completion, retain only the configured recent Done history, and re-evaluate queued work whose blockers and time gates have cleared.
@@ -399,7 +400,8 @@ Retire one only on an explicit captain or main-firstmate decision, after loading
 
 ### Scout outcome and promotion
 
-An artifact is delivered only once it is tracked, so a completed scout must leave a self-contained report whose artifact paths firstmate verifies with `ls` before the scratch worktree can be discarded; a path that does not exist is work still owed, not a reported-done result.
+An artifact is delivered only once it has landed in a durable home, so a completed scout's durable homes are its self-contained report and the task's own `data/<task-id>/` directory; a tracked path inside the scout's scratch worktree is not delivery and fails this gate, because the slot is destroyed with it.
+Firstmate verifies with `ls` every artifact path a report names before the scratch worktree can be discarded; a path that does not exist is work still owed, not a reported-done result.
 Read and relay its findings, record the report as the Done artifact, and re-evaluate the queue.
 A report may recommend implementation but does not authorize it.
 Before treating the investigation or any visual review as complete, load `captain-hold-lifecycle`; teardown enforces that shared completion gate.
