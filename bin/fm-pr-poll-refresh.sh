@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
 # Refresh already-armed merge polls onto the current bin/fm-pr-poll.sh bytes.
 #
-# The watcher runs the tracked bin/fm-pr-poll.sh and requires each task's
-# state/<id>.check.sh to be byte-identical to it (bin/fm-pr-lib.sh's
-# fm_pr_poll_artifacts_valid), so any release that changes those bytes leaves
-# every already-armed watch stale: that task stops being polled, and firstmate
-# is woken on every check sweep with "rejected unauthenticated state checks"
-# until the poll is re-armed. A merge landing in that window would be missed.
-# This script is the migration for that window, and the fleet-update path runs
-# it after each home's fast-forward (bin/fm-update.sh) so supervision never
-# resumes on stale artifacts.
+# The watcher runs the tracked bin/fm-pr-poll.sh of the home it watches and
+# requires each task's state/<id>.check.sh to be byte-identical to it
+# (bin/fm-pr-lib.sh's fm_pr_poll_artifacts_valid), so any release that changes
+# those bytes leaves every already-armed watch stale: that task stops being
+# polled, and firstmate is woken on every check sweep with "rejected
+# unauthenticated state checks" until the poll is re-armed. A merge landing in
+# that window would be missed. This script is the migration for that window, and
+# the fleet-update path runs it after each home's fast-forward (bin/fm-update.sh)
+# so supervision never resumes on stale artifacts.
+#
+# The template is the file the consuming watcher executes, not whichever repo
+# happened to invoke this script: it defaults to this repo's bin/fm-pr-poll.sh
+# (the running home) and a caller migrating another home passes --template with
+# THAT home's own bin/fm-pr-poll.sh, so every state copy is anchored to the
+# template its own watcher byte-compares against.
 #
 # Each stale task is re-published through the same
 # fm_pr_poll_prepare/fm_pr_poll_publish_prepared pair the arming path uses, so
@@ -35,7 +41,7 @@
 # partial: a missing template is reported only for a task that actually needs
 # re-anchoring.
 #
-# Usage: fm-pr-poll-refresh.sh [--state <state-dir>]
+# Usage: fm-pr-poll-refresh.sh [--state <state-dir>] [--template <poll-template>]
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -46,13 +52,20 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
 
-usage() { echo "usage: fm-pr-poll-refresh.sh [--state <state-dir>]" >&2; }
+usage() { echo "usage: fm-pr-poll-refresh.sh [--state <state-dir>] [--template <poll-template>]" >&2; }
+
+TEMPLATE="$FM_ROOT/bin/fm-pr-poll.sh"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --state)
       [ "$#" -ge 2 ] || { usage; exit 1; }
       STATE=$2
+      shift 2
+      ;;
+    --template)
+      [ "$#" -ge 2 ] || { usage; exit 1; }
+      TEMPLATE=$2
       shift 2
       ;;
     -h|--help)
@@ -66,7 +79,6 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-TEMPLATE="$FM_ROOT/bin/fm-pr-poll.sh"
 TEMPLATE_USABLE=0
 if [ -f "$TEMPLATE" ] && [ ! -L "$TEMPLATE" ]; then
   TEMPLATE_USABLE=1

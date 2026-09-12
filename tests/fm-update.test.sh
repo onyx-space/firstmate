@@ -471,6 +471,56 @@ test_unsafe_secondmate_home_skipped_before_git_update() {
   pass "T11 unsafe secondmate home is not fast-forwarded"
 }
 
+# --- T12: a mate's armed poll is re-anchored against the MATE's own template ---
+# A secondmate home's watcher byte-compares each armed watch against that home's
+# OWN bin/fm-pr-poll.sh. A migration that resolved the template from the parent
+# repo could anchor a mate's watch to differing parent bytes while reporting
+# success, and the mate's watcher would then reject it. Pin the per-home template.
+test_mate_poll_refresh_uses_the_mate_template() {
+  local w state url head stale out
+  w=$(new_world t12)
+  mkdir -p "$w/seed/bin"
+  cp "$ROOT/bin/fm-pr-lib.sh" "$w/seed/bin/fm-pr-lib.sh"
+  cp "$ROOT/bin/fm-pr-poll.sh" "$w/seed/bin/fm-pr-poll.sh"
+  cp "$ROOT/bin/fm-pr-poll-refresh.sh" "$w/seed/bin/fm-pr-poll-refresh.sh"
+  chmod +x "$w/seed/bin/fm-pr-poll.sh" "$w/seed/bin/fm-pr-poll-refresh.sh"
+  printf 'state/\n' > "$w/seed/.gitignore"
+  git -C "$w/seed" add -A
+  git -C "$w/seed" commit -qm poll-contract
+  git -C "$w/seed" push -q origin main
+  git -C "$w/main" pull -q origin main
+  add_sm "$w" sm1
+
+  state="$w/sm1/state"
+  url=https://github.com/o/r/pull/9
+  head=0123456789abcdef0123456789abcdef01234567
+  mkdir -p "$state"
+  printf 'kind=secondmate\nwindow=main:fm-sm1\nharness=claude\nhome=%s\npr=%s\npr_head=%s\n' \
+    "$w/sm1" "$url" "$head" > "$state/sm1.meta"
+  stale="$w/seed/stale-poll.sh"
+  cp "$ROOT/bin/fm-pr-poll.sh" "$stale"
+  printf '# pre-change revision\n' >> "$stale"
+  (
+    . "$ROOT/bin/fm-pr-lib.sh"
+    fm_pr_poll_prepare "$state" sm1 github "$url" github.com o/r 9 "$stale" \
+      && fm_pr_poll_publish_prepared
+  ) || fail "could not arm the mate's stale poll fixture"
+
+  # The parent's own copy differs from the mate's committed one, so anchoring to
+  # the parent would corrupt the mate's watch.
+  printf '# parent-only revision\n' >> "$w/main/bin/fm-pr-poll.sh"
+
+  out=$(run_update "$w")
+
+  assert_contains "$out" "refreshed: sm1 $url" "the mate's armed poll was not refreshed"
+  cmp -s "$w/sm1/bin/fm-pr-poll.sh" "$state/sm1.check.sh" \
+    || fail "the mate's watch was not re-anchored to the mate's own template"
+  cmp -s "$w/main/bin/fm-pr-poll.sh" "$state/sm1.check.sh" \
+    && fail "the mate's watch was anchored to the parent's template"
+  grep -qxF "pr_head=$head" "$state/sm1.meta" || fail "the refresh dropped the mate's recorded head"
+  pass "T12 a mate's armed poll is re-anchored against the mate's own template"
+}
+
 test_updates_main_and_secondmate
 test_reread_gate_is_instruction_only
 test_bin_only_advance_restarts
@@ -485,5 +535,6 @@ test_registry_backstop_dedup_and_self_exclusion
 test_firstmate_wrong_branch_skipped
 test_firstmate_detached_head_skipped
 test_unsafe_secondmate_home_skipped_before_git_update
+test_mate_poll_refresh_uses_the_mate_template
 
 echo "# all fm-update tests passed"

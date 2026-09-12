@@ -345,7 +345,7 @@ import_home_commit() { # <home> <commit>
 }
 
 cmd_sync() {
-  local id=$1 commit report out
+  local id=$1 commit report out refresh_script poll_refresh_rc
   validate_id "$id"
   validate_home "$id"
   if [ "$#" -ge 2 ]; then
@@ -363,6 +363,20 @@ cmd_sync() {
   out=$(cat "$report")
   rm -f "$report"
   case "$FF_STATUS" in
+    updated|current) ;;
+    *) die "remote secondmate home sync skipped: ${out#remote home: skipped: }" ;;
+  esac
+  # Each armed poll is a byte copy of this home's own bin/fm-pr-poll.sh, which
+  # is what its watcher executes, so the home re-anchors itself from the copy it
+  # just fast-forwarded to. A failed refresh does not fail the sync.
+  refresh_script="$TARGET_HOME/bin/fm-pr-poll-refresh.sh"
+  if [ -f "$refresh_script" ] && [ ! -L "$refresh_script" ]; then
+    poll_refresh_rc=0
+    "$refresh_script" --state "$TARGET_HOME/state" --template "$TARGET_HOME/bin/fm-pr-poll.sh" || poll_refresh_rc=$?
+    [ "$poll_refresh_rc" -eq 0 ] \
+      || echo "error: remote secondmate home $TARGET_HOME still has armed merge polls that need bin/fm-pr-check.sh by hand (named above)" >&2
+  fi
+  case "$FF_STATUS" in
     # instr= names the watched instruction paths this advance changed, with no
     # spaces so the whole result stays one parseable line. The parent needs it to
     # decide whether the running agent must reload; an older parent ignores the
@@ -370,7 +384,6 @@ cmd_sync() {
     # rather than as "nothing changed".
     updated) printf 'synced: %s instr=%s\n' "$commit" "$(printf '%s' "$FF_INSTR" | tr -d ' ')" ;;
     current) printf 'current: %s\n' "$commit" ;;
-    *) die "remote secondmate home sync skipped: ${out#remote home: skipped: }" ;;
   esac
 }
 

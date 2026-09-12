@@ -1187,6 +1187,53 @@ test_remote_sync_skips_dirty_diverged_and_feature_branch() {
   pass "R6 dirty, diverged, and feature-branch remote homes skip and are left untouched"
 }
 
+# --- R11: a remote sync re-anchors the home's armed polls ----------------------
+# A remote home's watcher byte-compares each armed watch against that home's OWN
+# bin/fm-pr-poll.sh, so the home (not the code root or the parent) owns the
+# migration. The sync must run the home's own refresh after the fast-forward.
+test_remote_sync_refreshes_home_polls() {
+  local w c1 c2 state url head stale
+  w=$(new_remote_world remote-poll-refresh)
+  c1=$(head_of "$w/main")
+  mkdir -p "$w/main/bin"
+  cp "$ROOT/bin/fm-pr-lib.sh" "$w/main/bin/fm-pr-lib.sh"
+  cp "$ROOT/bin/fm-pr-poll.sh" "$w/main/bin/fm-pr-poll.sh"
+  cp "$ROOT/bin/fm-pr-poll-refresh.sh" "$w/main/bin/fm-pr-poll-refresh.sh"
+  chmod +x "$w/main/bin/fm-pr-poll.sh" "$w/main/bin/fm-pr-poll-refresh.sh"
+  git -C "$w/main" add -A
+  git -C "$w/main" commit -qm poll-contract
+  c2=$(head_of "$w/main")
+  git -C "$w/main" push -q origin main
+
+  add_remote_home "$w" sm "$w/forge.git" "$c1"
+  state="$w/sm/state"
+  url=https://github.com/o/r/pull/11
+  head=0123456789abcdef0123456789abcdef01234567
+  printf 'window=firstmate:fm-sm\nkind=secondmate\nharness=codex\nhome=%s\npr=%s\npr_head=%s\n' \
+    "$w/sm" "$url" "$head" > "$state/sm.meta"
+  stale="$w/sm-preupgrade-poll.sh"
+  cp "$ROOT/bin/fm-pr-poll.sh" "$stale"
+  printf '# pre-change revision\n' >> "$stale"
+  (
+    . "$ROOT/bin/fm-pr-lib.sh"
+    fm_pr_poll_prepare "$state" sm github "$url" github.com o/r 11 "$stale" \
+      && fm_pr_poll_publish_prepared
+  ) || fail "could not arm the remote fixture's stale poll"
+  cmp -s "$ROOT/bin/fm-pr-poll.sh" "$state/sm.check.sh" \
+    && fail "precondition: the fixture watch should predate the home's template"
+
+  remote_sync "$w" sm "$c2"
+
+  [ "$REMOTE_SYNC_RC" -eq 0 ] || fail "the remote poll-refresh sync failed: $REMOTE_SYNC_OUT"
+  [ "$(head_of "$w/sm")" = "$c2" ] || fail "the remote home did not advance"
+  assert_contains "$REMOTE_SYNC_OUT" "refreshed: sm $url" \
+    "the remote sync did not report re-anchoring the home's poll"
+  cmp -s "$w/sm/bin/fm-pr-poll.sh" "$state/sm.check.sh" \
+    || fail "the remote home's watch was not re-anchored to its own template"
+  grep -qxF "pr_head=$head" "$state/sm.meta" || fail "the remote refresh dropped the recorded head"
+  pass "R11 a remote sync re-anchors the home's armed poll against the home's own template"
+}
+
 # --- R7: /updatefirstmate's contract is unchanged ------------------------------
 # That path refreshes the host's own Firstmate copy from origin first and then
 # syncs the home to THAT copy, so the no-target call must still target the copy.
@@ -1371,6 +1418,7 @@ test_remote_sync_uses_present_objects
 test_remote_sync_skips_unimportable_target
 test_remote_sync_skips_dirty_diverged_and_feature_branch
 test_remote_sync_without_target_follows_host_copy
+test_remote_sync_refreshes_home_polls
 test_bootstrap_syncs_remote_home_to_primary_commit
 test_bootstrap_reports_outdated_host_actionably
 test_remote_launch_does_not_retarget_host_copy

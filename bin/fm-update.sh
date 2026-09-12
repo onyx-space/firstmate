@@ -22,9 +22,10 @@
 # fast-forwards would reject its own watches on the next check sweep, stop
 # polling them, and wake firstmate about it on every sweep until each poll was
 # re-armed by hand - and a merge landing in that window would be missed. Every
-# home this command advances, the running one and each local secondmate home,
-# therefore has its armed polls refreshed onto the new bytes by
-# bin/fm-pr-poll-refresh.sh, which is idempotent, needs no network, and never
+# home this command advances, the running one, each local secondmate home, and
+# each remote secondmate home on its own host, therefore has its armed polls
+# refreshed onto the new bytes by bin/fm-pr-poll-refresh.sh against that home's
+# OWN bin/fm-pr-poll.sh, which is idempotent, needs no network, and never
 # writes task metadata. That script's own "poll-refresh:" line reports what it
 # found, and a task it could not refresh is named with the
 # "bin/fm-pr-check.sh <id> <pr-url>" re-arm command to run by hand.
@@ -166,7 +167,7 @@ fm_ff_after_secondmate_settled() {  # <id> <home> <window> <status> <instr>
   # this command's output; a task it could not refresh is re-armed by hand.
   if [ -d "$2/state" ] && [ ! -L "$2/state" ]; then
     local poll_refresh_rc=0
-    "$SCRIPT_DIR/fm-pr-poll-refresh.sh" --state "$2/state" || poll_refresh_rc=$?
+    "$SCRIPT_DIR/fm-pr-poll-refresh.sh" --state "$2/state" --template "$2/bin/fm-pr-poll.sh" || poll_refresh_rc=$?
     [ "$poll_refresh_rc" -eq 0 ] \
       || echo "error: secondmate $1 still has armed merge polls that need bin/fm-pr-check.sh by hand (named above)" >&2
   fi
@@ -194,6 +195,10 @@ if [ -f "$SECONDMATES_MD" ]; then
     if [ "$SECONDMATE_REGISTRY_REMOTE" -eq 1 ]; then
       if remote_out=$("$SCRIPT_DIR/fm-on.sh" "$id" fm-remote-secondmate-control.sh update "$id" < /dev/null 2>&1); then
         remote_result=$(printf '%s\n' "$remote_out" | tail -1)
+        # The host's own poll refresh reports ahead of the result line; surface it
+        # here so a task it could not re-anchor is named in this run's output.
+        remote_side_band=$(printf '%s\n' "$remote_out" | sed '$d')
+        [ -z "$remote_side_band" ] || printf '%s\n' "$remote_side_band" >&2
         case "$remote_result" in
           synced:*)
             remote_detail=${remote_result#synced: }

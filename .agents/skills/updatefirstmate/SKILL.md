@@ -50,6 +50,7 @@ This touches only the firstmate repo and its own worktrees, never anything under
    A mate reaches neither set only because its home was skipped, because it has no live endpoint recorded here, or because its endpoint was positively classified as dead or missing - none of those need any action from you.
 
    The same run prints one `poll-refresh: refreshed=<n> current=<n> failed=<n>` line per home it advanced, because an upgrade also re-anchors that home's already-armed PR merge polls (see below).
+   A remote mate's host prints its own `poll-refresh:` line for that mate's home, and the parent carries it through.
    A task it could not re-anchor is named above that line with the exact `bin/fm-pr-check.sh <id> <pr-url>` command to run by hand.
 
 2. **Re-read AGENTS.md if your own instructions changed.**
@@ -97,7 +98,7 @@ This touches only the firstmate repo and its own worktrees, never anything under
 An upgrade changes `bin/fm-pr-poll.sh`, and every already-armed merge watch is a byte copy of that file: the watcher runs the tracked template and refuses a task's state copy whose bytes differ from it.
 Left alone, each home this pass advanced would reject its own watches on the next check sweep, stop polling them, and wake firstmate about it on every sweep until each poll was re-armed by hand - and a merge landing in that window would be missed.
 
-`bin/fm-update.sh` therefore re-anchors each advanced home's armed polls onto the new bytes as part of the pass, through `bin/fm-pr-poll-refresh.sh`.
+`bin/fm-update.sh` therefore re-anchors each advanced home's armed polls onto the new bytes as part of the pass, through `bin/fm-pr-poll-refresh.sh`; each home's copy is anchored against that home's own `bin/fm-pr-poll.sh`, which is the template its watcher executes, and a remote mate's own host runs the refresh for its home after the fast-forward.
 That refresh is idempotent, needs no network and no forge CLI, and never writes task metadata, so a recorded `pr=` and `pr_head=` survive untouched.
 So the answer to "does an update miss a merge?" is **no** for a poll armed before the update: its watch is re-anchored before supervision resumes on the new bytes.
 A task the refresh could not re-anchor is named in the run output with the `bin/fm-pr-check.sh <id> <pr-url>` command that re-arms it by hand; nothing is dropped silently.
