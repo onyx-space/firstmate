@@ -2481,21 +2481,21 @@ teardown_claim_is_retired() {  # <meta> <slot>
 # never treated as consent.
 teardown_retire_superseded_slot_claim() {  # <record-meta> <record-id> <other-meta> <other-id> <slot>
   local record_meta=$1 record_id=$2 other=$3 other_id=$4 slot=$5
-  local marker lock owner_started record_claim other_claim held target
+  local marker lock lock_pid owner_started record_claim other_claim held
   marker=$(teardown_claim_retirement_path "$other")
   owner_started=$(teardown_slot_owner_started_at "$slot") || return 1
   record_claim=$(teardown_meta_slot_claim_epoch "$record_meta") || return 1
   other_claim=$(teardown_meta_slot_claim_epoch "$other") || return 1
   lock=$(fm_meta_lock_path "$other") || return 1
   held=0
-  [ "$lock" != "$META_LOCK" ] || held=1
-  for target in "${DESCENDANT_LOCK_PATHS[@]}"; do
-    [ "$target" != "$lock" ] || held=1
-  done
+  lock_pid=$(cat "$lock/pid" 2>/dev/null || true)
+  if [ -n "$lock_pid" ] && [ "$lock_pid" = "$(fm_current_pid)" ]; then
+    held=1
+  fi
   if [ "$held" = 0 ]; then
     fm_lock_acquire_wait "$lock" || return 1
     if [ "$(teardown_meta_slot_claim_epoch "$other")" != "$other_claim" ]; then
-      echo "REFUSED: task $other_id's claim on $slot changed while teardown waited for that record's lock; nothing was changed." >&2
+      echo "REFUSED: task $other_id's claim on $slot changed while teardown waited for that record's lock; that claim was not retired." >&2
       fm_lock_release "$lock"
       return 1
     fi
