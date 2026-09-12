@@ -1,0 +1,6 @@
+# REGRESSION: new self-check assertions fail against the pre-fix block (base 47b5518)
+# ephemeral copy: /tmp/fm-reg-mpxSQD
+
+$ bash tests/fm-brief.test.sh   # in copy with bin/fm-dod-lib.sh = 47b5518
+not ok - no-mistakes brief does not gate the self-check on the PR-ready moment
+rc=1
