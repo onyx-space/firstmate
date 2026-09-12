@@ -82,6 +82,12 @@
 # the only surface every worker actually reads; AGENTS.md section 7 states only the
 # firstmate-side gate (verify the artifact paths a report names are durable homes
 # with ls).
+# Every scaffold also carries the fixed `# Tool call timeouts` section, which owns
+# the captain's standing command-timeout discipline (30 seconds by default, 60
+# seconds generally, 120 seconds at most, never 300 or 600, slower work to a
+# background job). The brief is the only surface every worker actually reads, and
+# a persistent secondmate runs the same firstmate scripts, so this section goes
+# into ship, scout, and secondmate scaffolds alike.
 # Ship tasks include a project-memory section so durable project-intrinsic
 # learnings can be committed to AGENTS.md through the project's delivery path;
 # it carries the AGENTS.md authoring bar (widely useful knowledge only, pointers
@@ -235,6 +241,23 @@ The move IS the acknowledgement: without it firstmate rings again and eventually
 EOF
 INBOX_SECTION=${INBOX_SECTION%$'\n'}
 
+# The captain's standing command-timeout discipline, included in every scaffold
+# kind. It lives in the brief because the brief is the only surface every worker
+# reads; data/captain.md and data/captain-shared.md hold the same posture for
+# firstmate itself. Anything genuinely slower than the 120-second cap is a
+# background job, never a longer timeout.
+IFS= read -r -d '' TOOL_TIMEOUT_SECTION <<'EOF' || true
+# Tool call timeouts
+Bound every command with a short timeout: a stuck call must fail fast rather than idle.
+- Default 30 seconds: reading a file, a single query, a small command.
+- 60 seconds for an ordinary command, or a few commands chained into one check.
+- 120 seconds is the cap, and only for work that is genuinely slow, such as an ssh round-trip or a firstmate script (`fm-fleet-sync`, `fm-teardown`, `fm-spawn`).
+- Never use 300 or 600.
+- Anything that can take longer than 120 seconds belongs in a background job (`job_run`, `dsh-jobs run`) that you poll, never behind a longer timeout.
+A short timeout that fails and is rerun costs less than a long timeout spent waiting, so when in doubt take the shorter bound and rerun.
+EOF
+TOOL_TIMEOUT_SECTION=${TOOL_TIMEOUT_SECTION%$'\n'}
+
 if [ "$KIND" = secondmate ]; then
 SECONDMATE_PROJECTS=""
 idx=1
@@ -298,6 +321,8 @@ A message with NO marker is the captain typing directly into your pane: treat it
 A request arriving through the instruction inbox below follows the same marker and reply rules.
 
 $INBOX_SECTION
+
+$TOOL_TIMEOUT_SECTION
 
 # Escalation to main firstmate
 Handle routine work yourself.
@@ -462,6 +487,8 @@ Your data directory is the only thing that survives teardown: the report in it m
 
 $ARTIFACT_PLACEMENT_SECTION
 
+$TOOL_TIMEOUT_SECTION
+
 # Rules
 1. Never push to any remote and never open a PR.
 2. Stay inside this worktree; outside it you may write only the paths this brief names: this task's own data directory (\`$DATA/$ID/\` - the report, evidence, and artifacts), the instruction inbox (\`$STATE/$ID.inbox/\`, including its \`handled/\` directory), and the status file (\`$STATE/$ID.status\`), plus, in a \`--herdr-lab\` brief, the Herdr session state its helper commands manage.
@@ -554,6 +581,8 @@ If the top-level path is the primary checkout or not the worktree you were launc
 1. First action: create your branch: \`git checkout -b fm/$ID\`$SETUP2
 
 $ARTIFACT_PLACEMENT_SECTION
+
+$TOOL_TIMEOUT_SECTION
 
 # Rules
 $RULE1
