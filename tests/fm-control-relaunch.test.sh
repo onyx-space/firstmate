@@ -111,6 +111,26 @@ case "${1:-}" in
     printf 'fakepane\n'; exit 0 ;;
   capture-pane) printf '╭────╮\n│    │\n╰────╯\n'; exit 0 ;;
   list-windows) [ -f "$D/windows" ] && cat "$D/windows"; exit 0 ;;
+  new-window)
+    # Enough of `tmux new-window -dP -F ... -t <target> -n <name> -c <cwd>` to
+    # model the one thing the relaunch path depends on: the created window's
+    # name joins the session inventory and its cwd is the directory the caller
+    # asked for.
+    shift
+    wname=; cwd=
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -n) wname=$2; shift 2 ;;
+        -c) cwd=$2; shift 2 ;;
+        -t|-F) shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    printf '%s\n' "$wname" >> "$D/windows"
+    printf '%s' "$cwd" > "$D/cwd"
+    printf '%s %s\n' "$wname" "$cwd" >> "$D/new-window"
+    printf '@%s\n' "$wname"
+    exit 0 ;;
 esac
 exit 0
 SH
@@ -322,6 +342,77 @@ test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint() {
   assert_grep "/exit" "$dir/fake/literal" "the previous agent should have been exited"
   assert_grep "encode launch-brief" "$dir/fake/literal" "the replacement should have been launched"
   pass "fm-control relaunch: a same-harness relaunch replaces the agent in the same endpoint and worktree"
+}
+
+# --- 1b. an endpoint that is structurally gone ------------------------------
+#
+# The deadlock this closes: an agent exits (or its pane is closed) and the
+# task's endpoint is gone, so the two supported paths refuse each other.
+# `fm-control exit` refuses because there is no agent to stop; the launch path
+# refuses because the endpoint is not provably agent-free. The only way out was
+# hand-editing the recorded endpoint. A relaunch now rebuilds the endpoint
+# through the backend's own creation path and republishes the record atomically
+# with the new identity, so the task's own axes are all that carry over.
+
+test_relaunch_rebuilds_a_structurally_gone_endpoint() {
+  local dir out rc
+  dir=$(new_case rehome rl50)
+  add_ship_task "$dir" rl50 claude
+  # The session inventory no longer names the task's window: the recovery-grade
+  # `missing` read that has nothing left to stop and nothing to relaunch into.
+  : > "$dir/fake/windows"
+
+  out=$(run_control "$dir" rl50 relaunch --note "the agent exited and its pane went with it"); rc=$?
+  expect_code 0 "$rc" "relaunching a task whose endpoint is gone should rebuild it"$'\n'"$out"
+  assert_contains "$out" "relaunched rl50 harness=claude from=claude" "the outcome should name the transition"
+
+  # The record must name an endpoint that exists again, created through the
+  # backend's own path and in the task's own recorded local copy ...
+  case "$(meta_field "$dir" rl50 window)" in
+    *":fm-rl50") : ;;
+    *) fail "the record should name the rebuilt endpoint, got '$(meta_field "$dir" rl50 window)'" ;;
+  esac
+  [ "$(grep -c -x 'fm-rl50' "$dir/fake/windows")" = 1 ] \
+    || fail "exactly one rebuilt window should exist, got '$(cat "$dir/fake/windows")'"
+  assert_grep "$dir/wt" "$dir/fake/new-window" \
+    "the rebuilt endpoint should have been created in the task's recorded local copy"
+  # ... and every identity axis the task already owned must survive.
+  [ "$(meta_field "$dir" rl50 worktree)" = "$dir/wt" ] \
+    || fail "the recorded local copy must be adopted, not reallocated"
+  [ "$(meta_field "$dir" rl50 project)" = "$dir/proj" ] || fail "project must survive the rehome"
+  [ "$(meta_field "$dir" rl50 kind)" = ship ] || fail "kind must survive the rehome"
+  [ "$(meta_field "$dir" rl50 harness)" = claude ] || fail "the recorded harness must survive the rehome"
+  [ "$(meta_field "$dir" rl50 endpoint_task_id)" = rl50 ] \
+    || fail "the endpoint binding must survive the rehome"
+  # Nothing was there to stop, so nothing was stopped - the replacement was
+  # still launched.
+  assert_no_grep "/exit" "$dir/fake/literal" "a gone endpoint has no agent to exit"
+  assert_grep "encode launch-brief" "$dir/fake/literal" "the replacement should have been launched"
+  [ "$(journal_field "$dir" rl50 phase)" = complete ] \
+    || fail "the transaction journal should end complete"
+  [ "$(journal_field "$dir" rl50 exit_result)" = endpoint-missing ] \
+    || fail "the journal should record that no agent was left to stop"
+  pass "fm-control relaunch: a structurally gone endpoint is rebuilt rather than hand-edited"
+}
+
+test_spawn_relaunch_rebuilds_a_structurally_gone_endpoint() {
+  local dir out rc
+  dir=$(new_case spawn-rehome rl51)
+  add_ship_task "$dir" rl51 claude
+  : > "$dir/fake/windows"
+
+  out=$(run_spawn "$dir" rl51 --relaunch --harness claude); rc=$?
+  expect_code 0 "$rc" "a directly driven relaunch of a gone endpoint should rebuild it"$'\n'"$out"
+  case "$(meta_field "$dir" rl51 window)" in
+    *":fm-rl51") : ;;
+    *) fail "the record should name the rebuilt endpoint, got '$(meta_field "$dir" rl51 window)'" ;;
+  esac
+  [ "$(grep -c -x 'fm-rl51' "$dir/fake/windows")" = 1 ] \
+    || fail "exactly one rebuilt window should exist, got '$(cat "$dir/fake/windows")'"
+  [ "$(meta_field "$dir" rl51 worktree)" = "$dir/wt" ] \
+    || fail "the recorded local copy must be adopted, not reallocated"
+  assert_grep "encode launch-brief" "$dir/fake/literal" "the replacement should have been launched"
+  pass "fm-spawn --relaunch: rebuilds a structurally gone endpoint through the backend's own creation path"
 }
 
 test_relaunch_from_linked_home_preserves_recorded_worktree() {
@@ -1559,6 +1650,8 @@ test_relaunch_moves_a_drifted_item_back_in_flight() {
 }
 
 test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint
+test_relaunch_rebuilds_a_structurally_gone_endpoint
+test_spawn_relaunch_rebuilds_a_structurally_gone_endpoint
 test_relaunch_from_linked_home_preserves_recorded_worktree
 test_relaunch_preserves_durable_task_metadata
 test_relaunch_serializes_concurrent_durable_metadata_publication

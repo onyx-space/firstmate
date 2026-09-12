@@ -32,7 +32,7 @@ A recorded `harness=` is not always an exact adapter name: a task launched from 
 | --- | --- | --- |
 | `interrupt` | Deliver the harness's verified interrupt sequence while leaving the agent running. | Delivery succeeds while the endpoint still exists and the agent is still alive where the backend can classify that; cancellation is confirmed only from an adapter-owned acknowledgement and otherwise reports `cancel=unconfirmed`. |
 | `exit` | Stop the agent, preserving the endpoint, the worktree, and every uncommitted change. | The backend's recovery-grade classifier reports the agent gone. Already-stopped is idempotent success. |
-| `relaunch` | Replace the running agent with a new one in the same endpoint and worktree, on the exact recorded adapter or an explicitly chosen harness, model, and effort. | The new agent is alive on the recorded endpoint, and the durable record names the harness that is actually running. |
+| `relaunch` | Replace the running agent with a new one in the same endpoint and worktree, rebuilding the endpoint through the same per-backend creation path when the recorded one is structurally gone. | The new agent is alive on the endpoint the republished record names, and that record names the harness that is actually running. |
 
 An exit that delivers lifecycle input but cannot prove the agent stopped fails with `exit=unconfirmed`, reports the observed agent state and any interrupt cancellation claim, and never claims that nothing changed.
 Interrupt never rewrites busy state as proof of its own success.
@@ -69,7 +69,12 @@ It is not deterministic across the verified adapters: codex, grok, and gemini re
    A ship or scout relaunch requires `--note`, because the replacement inherits the local copy but none of the conversation; the note is appended to the instructions it reads.
    A secondmate relaunch does not require one and never rewrites its standing charter.
 4. **Stop the old agent** through the `exit` verb, with its postcondition.
+   An endpoint that is structurally gone - `missing`, not merely agent-free - has nothing left to stop, so the transaction records `exit_result=endpoint-missing` and proceeds instead.
+   `exit` refuses that state by design, so refusing it here too would deadlock the two halves of the control plane against each other with no supported way out.
 5. **Launch the replacement** through its single owner, `bin/fm-spawn.sh --relaunch`, which adopts the recorded endpoint and worktree instead of creating either, clears the previous harness's per-task wiring, and arms a fresh busy generation.
+   A structurally gone endpoint is the one case where that launch owner REBUILDS it, through the same per-backend creation path a fresh spawn uses; it creates the replacement in the task's recorded worktree rather than the project, so no second worktree is ever allocated, and it republishes the record atomically with the new endpoint identity.
+   Hand-editing a task record is therefore never part of this path.
+   The transaction revalidates and then verifies against the endpoint the republished record names, not the one it resolved at startup.
 
 Switching harness is therefore one ordinary relaunch rather than a separate mechanism.
 
@@ -99,7 +104,8 @@ Switching harness is therefore one ordinary relaunch rather than a separate mech
   zellij, orca, and cmux are refused rather than reported as successful blind.
 - An ambiguous or unreadable endpoint state refuses.
   Only a positively classified state acts.
-- `fm-spawn --relaunch` independently refuses unless the recorded endpoint is positively agent-free, so a replacement can never join a live agent.
+  `exit` refuses a structurally gone endpoint as well: there is no agent to stop, so it could prove nothing.
+- `fm-spawn --relaunch` independently refuses unless the recorded endpoint is positively agent-free, so a replacement can never join a live agent; a positively gone endpoint is the rebuild case above, where there is nothing to join.
   It also requires the shell to be in the recorded worktree: tmux refuses immediately when it is not, while Herdr sends one `cd` to the recorded path and refuses unless a subsequent path read confirms the move.
 
 ## Capability matrix

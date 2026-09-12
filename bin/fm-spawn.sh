@@ -893,6 +893,10 @@ RELAUNCH_REPLACEMENT_BUSY_GEN=
 RELAUNCH_REPLACEMENT_HARNESS=
 RELAUNCH_REPLACEMENT_STATE=
 RELAUNCH_REPLACEMENT_WT=
+# 1 when this relaunch must REBUILD the task's endpoint because the recorded
+# one is structurally gone (a `missing` agent-state read). Set only on the
+# relaunch path, right where that state is classified.
+RELAUNCH_REHOME=0
 CONFIG_INHERIT_LOCK=
 CONFIG_INHERIT_LOCK_HELD=0
 
@@ -1296,10 +1300,26 @@ if [ "$RELAUNCH" -eq 1 ]; then
     exit 1
   }
   RELAUNCH_STATE=$(fm_backend_agent_state "$BACKEND" "$RELAUNCH_TARGET")
-  [ "$RELAUNCH_STATE" = dead ] || {
-    echo "error: task $ID's endpoint reads '$RELAUNCH_STATE'; a relaunch requires a positively agent-free endpoint (stop the agent first with bin/fm-control.sh $ID exit)" >&2
-    exit 1
-  }
+  case "$RELAUNCH_STATE" in
+    dead) ;;
+    missing)
+      # The recorded endpoint no longer exists at all - its pane or window is
+      # gone - so there is no previous agent left to collide with and nothing
+      # to relaunch INTO. This is the only case where a relaunch rebuilds the
+      # endpoint: the creation branch below runs exactly as it does for a
+      # fresh spawn, and the replacement record is published atomically with
+      # the new endpoint identity. Refusing here instead deadlocked the two
+      # halves of the control plane against each other - exit refuses because
+      # there is no agent to stop, relaunch refuses because the endpoint is
+      # not provably agent-free - leaving hand-editing the task record as the
+      # only way out.
+      RELAUNCH_REHOME=1
+      ;;
+    *)
+      echo "error: task $ID's endpoint reads '$RELAUNCH_STATE'; a relaunch requires a positively agent-free endpoint (stop the agent first with bin/fm-control.sh $ID exit)" >&2
+      exit 1
+      ;;
+  esac
   RELAUNCH_PRIOR_HARNESS=$(fm_meta_get "$RELAUNCH_META" harness)
   KIND=$(fm_meta_get "$RELAUNCH_META" kind)
   [ -n "$KIND" ] || KIND=ship
@@ -2628,18 +2648,32 @@ if [ -e "$STATE/$ID.backlog-close" ] || [ -L "$STATE/$ID.backlog-close" ]; then
 fi
 
 W="fm-$ID"
+# The working directory a NEWLY CREATED endpoint starts in. A fresh spawn
+# starts in the project because `treehouse get` allocates or re-enters the
+# task's worktree from there. A relaunch that rebuilds a structurally gone
+# endpoint already owns its recorded worktree and never allocates a new one, so
+# it starts the replacement directly in that worktree - the same location the
+# reused-endpoint path below proves the pane is in before launching.
+ENDPOINT_CWD=$PROJ_ABS
 if [ "$RELAUNCH" -eq 1 ]; then
   # Adopt the recorded endpoint instead of creating one. This is what keeps a
   # relaunch a REPLACEMENT rather than a second copy of the task: no new
   # terminal, no second worktree, and every uncommitted change left exactly
-  # where the previous agent left it.
-  T=$RELAUNCH_TARGET
+  # where the previous agent left it. Only a rehome (RELAUNCH_REHOME, set when
+  # the recorded endpoint is structurally gone) falls through to endpoint
+  # creation, and it still adopts the recorded worktree.
   # A secondmate's home already resolved WT above through the same validation a
   # fresh secondmate spawn uses; every other kind takes the recorded worktree.
   [ "$KIND" = secondmate ] || WT=$RELAUNCH_WT
-  WT_TARGET=$T
-  SES=${T%%:*}
-else
+  if [ "$RELAUNCH_REHOME" -eq 1 ]; then
+    ENDPOINT_CWD=$WT
+  else
+    T=$RELAUNCH_TARGET
+    WT_TARGET=$T
+    SES=${T%%:*}
+  fi
+fi
+if [ "$RELAUNCH" -eq 0 ] || [ "$RELAUNCH_REHOME" -eq 1 ]; then
 case "$BACKEND" in
   tmux)
     SES=$(fm_backend_tmux_container_ensure)
@@ -2650,7 +2684,7 @@ case "$BACKEND" in
     # treehouse cd's into the worktree. WT_TARGET carries that stable id for the
     # rename-critical worktree-detection steps below; the persisted window= handle
     # stays $T (the name form), which is safe now that rename is disabled.
-    WID=$(fm_backend_tmux_create_task "$SES" "$W" "$PROJ_ABS") || exit 1
+    WID=$(fm_backend_tmux_create_task "$SES" "$W" "$ENDPOINT_CWD") || exit 1
     WT_TARGET="$WID"
     ;;
   herdr)
@@ -2809,7 +2843,7 @@ case "$BACKEND" in
       HERDR_SEEDED_DEFAULT_TAB_ID=${HERDR_CONTAINER_RAW#*$'\t'}
       HERDR_SES=${CONTAINER%%:*}
       HERDR_WORKSPACE_ID=${CONTAINER#*:}
-      HERDR_TASK_IDS=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_create_task "$CONTAINER" "$W" "$PROJ_ABS" "$HERDR_SEEDED_DEFAULT_TAB_ID") || exit 1
+      HERDR_TASK_IDS=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_create_task "$CONTAINER" "$W" "$ENDPOINT_CWD" "$HERDR_SEEDED_DEFAULT_TAB_ID") || exit 1
       read -r HERDR_TAB_ID HERDR_PANE_ID <<EOF
 $HERDR_TASK_IDS
 EOF
