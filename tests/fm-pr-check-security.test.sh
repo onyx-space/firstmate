@@ -1525,10 +1525,24 @@ test_http_forge_merge_watch() {
     || fail "an unreachable HTTP forge host was not reported as unreachable"
   [ ! -e "$state/task-a.check.sh" ] || fail "an unreachable HTTP forge host left a poll armed"
 
+  # A reachable instance whose response does not carry the "merged" field the
+  # poll reads would leave a watch that can never report a merge, so arming is
+  # refused rather than publishing a permanently silent poll.
+  set +e
+  FM_TEST_CURL_BODY='{"number":16,"state":"open"}' run_check_entry "$dir" task-a "$url" \
+    > "$dir/stdout" 2> "$dir/stderr"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "armed an HTTP forge watch whose response has no merged field"
+  grep -qF 'without the "merged" field the poll reads' "$dir/stderr" \
+    || fail "an unreadable HTTP forge response was refused without saying why"
+  [ ! -e "$state/task-a.check.sh" ] || fail "an unreadable HTTP forge response left a poll armed"
+
   # A named, reachable host arms the poll, and the token reaches the instance as
   # an authorization header read from a private file rather than from argv.
   : > "$dir/curl.log"
-  run_check_entry "$dir" task-a "$url" > "$dir/stdout" 2> "$dir/stderr" \
+  FM_TEST_CURL_BODY='{"number":16,"state":"open","merged":false}' \
+    run_check_entry "$dir" task-a "$url" > "$dir/stdout" 2> "$dir/stderr" \
     || fail "arming a named, reachable HTTP forge host failed: $(cat "$dir/stderr")"
   cmp -s "$POLL" "$state/task-a.check.sh" || fail "the armed HTTP forge check is not the static poll"
   [ "$(cat "$state/task-a.pr-poll")" = "gitea

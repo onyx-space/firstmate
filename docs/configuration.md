@@ -556,7 +556,7 @@ A host that is not listed is refused, so an internal forge is opted into explici
 An instance-hosted forge (Gitea and its descendants) is watched but never merged by firstmate.
 A pull request URL is `<base-url>/<owner>/<repository>/pulls/<number>`, and `bin/fm-pr-check.sh` is the only path that arms a watch on one.
 It asks [`bin/fm-pr-poll.sh`](../bin/fm-pr-poll.sh), the single owner of this file's format, for the token, then reads the pull request once through `GET <base-url>/api/v1/repos/<owner>/<repository>/pulls/<number>` before arming.
-A missing `curl`, a token the instance refuses, an unreachable instance, and a pull request the token cannot see each refuse arming with the fix named, because the armed poll stays silent on every error by design.
+A missing `curl`, a token the instance refuses, an unreachable instance, a pull request the token cannot see, and a response that does not carry the `merged` field the poll reads each refuse arming with the fix named, because the armed poll stays silent on every error by design.
 The armed poll then reports a merge from the same API, so the landing reaches firstmate the way a GitHub merge does.
 The captain merges the pull request in the forge; [`bin/fm-pr-merge.sh`](../bin/fm-pr-merge.sh) refuses to merge one itself.
 

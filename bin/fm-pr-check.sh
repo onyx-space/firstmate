@@ -84,12 +84,22 @@ if [ "$PROVIDER" = gitea ]; then
   chmod 0600 "$FORGE_AUTH" || { rm -f -- "$FORGE_AUTH"; exit 1; }
   printf 'Authorization: token %s\n' "$FORGE_TOKEN" > "$FORGE_AUTH" \
     || { rm -f -- "$FORGE_AUTH"; exit 1; }
-  FORGE_CODE=$(curl -m 10 -s -o /dev/null -w '%{http_code}' \
+  FORGE_BODY=$(mktemp "${TMPDIR:-/tmp}/fm-pr-check.XXXXXX") || { rm -f -- "$FORGE_AUTH"; exit 1; }
+  chmod 0600 "$FORGE_BODY" || { rm -f -- "$FORGE_AUTH" "$FORGE_BODY"; exit 1; }
+  FORGE_CODE=$(curl -m 10 -s -o "$FORGE_BODY" -w '%{http_code}' \
     -H "@$FORGE_AUTH" -H 'Accept: application/json' \
     "$FORGE_BASE/api/v1/repos/$PROJECT_PATH/pulls/$NUMBER" 2>/dev/null) || FORGE_CODE=000
-  rm -f -- "$FORGE_AUTH"
+  FORGE_MERGED_FIELD=0
+  grep -Eq '"merged"[[:space:]]*:' "$FORGE_BODY" && FORGE_MERGED_FIELD=1
+  rm -f -- "$FORGE_AUTH" "$FORGE_BODY"
   case "$FORGE_CODE" in
-    200) ;;
+    200)
+      [ "$FORGE_MERGED_FIELD" = 1 ] || {
+        printf 'error: %s answered the pull request read without the "merged" field the poll reads\n' "$FORGE_BASE" >&2
+        printf 'error: a watch on it could never report a merge, so it was not armed\n' >&2
+        exit 1
+      }
+      ;;
     401|403)
       printf 'error: %s refused the token configured for it (HTTP %s)\n' "$FORGE_BASE" "$FORGE_CODE" >&2
       printf 'error: check the "%s <token>" line in %s/config/pr-forge-hosts\n' "$FORGE_BASE" "$FM_HOME" >&2
