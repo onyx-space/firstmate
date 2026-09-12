@@ -877,6 +877,9 @@ HERDR_PROJECTION_ABORT_CLEANUP=0
 HERDR_PROJECTION_ABORT_SESSION=
 HERDR_PROJECTION_ABORT_TASK_PANE=
 HERDR_PROJECTION_ABORT_SEEDED_PANE=
+ENDPOINT_ABORT_CLEANUP=0
+ENDPOINT_ABORT_BACKEND=
+ENDPOINT_ABORT_TARGET=
 HERDR_PRESENTATION_ORDER_LOCK=
 HERDR_PRESENTATION_ORDER_LOCK_HELD=0
 SPAWN_TASK_LOCK=
@@ -975,6 +978,10 @@ spawn_abort_cleanup() {
   if [ "$HERDR_PRESENTATION_ORDER_LOCK_HELD" = 1 ]; then
     HERDR_PRESENTATION_ORDER_LOCK_HELD=0
     fm_lock_release "$HERDR_PRESENTATION_ORDER_LOCK" || true
+  fi
+  if [ "$ENDPOINT_ABORT_CLEANUP" = 1 ]; then
+    ENDPOINT_ABORT_CLEANUP=0
+    fm_backend_kill "$ENDPOINT_ABORT_BACKEND" "$ENDPOINT_ABORT_TARGET" 2>/dev/null || true
   fi
   if [ "$ORCA_ABORT_CLEANUP" = 1 ]; then
     ORCA_ABORT_CLEANUP=0
@@ -1349,7 +1356,9 @@ if [ "$RELAUNCH" -eq 1 ]; then
     HERDR_SES=$(fm_meta_get "$RELAUNCH_META" herdr_session)
     HERDR_WORKSPACE_ID=$(fm_meta_get "$RELAUNCH_META" herdr_workspace_id)
     HERDR_TAB_ID=$(fm_meta_get "$RELAUNCH_META" herdr_tab_id)
-    HERDR_PANE_ID=$(fm_meta_get "$RELAUNCH_META" herdr_pane_id)
+    if [ "$RELAUNCH_REHOME" -ne 1 ]; then
+      HERDR_PANE_ID=$(fm_meta_get "$RELAUNCH_META" herdr_pane_id)
+    fi
   fi
   # With no explicit harness, a relaunch reuses the harness already recorded
   # for this task. It must NOT fall through to the fresh-spawn config
@@ -2691,6 +2700,11 @@ case "$BACKEND" in
     # stays $T (the name form), which is safe now that rename is disabled.
     WID=$(fm_backend_tmux_create_task "$SES" "$W" "$ENDPOINT_CWD") || exit 1
     WT_TARGET="$WID"
+    if [ "$RELAUNCH_REHOME" -eq 1 ]; then
+      ENDPOINT_ABORT_CLEANUP=1
+      ENDPOINT_ABORT_BACKEND=tmux
+      ENDPOINT_ABORT_TARGET=$T
+    fi
     ;;
   herdr)
     # fm_backend_herdr_workspace_label resolves the target workspace from
@@ -2852,6 +2866,11 @@ case "$BACKEND" in
       read -r HERDR_TAB_ID HERDR_PANE_ID <<EOF
 $HERDR_TASK_IDS
 EOF
+      if [ "$RELAUNCH_REHOME" -eq 1 ]; then
+        ENDPOINT_ABORT_CLEANUP=1
+        ENDPOINT_ABORT_BACKEND=herdr
+        ENDPOINT_ABORT_TARGET="$HERDR_SES:$HERDR_PANE_ID"
+      fi
     fi
     if [ -z "$HERDR_TAB_ID" ] || [ -z "$HERDR_PANE_ID" ]; then
       echo "error: herdr did not return a tab/pane id for $W" >&2
@@ -3807,6 +3826,7 @@ if [ "$RELAUNCH" -eq 1 ]; then
   RELAUNCH_REPLACEMENT_PENDING=0
   SPAWN_META_PUBLISH_STARTED=0
   SPAWN_META_TMP=
+  ENDPOINT_ABORT_CLEANUP=0
 fi
 # A dispatch or relaunch keeps the per-task meta lock through launch delivery.
 # The backlog mutation is deliberately the final fallible commit below, so

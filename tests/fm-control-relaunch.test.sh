@@ -131,6 +131,25 @@ case "${1:-}" in
     printf '%s %s\n' "$wname" "$cwd" >> "$D/new-window"
     printf '@%s\n' "$wname"
     exit 0 ;;
+  kill-window)
+    # The abort trap closes a window a rehome created but never published.
+    # Model the close so the session inventory and a kill log reflect it.
+    shift
+    target=
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -t) target=$2; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    wname=${target##*:}
+    wname=${wname#=}
+    if [ -f "$D/windows" ]; then
+      grep -vx -- "$wname" "$D/windows" > "$D/windows.new" 2>/dev/null || true
+      mv "$D/windows.new" "$D/windows"
+    fi
+    printf '%s\n' "$target" >> "$D/killed-windows"
+    exit 0 ;;
 esac
 exit 0
 SH
@@ -186,6 +205,124 @@ EOF
   printf '%s\n' "fm-$id" > "$dir/fake/windows"
   printf '%s' "$wt" > "$dir/fake/cwd"
   TASK_TMPS+=("/tmp/fm-$id")
+}
+
+# A stateful `herdr` stub for the flat-herdr creation branch: enough of
+# workspace/tab/pane create, list, get, and close to model the endpoint a
+# rehome creates and the abort trap reclaims.
+make_herdr_stub() {  # <case-dir>
+  local fb="$1/fakebin"
+  mkdir -p "$fb"
+  cat > "$fb/herdr" <<'SH'
+#!/usr/bin/env bash
+set -u
+D=$FM_FAKE_DIR
+STATE=$FM_FAKE_HERDR_STATE
+cmd=${1:-}; sub=${2:-}
+ws=; label=; cwd=
+args=("$@")
+for ((i=0; i<${#args[@]}; i++)); do
+  case "${args[$i]}" in
+    --workspace) ws=${args[$((i+1))]:-} ;;
+    --label) label=${args[$((i+1))]:-} ;;
+    --cwd) cwd=${args[$((i+1))]:-} ;;
+  esac
+done
+st() { jq "$@" "$STATE"; }
+save() { local tmp="$STATE.tmp.$$"; cat > "$tmp" && mv "$tmp" "$STATE"; }
+case "$cmd $sub" in
+  "status --json")
+    printf '{"client":{"version":"0.7.1","protocol":14},"server":{"running":true}}\n' ;;
+  "session list")
+    printf '{"sessions":[{"name":"default","running":true,"socket_path":"%s/default.sock"}]}\n' "$D" ;;
+  "workspace list")
+    st '{result:{workspaces:[.workspaces[]|{workspace_id,label}]}}' ;;
+  "workspace create")
+    n=$(st -r '.next'); wsid="w$n"; dn=$((n + 1))
+    st --arg w "$wsid" --arg l "$label" --arg t "$wsid:t$dn" --arg p "$wsid:p$dn" --arg c "$cwd" \
+      '.workspaces += [{workspace_id:$w,label:$l}]
+       | .tabs += [{tab_id:$t,pane_id:$p,workspace_id:$w,label:"1",cwd:$c}]
+       | .next = (.next + 2)' | save
+    printf '{"result":{"workspace":{"workspace_id":"%s"},"tab":{"tab_id":"%s"},"root_pane":{"pane_id":"%s"}}}\n' \
+      "$wsid" "$wsid:t$dn" "$wsid:p$dn" ;;
+  "tab list")
+    st --arg w "$ws" '{result:{tabs:[.tabs[]|select(.workspace_id==$w)|{tab_id,label,workspace_id,pane_id}]}}' ;;
+  "tab create")
+    n=$(st -r '.next'); tabid="$ws:t$n"; paneid="$ws:p$n"
+    st --arg w "$ws" --arg l "$label" --arg t "$tabid" --arg p "$paneid" --arg c "$cwd" \
+      '.tabs += [{tab_id:$t,pane_id:$p,workspace_id:$w,label:$l,cwd:$c}]
+       | .next = (.next + 1)' | save
+    printf '{"result":{"tab":{"tab_id":"%s"},"root_pane":{"pane_id":"%s"}}}\n' "$tabid" "$paneid" ;;
+  "pane list")
+    st --arg w "$ws" '{result:{panes:[.tabs[]|select(.workspace_id==$w)|{pane_id,tab_id}]}}' ;;
+  "pane get")
+    pane=${3:-}
+    if st -e --arg p "$pane" 'any(.tabs[]; .pane_id == $p)'; then
+      st --arg p "$pane" '{result:{pane:(.tabs[]|select(.pane_id==$p)|{pane_id,tab_id,workspace_id,foreground_cwd:.cwd})}}'
+    else
+      printf '{"error":{"code":"pane_not_found","message":"pane %s not found"}}\n' "$pane"
+    fi ;;
+  "pane close")
+    pane=${3:-}
+    st --arg p "$pane" '.tabs |= [.[]|select(.pane_id != $p)]' | save ;;
+  "tab close")
+    tab=${3:-}
+    st --arg t "$tab" '.tabs |= [.[]|select(.tab_id != $t)]' | save ;;
+  "agent get")
+    printf '{"error":{"code":"agent_not_found","message":"no agent"}}\n' ;;
+esac
+exit 0
+SH
+  chmod +x "$fb/herdr"
+}
+
+add_ship_herdr_task() {  # <case-dir> <id>
+  local dir=$1 id=$2
+  local home="$dir/home" proj="$dir/proj" wt="$dir/wt"
+  fm_git_worktree "$proj" "$wt" "task-$id"
+  mkdir -p "$home/data/$id" "$home/config"
+  cat > "$home/data/$id/brief.md" <<EOF
+# Task
+## Captain's intent
+Exercise relaunch behavior for $id.
+
+## Firstmate spec
+Preserve the task while replacing its agent process.
+EOF
+  printf 'herdr\n' > "$home/config/backend"
+  printf 'off\n' > "$home/config/herdr-presentation-spaces"
+  {
+    echo "window=default:w9:p9"
+    echo "backend=herdr"
+    echo "endpoint_task_id=$id"
+    echo "herdr_session=default"
+    echo "herdr_workspace_id=w9"
+    echo "herdr_tab_id=w9:t9"
+    echo "herdr_pane_id=w9:p9"
+    echo "worktree=$wt"
+    echo "project=$proj"
+    echo "harness=claude"
+    echo "kind=ship"
+    echo "mode=no-mistakes"
+    echo "yolo=off"
+    echo "tasktmp=/tmp/fm-$id"
+    echo "model=default"
+    echo "effort=default"
+  } > "$home/state/$id.meta"
+  printf '{"next":1,"workspaces":[],"tabs":[]}\n' > "$dir/fake/herdr-state.json"
+  make_herdr_stub "$dir"
+  TASK_TMPS+=("/tmp/fm-$id")
+}
+
+run_spawn_herdr() {  # <case-dir> <args...>
+  local dir=$1; shift
+  mkdir -p "$dir/user-home"
+  env -u HERDR_PANE_ID -u HERDR_SOCKET_PATH -u HERDR_ENV -u HERDR_SESSION \
+    PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
+    HOME="$dir/user-home" CLAUDE_CONFIG_DIR='' \
+    FM_SPAWN_NO_GUARD=1 GROK_HOME="$dir/grokhome" \
+    FM_FAKE_HERDR_STATE="$dir/fake/herdr-state.json" \
+    "$SPAWN" "$@" 2>&1
 }
 
 run_control() {  # <case-dir> <args...>
@@ -341,6 +478,7 @@ test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint() {
     || fail "the transaction journal should end complete"
   assert_grep "/exit" "$dir/fake/literal" "the previous agent should have been exited"
   assert_grep "encode launch-brief" "$dir/fake/literal" "the replacement should have been launched"
+  assert_absent "$dir/fake/killed-windows" "a reused endpoint must never be reclaimed"
   pass "fm-control relaunch: a same-harness relaunch replaces the agent in the same endpoint and worktree"
 }
 
@@ -413,6 +551,76 @@ test_spawn_relaunch_rebuilds_a_structurally_gone_endpoint() {
     || fail "the recorded local copy must be adopted, not reallocated"
   assert_grep "encode launch-brief" "$dir/fake/literal" "the replacement should have been launched"
   pass "fm-spawn --relaunch: rebuilds a structurally gone endpoint through the backend's own creation path"
+}
+
+# The replacement endpoint is created before its record is published, so an
+# abort in that window must reclaim it. Otherwise a retry rehomes into the same
+# session, fm_backend_tmux_create_task refuses the same-named window, and the
+# restart path this change exists to unblock is closed again until someone
+# kills the orphan by hand.
+test_relaunch_rehome_abort_reclaims_the_endpoint_it_created() {
+  local dir out rc
+  dir=$(new_case rehome-abort rl52)
+  add_ship_task "$dir" rl52 claude
+  : > "$dir/fake/windows"
+  # A trust store that is not a regular file refuses the launch after the
+  # replacement endpoint exists but before the replacement record is published.
+  mkdir -p "$dir/user-home/.claude.json"
+
+  out=$(run_control "$dir" rl52 relaunch --note "the agent exited and its pane went with it"); rc=$?
+  expect_code 1 "$rc" "an aborted rehome should fail"$'\n'"$out"
+  assert_contains "$out" "refusing to launch a claude worker" \
+    "the abort should be the pre-publication trust refusal"
+
+  assert_no_grep "fm-rl52" "$dir/fake/windows" \
+    "an aborted rehome must not leave the window it created behind"
+  assert_grep "fm-rl52" "$dir/fake/killed-windows" \
+    "the created window should have been reclaimed"
+  [ "$(meta_field "$dir" rl52 window)" = "fmses:fm-rl52" ] \
+    || fail "the aborted rehome must keep the record naming the endpoint that was already gone"
+  pass "fm-control relaunch: an abort between endpoint creation and publication reclaims the created endpoint"
+}
+
+# The flat-herdr creation branch gets the same reclaim. Its own collision is
+# self-healing (create_task adopts an agent-free husk), but the orphan tab would
+# still outlive the failed attempt.
+test_spawn_relaunch_rehome_abort_reclaims_the_created_herdr_endpoint() {
+  local dir out rc
+  dir=$(new_case rehome-herdr-abort rl53)
+  add_ship_herdr_task "$dir" rl53
+  mkdir -p "$dir/user-home/.claude.json"
+
+  out=$(run_spawn_herdr "$dir" rl53 --relaunch --harness claude); rc=$?
+  expect_code 1 "$rc" "an aborted herdr rehome should fail"$'\n'"$out"
+  assert_contains "$out" "refusing to launch a claude worker" \
+    "the abort should be the pre-publication trust refusal"
+
+  [ "$(jq -r '[.tabs[]|select(.label=="fm-rl53")]|length' "$dir/fake/herdr-state.json")" = 0 ] \
+    || fail "an aborted herdr rehome must not leave its created tab behind"
+  [ "$(meta_field "$dir" rl53 window)" = "default:w9:p9" ] \
+    || fail "the aborted herdr rehome must keep the record naming the endpoint that was already gone"
+  pass "fm-spawn --relaunch: an aborted flat-herdr rehome reclaims the tab it created"
+}
+
+# The danger direction: an endpoint that is adopted, not recreated, must never
+# be closed by the abort trap.
+test_spawn_relaunch_abort_does_not_reclaim_an_adopted_herdr_tab() {
+  local dir out rc
+  dir=$(new_case adopt-herdr-abort rl54)
+  add_ship_herdr_task "$dir" rl54
+  # The recorded pane still exists and has no agent, so the relaunch adopts it
+  # instead of rebuilding the endpoint.
+  jq -n --arg cwd "$dir/wt" \
+    '{next:10,workspaces:[{workspace_id:"w9",label:"firstmate"}],
+      tabs:[{tab_id:"w9:t9",pane_id:"w9:p9",workspace_id:"w9",label:"fm-rl54",cwd:$cwd}]}' \
+    > "$dir/fake/herdr-state.json"
+  mkdir -p "$dir/user-home/.claude.json"
+
+  out=$(run_spawn_herdr "$dir" rl54 --relaunch --harness claude); rc=$?
+  expect_code 1 "$rc" "the aborted relaunch should fail"$'\n'"$out"
+  [ "$(jq -r '[.tabs[]|select(.label=="fm-rl54")]|length' "$dir/fake/herdr-state.json")" = 1 ] \
+    || fail "an adopted herdr tab must never be reclaimed by the abort trap"
+  pass "fm-spawn --relaunch: an abort never reclaims an adopted herdr tab"
 }
 
 test_relaunch_from_linked_home_preserves_recorded_worktree() {
@@ -1652,6 +1860,9 @@ test_relaunch_moves_a_drifted_item_back_in_flight() {
 test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint
 test_relaunch_rebuilds_a_structurally_gone_endpoint
 test_spawn_relaunch_rebuilds_a_structurally_gone_endpoint
+test_relaunch_rehome_abort_reclaims_the_endpoint_it_created
+test_spawn_relaunch_rehome_abort_reclaims_the_created_herdr_endpoint
+test_spawn_relaunch_abort_does_not_reclaim_an_adopted_herdr_tab
 test_relaunch_from_linked_home_preserves_recorded_worktree
 test_relaunch_preserves_durable_task_metadata
 test_relaunch_serializes_concurrent_durable_metadata_publication
