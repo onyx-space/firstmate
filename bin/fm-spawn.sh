@@ -28,21 +28,26 @@
 #   instruction files or a secondmate's charter.
 #        fm-spawn.sh <task-id> --relaunch [--harness <name>] [--model <name>] [--effort <level>]
 #   --relaunch launches a replacement agent for an EXISTING task into that
-#   task's own recorded endpoint and worktree instead of creating either. It is
-#   the launch half of the control plane (bin/fm-control.sh relaunch), which
-#   owns the checkpoint, the progress note, stopping the previous agent, and the
-#   transaction; call fm-control rather than this flag directly unless you are
-#   deliberately re-launching an already-stopped task. Every identity axis -
+#   task's own recorded endpoint and worktree instead of allocating either,
+#   except when the recorded endpoint is structurally gone (reads `missing`):
+#   there is no agent left to stop, so the endpoint is rebuilt through the same
+#   per-backend creation path a fresh spawn uses, in the task's recorded
+#   worktree rather than the project. It is the launch half of the control
+#   plane (bin/fm-control.sh relaunch), which owns the checkpoint, the
+#   progress note, stopping the previous agent, and the transaction; call
+#   fm-control rather than this flag directly unless you are deliberately
+#   re-launching an already-stopped task. Every identity axis -
 #   backend, kind, project or home, worktree, endpoint - comes from the task's
 #   validated state/<id>.meta, so --backend, --scout, --secondmate, a project
 #   positional, and batch pairs are all refused alongside it; only harness,
 #   model, and effort may change, which is what makes a harness switch one
 #   ordinary relaunch. It refuses unless the recorded endpoint is positively
-#   agent-free on a backend with a recovery-grade agent-state classifier (tmux
-#   or herdr), and clears the previous harness's per-task wiring before arming
-#   the new incarnation. The replacement still never starts outside the copy
-#   holding the work: a Herdr shell that has drifted out of the recorded
-#   worktree is told once to return, and only a shell that will not go refuses.
+#   agent-free or structurally gone on a backend with a recovery-grade
+#   agent-state classifier (tmux or herdr), and clears the previous harness's
+#   per-task wiring before arming the new incarnation. The replacement still
+#   never starts outside the copy holding the work: a Herdr shell that has
+#   drifted out of the recorded worktree is told once to return, and only a
+#   shell that will not go refuses.
 #   --harness <name> is the explicit per-spawn harness/profile adapter. The old
 #   positional harness arg still works for back-compat.
 #   --model <name> and --effort <low|medium|high|xhigh|max|ultra> are concrete profile
