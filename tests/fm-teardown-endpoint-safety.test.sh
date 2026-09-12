@@ -1474,6 +1474,60 @@ test_superseded_claim_retirement_is_bound_to_the_incarnation_it_retires() {
   pass "fm-teardown: a stale-claim retirement is bound to the incarnation, retiring record, and slot it names"
 }
 
+# The writer is bound to the incarnation the same way the reader is. A marker
+# left for an earlier incarnation of the same retirement must not be read as the
+# retirement of the current one, and the explicit retirement must restamp it for
+# the claim it actually retired, so the marker always describes its own claim.
+test_superseded_claim_retirement_restamps_a_stale_marker_for_the_current_incarnation() {
+  local dir id=current-task other=stale-task owner rc slot marker
+
+  dir=$(make_case retire-stale-marker-restamp)
+  mark_case_as_treehouse_pool "$dir"
+  make_slot_copy_landed "$dir"
+  owner=1789161032
+  set_case_slot_owner "$dir" "$owner"
+  slot=$(case_slot_path "$dir")
+  marker="$dir/home/state/$other.claim-retired"
+  write_retirement_marker "$dir" "$other" "$slot" "$id" "$other" "$((owner - 46800))"
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=main:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+    "spawn_gen=s$((owner + 12)).4242.1"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+    "spawn_gen=s$((owner - 100)).4242.2"
+  write_tmux_agent_stub "$dir" "main:fm-$id=alive" "other:fm-$other=alive"
+
+  # (a) the stale marker authorizes nothing on its own. Without the explicit
+  # retirement the collision still refuses, and nothing is returned or reset.
+  rc=0
+  run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr" || rc=$?
+  [ "$rc" -ne 0 ] \
+    || fail "a stale retirement marker let the guard release a slot with no process proof"
+  assert_shared_slot_refused "$dir" "$id" "$other" "stale retirement marker"
+  assert_not_contains "$(refusal_output "$dir")" "was retired" \
+    "a marker for another incarnation must not be read as a retirement"
+
+  # (b) the explicit retirement restamps it for the incarnation it actually
+  # retired, so the marker describes the claim that was retired.
+  rc=0
+  run_case_with_flags "$dir" "$id" --retire-superseded-claim > "$dir/stdout" 2> "$dir/stderr" || rc=$?
+  [ "$rc" -eq 0 ] \
+    || fail "the explicit retirement could not retire a claim behind a stale marker: $(cat "$dir/stderr")"
+  assert_contains "$(cat "$marker")" "retired_claim_epoch=$((owner - 100))" \
+    "the retirement must restamp the marker for the incarnation it retired"
+  assert_contains "$(cat "$marker")" "retired_by=$id" \
+    "the restamped marker must name the retiring task"
+  assert_contains "$(cat "$marker")" "retired_task=$other" \
+    "the restamped marker must name the retired task"
+  assert_absent "$dir/home/state/$id.meta" "the retirement left the occupant's own record"
+  grep -Fq "treehouse <return>" "$dir/runtime.log" \
+    || fail "the retirement never returned the slot it collected: $(cat "$dir/runtime.log")"
+
+  pass "fm-teardown: the retirement writer restamps a stale marker for the incarnation it retires"
+}
+
 test_shared_pool_slot_refusal_names_the_live_record_to_tear_down_first() {
   local dir id=stale-task other=live-task rc
 
@@ -1846,6 +1900,7 @@ test_slot_claim_evidence_never_relaxes_force
 test_superseded_claim_retirement_clears_states_no_proof_can_reach
 test_superseded_claim_retirement_is_recorded_once_and_lets_the_retired_record_clean_up
 test_superseded_claim_retirement_is_bound_to_the_incarnation_it_retires
+test_superseded_claim_retirement_restamps_a_stale_marker_for_the_current_incarnation
 test_shared_pool_slot_refusal_names_the_live_record_to_tear_down_first
 test_cross_home_pool_slot_collision_refuses
 test_sole_slot_record_still_tears_down

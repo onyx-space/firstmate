@@ -2371,13 +2371,11 @@ teardown_claim_retirement_path() {  # <other-meta>
   printf '%s.claim-retired\n' "${1%.meta}"
 }
 
-# The identity a retirement record at that path must carry for the writer to
-# leave it in place as the retirement it was asked to record: the same retiring
-# task, the same retired task, the same slot. An unrelated or malformed record is
-# never overwritten. The read path (teardown_claim_is_retired) is stricter still,
-# binding the marker to the retired claim's own spawn incarnation, so the same
-# file is never read as consent for a claim it does not describe.
-teardown_claim_retirement_matches() {  # <marker> <record-id> <other-id> <slot>
+# The retirement address a record at that path must name for the writer to
+# consider it at all: the same retiring task, the same retired task, and the same
+# slot. A record at that path naming anything else describes a different
+# retirement, is never overwritten, and is never read as consent.
+teardown_claim_retirement_address_matches() {  # <marker> <record-id> <other-id> <slot>
   local marker=$1
   [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
   [ "$(fm_meta_get "$marker" retired_by)" = "$2" ] || return 1
@@ -2385,12 +2383,26 @@ teardown_claim_retirement_matches() {  # <marker> <record-id> <other-id> <slot>
   [ "$(fm_meta_get "$marker" slot)" = "$4" ]
 }
 
+# True when a retirement record already at that path is exactly the retirement
+# the writer was asked to record: that same retirement address and the exact
+# retired claim incarnation. A marker for an earlier incarnation is not this
+# retirement, so it is restamped for the current one instead of read as consent,
+# while a marker for this incarnation is left untouched. The read path
+# (teardown_claim_is_retired) binds the incarnation the same way.
+teardown_claim_retirement_matches() {  # <marker> <record-id> <other-id> <slot> <other-claim>
+  local marker=$1
+  teardown_claim_retirement_address_matches "$marker" "$2" "$3" "$4" || return 1
+  [ "$(fm_meta_get "$marker" retired_claim_epoch)" = "$5" ]
+}
+
 # Write one retirement record atomically, one `key=value` line per fact so it
 # reads back through the same field lookup every task record uses. Every fact an
 # audit needs is required: who retired the claim and from which home, when, the
 # pool's own owner-start instant and both claim epochs that are its evidence, and
-# the reason that claim reads as superseded. The record is written once for one
-# retirement and never rewritten, so a retried teardown cannot restamp it.
+# the reason that claim reads as superseded. One retirement is written once for
+# the incarnation it retires; a retry of that same retirement finds the marker
+# already describing it and leaves it untouched, while a marker left by an
+# earlier incarnation of the same retirement is restamped for the current one.
 teardown_claim_retirement_write() {  # <marker> <record-id> <other-id> <slot> <owner-started> <record-claim> <other-claim>
   local marker=$1 record_id=$2 other_id=$3 slot=$4 owner_started=$5 record_claim=$6 other_claim=$7 tmp
   tmp="$marker.tmp.$$"
@@ -2463,7 +2475,10 @@ teardown_claim_is_retired() {  # <meta> <slot>
 # serializes the write against its lifecycle; teardown already holds the shared
 # Treehouse project lock, which every pool-slot teardown takes before its meta
 # lock, so this nesting cannot invert. Idempotent: a retirement already recorded
-# for exactly this claim is not rewritten, so a retry cannot restamp it.
+# for this same claim incarnation is not rewritten, so a retry cannot restamp it;
+# a marker left for an earlier incarnation of the same claim is restamped for the
+# current one, because a tombstone that does not describe the claim it retires is
+# never treated as consent.
 teardown_retire_superseded_slot_claim() {  # <record-meta> <record-id> <other-meta> <other-id> <slot>
   local record_meta=$1 record_id=$2 other=$3 other_id=$4 slot=$5
   local marker lock owner_started record_claim other_claim
@@ -2474,12 +2489,18 @@ teardown_retire_superseded_slot_claim() {  # <record-meta> <record-id> <other-me
   lock=$(fm_meta_lock_path "$other") || return 1
   fm_lock_acquire_wait "$lock" || return 1
   if [ -e "$marker" ] || [ -L "$marker" ]; then
-    if ! teardown_claim_retirement_matches "$marker" "$record_id" "$other_id" "$slot"; then
+    if ! teardown_claim_retirement_address_matches "$marker" "$record_id" "$other_id" "$slot"; then
       echo "REFUSED: $marker already records a different retirement, and teardown never overwrites another claim's retirement record; nothing was changed." >&2
       fm_lock_release "$lock"
       return 1
     fi
-  elif ! teardown_claim_retirement_write "$marker" "$record_id" "$other_id" "$slot" \
+    if teardown_claim_retirement_matches "$marker" "$record_id" "$other_id" "$slot" "$other_claim"; then
+      fm_lock_release "$lock"
+      RETIRED_CLAIM_RECORDS+=("$marker")
+      return 0
+    fi
+  fi
+  if ! teardown_claim_retirement_write "$marker" "$record_id" "$other_id" "$slot" \
       "$owner_started" "$record_claim" "$other_claim"; then
     echo "REFUSED: could not record the retirement of task $other_id's claim on $slot; nothing was changed." >&2
     fm_lock_release "$lock"
