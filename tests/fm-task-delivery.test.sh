@@ -370,6 +370,10 @@ STUB
       # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
       assert_grep 'Do not use `ce-translate` for a PR description' "$payload" \
         "$mode: promoted worker was not told ce-translate is not for PR descriptions"
+      # The pre-PR self-check travels with the block, so a promoted worker can act
+      # on the discipline without loading the skill, exactly as a briefed one can.
+      assert_grep 'Before you report the PR ready, self-check the live title and body' "$payload" \
+        "$mode: promoted worker did not receive the pre-PR description self-check"
     fi
 
     # Compare the public outputs of both real generation paths. The promoted

@@ -198,7 +198,15 @@ EOF
 
 # Owner of the worker-facing PR-description language discipline. The separately
 # installed `pr-description` skill is the single owner of that contract, so this
-# block only wires the worker to it instead of restating the format.
+# block wires the worker to it instead of restating the full format.
+# It also carries the deliberate PR self-check, because the pointer alone left the
+# shape invisible: the discipline is stated nowhere else in a brief, so a worker
+# that never loaded the skill could not comply, and six PR-opening tasks in one
+# week shipped non-compliant descriptions that firstmate had to send back. The
+# questions restate only the three decisions a worker makes at the PR moment
+# (title language, visible-body language, English fold); the format details,
+# translation rules, and per-platform commands stay with the skill, which remains
+# the single owner of the contract.
 # bin/fm-brief.sh renders it into a ship brief and bin/fm-promote.sh into the ship
 # instructions a promoted scout receives, so both PR-opening paths carry it.
 # `local-only` opens no PR, so it renders nothing: there the discipline would
@@ -210,6 +218,10 @@ fm_pr_description_block() {  # <mode>
 # PR description
 Before you write or edit a pull request description, read the `pr-description` skill (`~/.agents/skills/pr-description/SKILL.md`); it is the single owner of that contract.
 Do not use `ce-translate` for a PR description.
+Before you report the PR ready, self-check the live title and body; fix any "no" before you report:
+- Title: Chinese after the conventional-commit prefix (`feat(scope): <中文>`)?
+- Body: Chinese visible first, above the fold?
+- Body: the English body folded inside `<details><summary>English</summary>`?
 EOF
 }
 
