@@ -1,0 +1,10 @@
+retired_by=current-task
+retired_task=stale-task
+slot=/private/tmp/fmlive-final.Ws9TO7/live-a/pool/1/project
+home=/tmp/fmlive-final.Ws9TO7/live-a/home
+operator=onyx
+retired_at=2026-09-12T02:56:55Z
+owner_started_at=1789161032
+retiring_claim_epoch=1789161044
+retired_claim_epoch=1789114232
+reason=claim began before the pool current owner took the slot

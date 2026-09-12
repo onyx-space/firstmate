@@ -1,0 +1,171 @@
+
+========== SCENARIO A: unnameable pane leader (occupant's pane closed) ==========
+live tmux windows: fm-stale-task 
+RUN1 (--force, no flag) rc=1
+teardown: the tmux backend cannot name the pane leader of liva:fm-current-task, so no process in /private/tmp/fmlive-final.Ws9TO7/live-a/pool/1/project can be shown to belong to this record's endpoint.
+Confirm that recorded endpoint is still live and readable (bin/fm-crew-state.sh), then re-run teardown.
+REFUSED: task current-task's recorded worktree /private/tmp/fmlive-final.Ws9TO7/live-a/pool/1/project is also task stale-task's recorded worktree.
+Returning that pool slot would kill stale-task's processes and reset its copy, so that pool slot was not released - not even with --force.
+One record can release it: task stale-task's recorded endpoint is still alive. Tear down task stale-task first, then re-run this one.
+If the pool's owner record is right, the shared copy holds no unlanded work, and task stale-task's claim is a superseded allocation, retire that stale claim explicitly with: bin/fm-teardown.sh current-task --retire-superseded-claim
+Reconcile whichever record is wrong (bin/fm-crew-state.sh current-task; bin/fm-crew-state.sh stale-task), then re-run teardown.
+PASS: no-flag run refused
+PASS: refusal comes from the process proof
+PASS: no retirement marker without the flag
+PASS: no slot return without the flag
+PASS: occupant record untouched
+RUN2 (--retire-superseded-claim) rc=0
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+teardown: the tmux backend cannot name the pane leader of liva:fm-current-task, so no process in /private/tmp/fmlive-final.Ws9TO7/live-a/pool/1/project can be shown to belong to this record's endpoint.
+Confirm that recorded endpoint is still live and readable (bin/fm-crew-state.sh), then re-run teardown.
+teardown: task stale-task also records /private/tmp/fmlive-final.Ws9TO7/live-a/pool/1/project, and the pool's current owner of that slot is task current-task, so task stale-task's superseded claim was retired at /private/tmp/fmlive-final.Ws9TO7/live-a/home/state/stale-task.claim-retired; cleanup continues
+PASS: flag run succeeded
+PASS: durable retirement marker written
+retired_by=current-task
+retired_task=stale-task
+slot=/private/tmp/fmlive-final.Ws9TO7/live-a/pool/1/project
+home=/tmp/fmlive-final.Ws9TO7/live-a/home
+operator=onyx
+retired_at=2026-09-12T02:56:55Z
+owner_started_at=1789161032
+retiring_claim_epoch=1789161044
+retired_claim_epoch=1789114232
+reason=claim began before the pool current owner took the slot
+PASS: marker names the retiring record
+PASS: marker names the retired claim
+PASS: marker names the slot
+PASS: marker carries the pool's own evidence
+PASS: marker carries the surviving claim epoch
+PASS: marker carries the retired claim epoch
+PASS: marker names the operator
+PASS: marker is dated
+PASS: marker states why the claim is stale
+PASS: the slot was returned
+PASS: occupant record cleaned up
+PASS: retired record left intact for its own teardown
+
+========== SCENARIO D: the retired record's own teardown honors the marker ==========
+teardown of retired record rc=0
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+teardown: task stale-task's claim on /tmp/fmlive-final.Ws9TO7/live-a/worktree was retired by /tmp/fmlive-final.Ws9TO7/live-a/home/state/stale-task.claim-retired; cleaning up the record without returning or touching that slot
+PASS: retired record tears down cleanly
+PASS: it reports honoring the retirement
+PASS: it does not return the slot
+PASS: retired record removed
+PASS: marker outlives the record it retired
+
+========== SCENARIO B: orphan process rooted in the slot ==========
+orphan pid=56958, live tmux windows: fm-stale-task fm-current-task 
+RUN1 (--force, no flag) rc=1
+teardown: pid 56958 is still rooted in /private/tmp/fmlive-final.Ws9TO7/live-b/pool/1/project but is neither the pane leader 56953 of livb:fm-current-task nor a live descendant of it, so this record's endpoint does not own it.
+Identify that process (ps -o pid,ppid,command -p 56958) and end it once it is confirmed unneeded, then re-run teardown.
+REFUSED: task current-task's recorded worktree /private/tmp/fmlive-final.Ws9TO7/live-b/pool/1/project is also task stale-task's recorded worktree.
+Returning that pool slot would kill stale-task's processes and reset its copy, so that pool slot was not released - not even with --force.
+If the pool's owner record is right, the shared copy holds no unlanded work, and task stale-task's claim is a superseded allocation, retire that stale claim explicitly with: bin/fm-teardown.sh current-task --retire-superseded-claim
+Reconcile whichever record is wrong (bin/fm-crew-state.sh current-task; bin/fm-crew-state.sh stale-task), then re-run teardown.
+PASS: no-flag run refused
+PASS: refusal comes from the unowned-process proof
+PASS: refusal did not kill the unaccounted process
+PASS: no marker without the flag
+PASS: no slot return without the flag
+RUN2 (--retire-superseded-claim) rc=0
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+teardown: pid 56958 is still rooted in /private/tmp/fmlive-final.Ws9TO7/live-b/pool/1/project but is neither the pane leader 56953 of livb:fm-current-task nor a live descendant of it, so this record's endpoint does not own it.
+Identify that process (ps -o pid,ppid,command -p 56958) and end it once it is confirmed unneeded, then re-run teardown.
+teardown: task stale-task also records /private/tmp/fmlive-final.Ws9TO7/live-b/pool/1/project, and the pool's current owner of that slot is task current-task, so task stale-task's superseded claim was retired at /private/tmp/fmlive-final.Ws9TO7/live-b/home/state/stale-task.claim-retired; cleanup continues
+teardown: reaping leaked worktree process(es) for current-task: 56958
+PASS: flag run succeeded
+PASS: durable retirement marker written
+PASS: the slot was returned
+orphan state after return: <gone>
+PASS: the orphan the retirement authorized discarding was reaped
+
+========== SCENARIO E: superseded side takes the flag and records its own retirement ==========
+RUN1 (--force, no flag on superseded side) rc=1
+REFUSED: task stale-task's recorded worktree /private/tmp/fmlive-final.Ws9TO7/live-e/pool/1/project is also task current-task's recorded worktree.
+Returning that pool slot would kill current-task's processes and reset its copy, so that pool slot was not released - not even with --force.
+Treehouse's pool state names task current-task as the slot's current occupant: tear down task current-task first, then re-run this one.
+Reconcile whichever record is wrong (bin/fm-crew-state.sh stale-task; bin/fm-crew-state.sh current-task), then re-run teardown.
+PASS: superseded side still refuses without the flag
+RUN2 (--retire-superseded-claim on superseded side) rc=0
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+teardown: task current-task also records /private/tmp/fmlive-final.Ws9TO7/live-e/pool/1/project, and the pool's owner record names task current-task as the slot's current occupant, so task stale-task's superseded claim was retired at /tmp/fmlive-final.Ws9TO7/live-e/home/state/stale-task.claim-retired; task stale-task will not return that slot, and cleanup continues
+teardown: task stale-task's claim on /tmp/fmlive-final.Ws9TO7/live-e/worktree is superseded by the slot's current occupant; cleaning up the record without returning or touching that slot
+PASS: superseded side cleans up with the flag
+PASS: superseded side left a durable retirement marker
+retired_by=current-task
+retired_task=stale-task
+slot=/private/tmp/fmlive-final.Ws9TO7/live-e/pool/1/project
+home=/tmp/fmlive-final.Ws9TO7/live-e/home
+operator=onyx
+retired_at=2026-09-12T02:57:04Z
+owner_started_at=1789161032
+retiring_claim_epoch=1789161044
+retired_claim_epoch=1789160932
+reason=claim began before the pool current owner took the slot
+PASS: marker names the occupant the pool owner record points to
+PASS: marker names the superseded record
+PASS: marker carries the superseded record's own claim epoch
+PASS: it reports not returning the slot
+PASS: the superseded record did not return the occupant's slot
+PASS: the shared slot was not reset
+PASS: the occupant's record was left intact
+PASS: the superseded record was cleaned up
+
+========== SCENARIO C: retirement is per-incarnation (idempotent, restamps) ==========
+RUN1 (later incarnation retires) rc=1
+teardown: the tmux backend cannot name the pane leader of livc:fm-current-task, so no process in /private/tmp/fmlive-final.Ws9TO7/live-c/pool/1/project can be shown to belong to this record's endpoint.
+Confirm that recorded endpoint is still live and readable (bin/fm-crew-state.sh), then re-run teardown.
+teardown: task stale-task also records /private/tmp/fmlive-final.Ws9TO7/live-c/pool/1/project, and the pool's current owner of that slot is task current-task, so task stale-task's superseded claim was retired at /private/tmp/fmlive-final.Ws9TO7/live-c/home/state/stale-task.claim-retired; cleanup continues
+treehouse: refusing to return the slot
+error: treehouse return failed for worktree /tmp/fmlive-final.Ws9TO7/live-c/worktree; teardown aborted
+PASS: later incarnation retirement ran
+retired_by=current-task
+retired_task=stale-task
+slot=/private/tmp/fmlive-final.Ws9TO7/live-c/pool/1/project
+home=/tmp/fmlive-final.Ws9TO7/live-c/home
+operator=onyx
+retired_at=2026-09-12T02:57:06Z
+owner_started_at=1789161032
+retiring_claim_epoch=1789161044
+retired_claim_epoch=1789160932
+reason=claim began before the pool current owner took the slot
+PASS: the later occupant authored the new statement
+PASS: the statement describes the incarnation it retired
+PASS: the rewritten statement names the current slot
+RUN2 (repeat) rc=1
+PASS: a repeat retirement did not restamp the marker
+PASS: exactly one retirement record for one claim
+
+========== SCENARIO F: unrelated / malformed marker is not consent and is not overwritten ==========
+run rc=1
+teardown: the tmux backend cannot name the pane leader of livf:fm-current-task, so no process in /private/tmp/fmlive-final.Ws9TO7/live-f/pool/1/project can be shown to belong to this record's endpoint.
+Confirm that recorded endpoint is still live and readable (bin/fm-crew-state.sh), then re-run teardown.
+REFUSED: /private/tmp/fmlive-final.Ws9TO7/live-f/home/state/stale-task.claim-retired records another claim's retirement, and teardown never overwrites an unrelated record; task stale-task's claim was not retired.
+REFUSED: task current-task's recorded worktree /private/tmp/fmlive-final.Ws9TO7/live-f/pool/1/project is also task stale-task's recorded worktree.
+Returning that pool slot would kill stale-task's processes and reset its copy, so that pool slot was not released - not even with --force.
+One record can release it: task stale-task's recorded endpoint is still alive. Tear down task stale-task first, then re-run this one.
+Reconcile whichever record is wrong (bin/fm-crew-state.sh current-task; bin/fm-crew-state.sh stale-task), then re-run teardown.
+PASS: retirement refused against an unrelated marker
+PASS: the refusal names the unrelated record
+PASS: the unrelated marker was not overwritten
+PASS: the refusing run changed no record
+
+========== SCENARIO G: a marker for another incarnation does not authorize release ==========
+run rc=1
+REFUSED: task current-task's recorded worktree /private/tmp/fmlive-final.Ws9TO7/live-g/pool/1/project is also task stale-task's recorded worktree.
+Returning that pool slot would kill stale-task's processes and reset its copy, so that pool slot was not released - not even with --force.
+Reconcile whichever record is wrong (bin/fm-crew-state.sh current-task; bin/fm-crew-state.sh stale-task), then re-run teardown.
+PASS: guard still refused with no co-claimant evidence
+PASS: the stale marker was not read as a retirement
+PASS: the shared slot was not reset
+
+========== SCENARIO H: forced secondmate cleanup honors a descendant's retired claim ==========
+forced secondmate teardown rc=0
+teardown: child task stale-child's claim on /tmp/fmlive-final.Ws9TO7/live-h/worktree was retired at /tmp/fmlive-final.Ws9TO7/live-h/mate-home/state/stale-child.claim-retired; cleaning up the record without returning or touching that slot
+PASS: forced secondmate teardown succeeded
+PASS: the retired descendant was cleaned up
+PASS: the retired descendant did not return the slot
+PASS: it reports honoring the descendant's retirement
+
+ALL LIVE SCENARIOS PASSED

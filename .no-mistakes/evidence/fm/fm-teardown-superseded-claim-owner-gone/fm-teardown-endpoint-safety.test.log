@@ -1,0 +1,36 @@
+ok - fm-teardown: missing, empty, malformed, ambiguous, and task-mismatched endpoints refuse before every mutation or runtime call
+ok - fm-teardown: a concurrent lifecycle action refuses before mutation
+ok - fm-teardown: non-pool cleanup ignores unrelated task publication locks
+ok - fm-teardown: destructive cleanup serializes with metadata writers
+ok - cleanup identity: valid tmux, Herdr, Zellij, Orca, and cmux records validate while every empty backend target refuses
+ok - tmux backend: direct empty target returns nonzero without invoking tmux
+ok - process cleanup: creation-time PID identity removes only the exact child and preserves the control child
+ok - fm-teardown: exact tmux cleanup preserves invalid and prefix-matched neighbors while removing only the recorded target
+ok - Treehouse locking resolves a bare local origin against its source project, matching the provisioned clone
+ok - fm-teardown: a pool slot named by a second task record is never returned, killed, or reset
+ok - fm-teardown: a pool slot is released to the live record once the other record's endpoint is provably gone
+ok - fm-teardown: an aliased fm home resolves the shared-slot guard by physical path, never against itself
+ok - fm-teardown: a pool slot is never released while the record sharing it is still running
+ok - fm-teardown: an unreadable co-claimant endpoint still refuses rather than reading as gone
+ok - fm-teardown: two gone records leave the slot contested instead of guessing which claim is current
+ok - fm-teardown: shared-slot live-work proofs each refuse on their own - uncommitted copy, unpushed commit, unowned process, and an unprovable pane leader
+ok - fm-teardown: the slot's current occupant collects a claim the pool's own owner record supersedes
+ok - fm-teardown: the superseded side still refuses and names the slot's current occupant
+ok - fm-teardown: a superseded claim releases nothing without the pool's owner record and the destruction proofs, --force included
+ok - fm-teardown: an explicit retirement clears the two states no destruction proof can reach, and never without being asked
+ok - fm-teardown: a retirement is recorded once, survives its record, and stops that record returning the slot
+ok - fm-teardown: a stale-claim retirement is bound to the incarnation, retiring record, and slot it names
+ok - fm-teardown: the retirement writer restamps a stale marker for the incarnation it retires
+ok - fm-teardown: a later occupant rewrites a predecessor's stale retirement, and a repeat does not
+ok - fm-teardown: a retirement is rewritten after the task moves to another slot
+ok - fm-teardown: the superseded side takes --retire-superseded-claim without returning the slot
+ok - fm-teardown: a forced secondmate retires a descendant claim and only the occupant returns the slot
+ok - fm-teardown: forced cleanup skips the return for a descendant whose claim was retired
+ok - fm-teardown: a refusal names the live record to tear down first
+ok - fm-teardown: a pool slot held by another firstmate home is never returned
+ok - fm-teardown: a task that solely holds its slot still returns it
+ok - fm-teardown: an exact recorded endpoint still tears down after changing cwd outside its worktree
+ok - Treehouse project locking anchors at the local root for main-home, local-secondmate, and remote-seeded layouts
+ok - fm-teardown: a remote-seeded secondmate home returns its own uncontested pool slot
+ok - fm-teardown: slot ownership across a remote-seeded home and its local child still refuses
+ok - Treehouse project locking still serializes two homes across the remote-seeded boundary
