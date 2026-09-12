@@ -1240,6 +1240,9 @@ test_superseded_claim_retirement_clears_states_no_proof_can_reach() {
   assert_absent "$dir/home/state/$id.meta" "the retirement teardown left the occupant's own record"
   assert_present "$dir/home/state/$other.meta" "the retirement removed the retired record itself"
   assert_present "$marker" "the retirement left no readable record of itself"
+  marker_mode=$(stat -c %a "$marker" 2>/dev/null || stat -f %Lp "$marker" 2>/dev/null) \
+    || fail "could not inspect the retirement record's mode"
+  [ "$marker_mode" = 600 ] || fail "the retirement record must be private, not $marker_mode"
   assert_contains "$(cat "$marker")" "retired_by=$id" "the retirement record must name who retired the claim"
   assert_contains "$(cat "$marker")" "retired_task=$other" "the retirement record must name the retired claim"
   assert_contains "$(cat "$marker")" "slot=$slot" "the retirement record must name the slot it retires"

@@ -317,6 +317,7 @@ ID=$1
 FORCE=
 LEGACY_RECORD_GIVEN=0
 RETIRE_SUPERSEDED_CLAIM=0
+RETIRED_CLAIM_RECORDS=()
 shift
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -2390,17 +2391,19 @@ teardown_claim_retirement_write() {  # <marker> <record-id> <other-id> <slot> <o
   tmp="$marker.tmp.$$"
   if ! (
     umask 077
-    printf 'retired_by=%s\n' "$record_id"
-    printf 'retired_task=%s\n' "$other_id"
-    printf 'slot=%s\n' "$slot"
-    printf 'home=%s\n' "$FM_HOME"
-    printf 'operator=%s\n' "$(id -un 2>/dev/null || printf unknown)"
-    printf 'retired_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    printf 'owner_started_at=%s\n' "$owner_started"
-    printf 'retiring_claim_epoch=%s\n' "$record_claim"
-    printf 'retired_claim_epoch=%s\n' "$other_claim"
-    printf 'reason=claim began before the pool current owner took the slot\n'
-  ) > "$tmp"; then
+    {
+      printf 'retired_by=%s\n' "$record_id"
+      printf 'retired_task=%s\n' "$other_id"
+      printf 'slot=%s\n' "$slot"
+      printf 'home=%s\n' "$FM_HOME"
+      printf 'operator=%s\n' "$(id -un 2>/dev/null || printf unknown)"
+      printf 'retired_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      printf 'owner_started_at=%s\n' "$owner_started"
+      printf 'retiring_claim_epoch=%s\n' "$record_claim"
+      printf 'retired_claim_epoch=%s\n' "$other_claim"
+      printf 'reason=claim began before the pool current owner took the slot\n'
+    } > "$tmp"
+  ); then
     rm -f "$tmp"
     return 1
   fi
@@ -2464,6 +2467,7 @@ teardown_retire_superseded_slot_claim() {  # <record-meta> <record-id> <other-me
     return 1
   fi
   fm_lock_release "$lock"
+  RETIRED_CLAIM_RECORDS+=("$marker")
   return 0
 }
 
@@ -2580,7 +2584,10 @@ require_exclusive_worktree_slot_record() {
           continue
         fi
         echo "REFUSED: task $record_id's recorded worktree $slot is also task $other_id's recorded $field." >&2
-        echo "Returning that pool slot would kill $other_id's processes and reset its copy, so nothing was changed - not even with --force." >&2
+        echo "Returning that pool slot would kill $other_id's processes and reset its copy, so that pool slot was not released - not even with --force." >&2
+        if [ "${#RETIRED_CLAIM_RECORDS[@]}" -gt 0 ]; then
+          echo "A retirement already recorded this run stands: ${RETIRED_CLAIM_RECORDS[*]}" >&2
+        fi
         if teardown_slot_release_order_applies "$record_meta" "$other"; then
           echo "One record can release it: task $other_id's recorded endpoint is still alive. Tear down task $other_id first, then re-run this one." >&2
         fi
