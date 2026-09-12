@@ -1215,6 +1215,7 @@ test_remote_sync_refreshes_home_polls() {
   cp "$ROOT/bin/fm-pr-poll.sh" "$stale"
   printf '# pre-change revision\n' >> "$stale"
   (
+    # shellcheck source=/dev/null
     . "$ROOT/bin/fm-pr-lib.sh"
     fm_pr_poll_prepare "$state" sm github "$url" github.com o/r 11 "$stale" \
       && fm_pr_poll_publish_prepared

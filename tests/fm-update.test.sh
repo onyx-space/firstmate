@@ -501,6 +501,7 @@ test_mate_poll_refresh_uses_the_mate_template() {
   cp "$ROOT/bin/fm-pr-poll.sh" "$stale"
   printf '# pre-change revision\n' >> "$stale"
   (
+    # shellcheck source=/dev/null
     . "$ROOT/bin/fm-pr-lib.sh"
     fm_pr_poll_prepare "$state" sm1 github "$url" github.com o/r 9 "$stale" \
       && fm_pr_poll_publish_prepared
@@ -563,6 +564,7 @@ test_registry_backstop_mate_poll_refreshed() {
   cp "$ROOT/bin/fm-pr-poll.sh" "$stale"
   printf '# pre-change revision\n' >> "$stale"
   (
+    # shellcheck source=/dev/null
     . "$ROOT/bin/fm-pr-lib.sh"
     fm_pr_poll_prepare "$state" reg1 github "$url" github.com o/r 13 "$stale" \
       && fm_pr_poll_publish_prepared
