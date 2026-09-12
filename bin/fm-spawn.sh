@@ -1356,6 +1356,11 @@ if [ "$RELAUNCH" -eq 1 ]; then
     HERDR_SES=$(fm_meta_get "$RELAUNCH_META" herdr_session)
     HERDR_WORKSPACE_ID=$(fm_meta_get "$RELAUNCH_META" herdr_workspace_id)
     HERDR_TAB_ID=$(fm_meta_get "$RELAUNCH_META" herdr_tab_id)
+    # A rehome falls through to the creation branch below, whose launcher
+    # placement resolves the parent from THIS PROCESS's own HERDR_PANE_ID.
+    # Taking the recorded task pane id here would claim the gone task pane as
+    # the launcher; only an ordinary relaunch, which never creates an endpoint,
+    # needs the recorded value for the republished record.
     if [ "$RELAUNCH_REHOME" -ne 1 ]; then
       HERDR_PANE_ID=$(fm_meta_get "$RELAUNCH_META" herdr_pane_id)
     fi
