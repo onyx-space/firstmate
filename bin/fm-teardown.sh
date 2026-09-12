@@ -2481,21 +2481,33 @@ teardown_claim_is_retired() {  # <meta> <slot>
 # never treated as consent.
 teardown_retire_superseded_slot_claim() {  # <record-meta> <record-id> <other-meta> <other-id> <slot>
   local record_meta=$1 record_id=$2 other=$3 other_id=$4 slot=$5
-  local marker lock owner_started record_claim other_claim
+  local marker lock owner_started record_claim other_claim held target
   marker=$(teardown_claim_retirement_path "$other")
   owner_started=$(teardown_slot_owner_started_at "$slot") || return 1
   record_claim=$(teardown_meta_slot_claim_epoch "$record_meta") || return 1
   other_claim=$(teardown_meta_slot_claim_epoch "$other") || return 1
   lock=$(fm_meta_lock_path "$other") || return 1
-  fm_lock_acquire_wait "$lock" || return 1
-  if [ -e "$marker" ] || [ -L "$marker" ]; then
-    if ! teardown_claim_retirement_address_matches "$marker" "$record_id" "$other_id" "$slot"; then
-      echo "REFUSED: $marker already records a different retirement, and teardown never overwrites another claim's retirement record; nothing was changed." >&2
+  held=0
+  [ "$lock" != "$META_LOCK" ] || held=1
+  for target in "${DESCENDANT_LOCK_PATHS[@]}"; do
+    [ "$target" != "$lock" ] || held=1
+  done
+  if [ "$held" = 0 ]; then
+    fm_lock_acquire_wait "$lock" || return 1
+    if [ "$(teardown_meta_slot_claim_epoch "$other")" != "$other_claim" ]; then
+      echo "REFUSED: task $other_id's claim on $slot changed while teardown waited for that record's lock; nothing was changed." >&2
       fm_lock_release "$lock"
       return 1
     fi
+  fi
+  if [ -e "$marker" ] || [ -L "$marker" ]; then
+    if ! teardown_claim_retirement_address_matches "$marker" "$record_id" "$other_id" "$slot"; then
+      echo "REFUSED: $marker already records a different retirement, and teardown never overwrites another claim's retirement record; nothing was changed." >&2
+      [ "$held" = 1 ] || fm_lock_release "$lock"
+      return 1
+    fi
     if teardown_claim_retirement_matches "$marker" "$record_id" "$other_id" "$slot" "$other_claim"; then
-      fm_lock_release "$lock"
+      [ "$held" = 1 ] || fm_lock_release "$lock"
       RETIRED_CLAIM_RECORDS+=("$marker")
       return 0
     fi
@@ -2503,10 +2515,10 @@ teardown_retire_superseded_slot_claim() {  # <record-meta> <record-id> <other-me
   if ! teardown_claim_retirement_write "$marker" "$record_id" "$other_id" "$slot" \
       "$owner_started" "$record_claim" "$other_claim"; then
     echo "REFUSED: could not record the retirement of task $other_id's claim on $slot; nothing was changed." >&2
-    fm_lock_release "$lock"
+    [ "$held" = 1 ] || fm_lock_release "$lock"
     return 1
   fi
-  fm_lock_release "$lock"
+  [ "$held" = 1 ] || fm_lock_release "$lock"
   RETIRED_CLAIM_RECORDS+=("$marker")
   return 0
 }
