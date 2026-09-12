@@ -1256,6 +1256,54 @@ test_remote_sync_without_target_follows_host_copy() {
   pass "R7 a sync with no target still follows the host's own refreshed Firstmate copy"
 }
 
+# --- R12: a remote update hands the code root's pass to its on-disk copy -----
+# cmd_update runs the code root's fm-update.sh; a run that ends on "updated" was
+# a pre-advance copy whose post-advance logic did not run, so the pass is handed
+# to the copy now on disk exactly once. A run that ends "already current" - what
+# every self-re-exec'ing copy does - hands off no further and cannot loop.
+test_remote_update_reruns_code_root_once() {
+  local w c1 out rc
+  w=$(new_remote_world remote-update-rerun)
+  c1=$(head_of "$w/main")
+  add_remote_home "$w" sm "$w/coderoot" "$c1"
+  # The host-local control plane runs from THIS host's Firstmate copy - the
+  # production SCRIPT_DIR - so seed that copy with the real bin and replace only
+  # its on-disk fm-update.sh with the fixture below.
+  cp -R "$ROOT/bin/." "$w/coderoot/bin/"
+  : > "$w/rerun.log"
+  cat > "$w/coderoot/bin/fm-update.sh" <<'SH'
+#!/usr/bin/env bash
+set -eu
+log=$FM_TEST_RERUN_LOG
+n=$(grep -c '^run$' "$log" 2>/dev/null || true)
+printf '%s\n' run >> "$log"
+if [ "${n:-0}" -eq 0 ]; then
+  printf 'firstmate: updated abc1234..def5678 instr=bin\n'
+else
+  printf 'firstmate: already current\n'
+fi
+printf 'reread-firstmate: no\n'
+printf 'restart-secondmates: none\n'
+printf 'nudge-secondmates: none\n'
+SH
+  chmod +x "$w/coderoot/bin/fm-update.sh"
+
+  rc=0
+  out=$(FM_HOME="$w/sm" FM_ROOT_OVERRIDE="$w/coderoot" FM_TEST_RERUN_LOG="$w/rerun.log" \
+    "$w/coderoot/bin/fm-remote-secondmate-control.sh" update sm 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "the remote update failed: $out"
+  [ "$(grep -c '^run$' "$w/rerun.log")" -eq 2 ] \
+    || fail "the code root's pass was not handed to the on-disk copy exactly once"
+
+  rc=0
+  out=$(FM_HOME="$w/sm" FM_ROOT_OVERRIDE="$w/coderoot" FM_TEST_RERUN_LOG="$w/rerun.log" \
+    "$w/coderoot/bin/fm-remote-secondmate-control.sh" update sm 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "the repeated remote update failed: $out"
+  [ "$(grep -c '^run$' "$w/rerun.log")" -eq 3 ] \
+    || fail "an already-current code root handed off again"
+  pass "R12 a remote update hands the code root's pass to its on-disk copy once"
+}
+
 # --- R8: session start hands the remote host the PRIMARY's commit --------------
 # The deferred network stage is the only startup path that reaches a remote home,
 # so this drives the real bin/fm-bootstrap.sh network phase across the real
@@ -1419,6 +1467,7 @@ test_remote_sync_skips_unimportable_target
 test_remote_sync_skips_dirty_diverged_and_feature_branch
 test_remote_sync_without_target_follows_host_copy
 test_remote_sync_refreshes_home_polls
+test_remote_update_reruns_code_root_once
 test_bootstrap_syncs_remote_home_to_primary_commit
 test_bootstrap_reports_outdated_host_actionably
 test_remote_launch_does_not_retarget_host_copy

@@ -30,6 +30,12 @@
 # found, and a task it could not refresh is named with the
 # "bin/fm-pr-check.sh <id> <pr-url>" re-arm command to run by hand.
 #
+# The advance also replaces this script's own on-disk bytes, so the process that
+# performed it may be a previous release's; after the main-repo fast-forward it
+# therefore hands the rest of the run to the copy now on disk exactly once
+# (FM_UPDATE_REEXEC guards that handoff), so the newest post-advance logic - the
+# poll re-anchor below and the settled-home hook - always runs in the same pass.
+#
 # The fast-forward mechanics live in bin/fm-ff-lib.sh (base_mode "origin" here);
 # the same library drives local and remote parent-targeted secondmate sync, so
 # there is one ff implementation, not several.
@@ -92,7 +98,25 @@ fi
 
 reread_firstmate="no"
 ff_target "$FM_ROOT" "firstmate" origin no no
-if [ "$FF_STATUS" = "updated" ] && [ -n "$FF_INSTR" ]; then
+
+# A fast-forward replaces this script on disk while this process keeps reading
+# the inode it started with, so everything after the advance could still be the
+# previous release's bytes. Hand the rest of the run to the copy now on disk
+# exactly once, so the newest post-advance logic always runs; the marker makes
+# that handoff terminal, and the reread verdict the pre-advance pass observed
+# rides across it.
+if [ "$FF_STATUS" = "updated" ] && [ -z "${FM_UPDATE_REEXEC:-}" ] \
+  && [ -f "$FM_ROOT/bin/fm-update.sh" ] && [ -x "$FM_ROOT/bin/fm-update.sh" ] \
+  && [ ! -L "$FM_ROOT/bin/fm-update.sh" ]; then
+  if [ -n "$FF_INSTR" ]; then
+    export FM_UPDATE_REEXEC_REREAD=yes
+  fi
+  export FM_UPDATE_REEXEC=1
+  exec "$FM_ROOT/bin/fm-update.sh"
+fi
+
+if { [ "$FF_STATUS" = "updated" ] && [ -n "$FF_INSTR" ]; } \
+  || [ "${FM_UPDATE_REEXEC_REREAD:-}" = "yes" ]; then
   reread_firstmate="yes"
 fi
 

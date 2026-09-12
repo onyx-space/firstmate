@@ -578,6 +578,53 @@ test_registry_backstop_mate_poll_refreshed() {
   pass "T13 a registry-backstop home's armed poll is refreshed without a live window"
 }
 
+# --- T14: the update hands its post-advance half to the on-disk copy once ----
+# A fast-forward replaces bin/fm-update.sh on disk while the running process
+# keeps the inode it started with, so everything after the advance could be the
+# previous release's bytes and its poll re-anchor never runs. The updater must
+# hand the rest of the run to the copy now on disk exactly once - the marker is
+# terminal, the summary prints once, and an already-current run does not hand
+# off at all.
+test_update_reexecs_the_on_disk_copy_once() {
+  local w out reexec_count
+  w=$(new_world t14)
+  mkdir -p "$w/seed/bin"
+  cat > "$w/seed/bin/fm-update.sh" <<SH
+#!/usr/bin/env bash
+set -eu
+[ "\${FM_UPDATE_REEXEC:-}" = 1 ] || { echo "on-disk updater ran without the reexec marker" >&2; exit 9; }
+printf '%s\n' reexec >> "$w/reexec.log"
+exec "$ROOT/bin/fm-update.sh"
+SH
+  chmod +x "$w/seed/bin/fm-update.sh"
+  git -C "$w/seed" add -A
+  git -C "$w/seed" commit -qm reexec-fixture
+  git -C "$w/seed" push -q origin main
+  git -C "$w/main" pull -q origin main
+  bump_origin "$w" instr
+
+  out=$(run_update "$w")
+
+  reexec_count=$(grep -c '^reexec$' "$w/reexec.log" 2>/dev/null || true)
+  [ "$reexec_count" = 1 ] \
+    || fail "the on-disk updater ran $reexec_count times, expected exactly 1"
+  [ "$(printf '%s\n' "$out" | grep -c '^reread-firstmate:')" = 1 ] \
+    || fail "the caller summary was not printed exactly once"
+  assert_contains "$out" "firstmate: updated " "the firstmate advance was not reported"
+  assert_contains "$out" "reread-firstmate: yes" \
+    "the pre-advance reread verdict was lost across the handoff"
+
+  out=$(run_update "$w")
+
+  reexec_count=$(grep -c '^reexec$' "$w/reexec.log" 2>/dev/null || true)
+  [ "$reexec_count" = 1 ] || fail "an already-current run handed off anyway"
+  [ "$(printf '%s\n' "$out" | grep -c '^reread-firstmate:')" = 1 ] \
+    || fail "the repeated run did not print the caller summary exactly once"
+  assert_contains "$out" "firstmate: already current" "the repeated run was not a no-op advance"
+  assert_contains "$out" "reread-firstmate: no" "an already-current firstmate did not need a reread"
+  pass "T14 the update hands the post-advance half to the on-disk copy once"
+}
+
 test_updates_main_and_secondmate
 test_reread_gate_is_instruction_only
 test_bin_only_advance_restarts
@@ -594,5 +641,6 @@ test_firstmate_detached_head_skipped
 test_unsafe_secondmate_home_skipped_before_git_update
 test_mate_poll_refresh_uses_the_mate_template
 test_registry_backstop_mate_poll_refreshed
+test_update_reexecs_the_on_disk_copy_once
 
 echo "# all fm-update tests passed"

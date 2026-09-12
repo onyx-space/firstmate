@@ -698,6 +698,17 @@ run_watcher_bounded() {
       FM_POLL=0.02 FM_HEARTBEAT=999999 FM_SIGNAL_GRACE=0 PATH="$fakebin:$BASE_PATH" "$WATCH" "$@"
 }
 
+# Drive the real arm layer (which re-anchors this home's armed polls before it
+# starts a watcher) with the same bounded alarmer as run_watcher_bounded.
+run_arm_bounded() {
+  local home=$1 fakebin=$2 check_interval=${FM_TEST_CHECK_INTERVAL:-0}
+  local alarm=${FM_TEST_WATCH_ALARM:-20}
+  shift 2
+  perl -e 'my $alarm=shift; my $pid=fork; die unless defined $pid; if (!$pid) { exec @ARGV } local $SIG{ALRM}=sub { kill "TERM", $pid; waitpid $pid, 0; exit 124 }; alarm $alarm; waitpid $pid, 0; alarm 0; exit($? >> 8)' "$alarm" \
+    env FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_CHECK_INTERVAL="$check_interval" FM_CHECK_TIMEOUT=1 \
+      FM_POLL=0.02 FM_HEARTBEAT=999999 FM_SIGNAL_GRACE=0 PATH="$fakebin:$BASE_PATH" "$ROOT/bin/fm-watch-arm.sh" "$@"
+}
+
 test_rejected_metacharacter_bytes_are_inert() {
   local dir family rc before after
   dir=$(make_case rejected-metacharacters)
@@ -1780,6 +1791,45 @@ test_pr_poll_template_refresh() {
   pass "an upgrade migrates already-armed polls and never drops one silently"
 }
 
+# An upgrade can leave a state poll on the previous template bytes - including
+# the upgrade that first ships the re-anchor, whose own pass ran the previous
+# release's bytes. The next supervision arm must re-anchor this home's armed
+# polls before the watcher it starts can run a check, so that sweep executes the
+# poll instead of rejecting it and waking firstmate on every cycle.
+test_arm_reanchors_armed_polls() {
+  local dir home state id url head stale out rc
+  dir=$(make_case arm-poll-refresh)
+  home="$dir/home"
+  state="$home/state"
+  id=task-a
+  url=https://github.com/o/r/pull/21
+  head=0123456789abcdef0123456789abcdef01234567
+  write_poll_meta "$state" "$id" "$url"
+  printf 'pr_head=%s\n' "$head" >> "$state/$id.meta"
+  stale="$dir/pre-upgrade-template.sh"
+  cp "$POLL" "$stale"
+  printf '# pre-upgrade revision\n' >> "$stale"
+  fm_pr_poll_prepare "$state" "$id" github "$url" github.com o/r 21 "$stale" \
+    || fail "could not prepare the pre-upgrade poll fixture"
+  fm_pr_poll_publish_prepared || fail "could not publish the pre-upgrade poll fixture"
+  cmp -s "$POLL" "$state/$id.check.sh" && fail "the fixture check was not pre-upgrade bytes"
+
+  set +e
+  out=$(FM_TEST_GH_STATE=MERGED run_arm_bounded "$home" "$dir/fakebin" 2> "$dir/arm.err")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "the arm did not surface the poll's wake: $(cat "$dir/arm.err")"
+  case "$out" in
+    *"$id.check.sh"*merged*) ;;
+    *) fail "the arm's watcher did not run the re-anchored poll: $out" ;;
+  esac
+  case "$out" in
+    *"rejected unauthenticated state checks"*) fail "the arm let the first sweep reject the stale poll" ;;
+  esac
+  assert_poll_absent "$state" "$id"
+  pass "an arm re-anchors this home's armed polls before its first check sweep"
+}
+
 seed_canonical_poll() {
   local dir=$1 id=$2 url=$3 template=${4:-$POLL} state provider host path number
   state="$dir/home/state"
@@ -2515,6 +2565,7 @@ test_parser_matrix
 test_gitlab_merge_watch
 test_http_forge_merge_watch
 test_pr_poll_template_refresh
+test_arm_reanchors_armed_polls
 test_merged_poll_retires_once
 test_merged_poll_reregistration_after_notification_is_absorbed
 test_merged_poll_retries_a_failed_upward_report

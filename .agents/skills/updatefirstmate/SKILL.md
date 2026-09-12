@@ -98,10 +98,11 @@ This touches only the firstmate repo and its own worktrees, never anything under
 An upgrade changes `bin/fm-pr-poll.sh`, and every already-armed merge watch is a byte copy of that file: the watcher runs the tracked template and refuses a task's state copy whose bytes differ from it.
 Left alone, each home this pass advanced would reject its own watches on the next check sweep, stop polling them, and wake firstmate about it on every sweep until each poll was re-armed by hand - and a merge landing in that window would be missed.
 
-`bin/fm-update.sh` therefore re-anchors each advanced home's armed polls onto the new bytes as part of the pass, through `bin/fm-pr-poll-refresh.sh`; each home's copy is anchored against that home's own `bin/fm-pr-poll.sh`, which is the template its watcher executes, and a remote mate's own host runs the refresh for its home after the fast-forward.
+`bin/fm-update.sh` therefore re-anchors each advanced home's armed polls onto the new bytes in the same pass, through `bin/fm-pr-poll-refresh.sh`; each home's copy is anchored against that home's own `bin/fm-pr-poll.sh`, which is the template its watcher executes, and a remote mate's own host runs the refresh for its home after the fast-forward.
+`bin/fm-watch-arm.sh` also re-anchors this home's armed polls just before it starts a watcher cycle, so the first check sweep after an upgrade can never reject a state copy the pass did not reach.
 That refresh is idempotent, needs no network and no forge CLI, and never writes task metadata, so a recorded `pr=` and `pr_head=` survive untouched.
-So the answer to "does an update miss a merge?" is **no** for a poll armed before the update: its watch is re-anchored before supervision resumes on the new bytes.
-A task the refresh could not re-anchor is named in the run output with the `bin/fm-pr-check.sh <id> <pr-url>` command that re-arms it by hand; nothing is dropped silently.
+**One-time rollout note:** the update that first carries this re-anchoring is still executed by the previous release's bytes, which touch no poll, so for that one upgrade each home is re-anchored at its next supervision arm instead; a merge that lands before that arm is observed at that arm rather than on the check that follows the update. From the next update on, the answer to "does an update miss a merge?" is **no** for a poll armed before the update: its watch is re-anchored inside the pass, before supervision resumes on the new bytes.
+A task the refresh could not re-anchor is named in the run output (and on the arm's stderr) with the `bin/fm-pr-check.sh <id> <pr-url>` command that re-arms it by hand; nothing is dropped silently.
 
 ## Safety
 

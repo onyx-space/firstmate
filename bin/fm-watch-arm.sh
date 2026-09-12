@@ -407,6 +407,16 @@ if [ "$mode" = handling-delivered ]; then
   exit $?
 fi
 
+# Re-anchor this home's armed merge polls against the tracked template before a
+# watcher cycle can run its first check. An upgrade can replace the template and
+# leave a state copy on the previous bytes at different moments - including the
+# upgrade that first ships this migration, whose own update ran the previous
+# release's bytes - and the next check would reject that copy and wake firstmate
+# on every sweep. Idempotent, no network, and never fatal to arming.
+if [ -f "$SCRIPT_DIR/fm-pr-poll-refresh.sh" ] && [ ! -L "$SCRIPT_DIR/fm-pr-poll-refresh.sh" ]; then
+  "$SCRIPT_DIR/fm-pr-poll-refresh.sh" --state "$STATE" --template "$SCRIPT_DIR/fm-pr-poll.sh" >/dev/null || true
+fi
+
 if [ "$mode" = restart ]; then
   # Home-scoped stop: only the watcher pid recorded in THIS home's lock.
   lock_pid=$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)
