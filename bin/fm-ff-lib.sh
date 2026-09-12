@@ -398,10 +398,15 @@ FF_SEEN_HOMES=""
 # firstmate repo itself (FM_ROOT) is never processed as its own secondmate, and
 # each resolved home is processed at most once.
 #
-# Two optional caller hooks fire from here, each at most once per resolved home:
+# Three optional caller hooks fire from here, each at most once per resolved home:
 #   fm_ff_after_instruction_update <id> <home> <window> <instr>
 #     the nudge-shaped hook: only for an advance that changed the instruction
 #     surface, and only under nudge_requires_instr=yes.
+#   fm_ff_after_home_settled <id> <home> <status> <instr>
+#     the tracked-bytes hook: for every home this sweep left AT the base, live
+#     window or not, whether it advanced (status=updated) or was already there
+#     (status=current). /updatefirstmate uses it to re-anchor a home's armed
+#     merge polls against that home's own poll template.
 #   fm_ff_after_secondmate_settled <id> <home> <window> <status> <instr>
 #     the settled-state hook: for every home this sweep left AT the base with a
 #     live window, whether it advanced (status=updated) or was already there
@@ -429,6 +434,10 @@ process_secondmate() {
   FF_SEEN_HOMES="$FF_SEEN_HOMES $home_real"
 
   ff_target "$home_real" "secondmate $id" "$base_mode" yes yes
+  if { [ "$FF_STATUS" = "updated" ] || [ "$FF_STATUS" = "current" ]; } \
+    && type fm_ff_after_home_settled >/dev/null 2>&1; then
+    fm_ff_after_home_settled "$id" "$home_real" "$FF_STATUS" "$FF_INSTR"
+  fi
   if [ -n "$window" ] && { [ "$FF_STATUS" = "updated" ] || [ "$FF_STATUS" = "current" ]; } \
     && type fm_ff_after_secondmate_settled >/dev/null 2>&1; then
     fm_ff_after_secondmate_settled "$id" "$home_real" "$window" "$FF_STATUS" "$FF_INSTR"

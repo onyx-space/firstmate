@@ -521,6 +521,63 @@ test_mate_poll_refresh_uses_the_mate_template() {
   pass "T12 a mate's armed poll is re-anchored against the mate's own template"
 }
 
+# --- T13: a registry-backstop home's armed poll is refreshed too --------------
+# A mate registered in data/secondmates.md with no live state meta is advanced
+# via the registry backstop, which passes an empty window; the refresh must not
+# be window-gated, or that home keeps pre-change poll bytes and its watcher
+# rejects them on every sweep.
+test_registry_backstop_mate_poll_refreshed() {
+  local w c1 c2 state url head stale out
+  w=$(new_world t13)
+  printf 'state/\n' > "$w/seed/.gitignore"
+  git -C "$w/seed" add -A
+  git -C "$w/seed" commit -qm gitignore-state
+  git -C "$w/seed" push -q origin main
+  git -C "$w/main" pull -q origin main
+  c1=$(git -C "$w/main" rev-parse HEAD)
+
+  mkdir -p "$w/seed/bin"
+  cp "$ROOT/bin/fm-pr-lib.sh" "$w/seed/bin/fm-pr-lib.sh"
+  cp "$ROOT/bin/fm-pr-poll.sh" "$w/seed/bin/fm-pr-poll.sh"
+  cp "$ROOT/bin/fm-pr-poll-refresh.sh" "$w/seed/bin/fm-pr-poll-refresh.sh"
+  chmod +x "$w/seed/bin/fm-pr-poll.sh" "$w/seed/bin/fm-pr-poll-refresh.sh"
+  git -C "$w/seed" add -A
+  git -C "$w/seed" commit -qm poll-contract
+  git -C "$w/seed" push -q origin main
+  git -C "$w/main" pull -q origin main
+  c2=$(git -C "$w/main" rev-parse HEAD)
+  [ "$c1" != "$c2" ] || fail "precondition: the registry home must advance onto the poll contract"
+
+  git -C "$w/main" worktree add -q --detach "$w/reg1" "$c1"
+  printf 'reg1\n' > "$w/reg1/.fm-secondmate-home"
+  printf -- '- reg1 - registry-only (home: %s/reg1; scope: x; projects: p; added 2026-06-23)\n' "$w" \
+    > "$w/home/data/secondmates.md"
+
+  state="$w/reg1/state"
+  url=https://github.com/o/r/pull/13
+  head=0123456789abcdef0123456789abcdef01234567
+  mkdir -p "$state"
+  printf 'kind=secondmate\nharness=claude\nhome=%s\npr=%s\npr_head=%s\n' \
+    "$w/reg1" "$url" "$head" > "$state/reg1.meta"
+  stale="$w/seed/stale-poll.sh"
+  cp "$ROOT/bin/fm-pr-poll.sh" "$stale"
+  printf '# pre-change revision\n' >> "$stale"
+  (
+    . "$ROOT/bin/fm-pr-lib.sh"
+    fm_pr_poll_prepare "$state" reg1 github "$url" github.com o/r 13 "$stale" \
+      && fm_pr_poll_publish_prepared
+  ) || fail "could not arm the registry home's stale poll fixture"
+
+  out=$(run_update "$w")
+
+  assert_contains "$out" "secondmate reg1: updated " "registry-only secondmate was not advanced"
+  assert_contains "$out" "refreshed: reg1 $url" "the registry-only home's armed poll was not refreshed"
+  cmp -s "$w/reg1/bin/fm-pr-poll.sh" "$state/reg1.check.sh" \
+    || fail "the registry-only home's watch was not re-anchored to its own template"
+  grep -qxF "pr_head=$head" "$state/reg1.meta" || fail "the refresh dropped the recorded head"
+  pass "T13 a registry-backstop home's armed poll is refreshed without a live window"
+}
+
 test_updates_main_and_secondmate
 test_reread_gate_is_instruction_only
 test_bin_only_advance_restarts
@@ -536,5 +593,6 @@ test_firstmate_wrong_branch_skipped
 test_firstmate_detached_head_skipped
 test_unsafe_secondmate_home_skipped_before_git_update
 test_mate_poll_refresh_uses_the_mate_template
+test_registry_backstop_mate_poll_refreshed
 
 echo "# all fm-update tests passed"

@@ -158,19 +158,22 @@ claim_settled_secondmate() {  # <id>
   fi
 }
 
+# A mate's home fast-forwarded to the same tracked files, so its own armed
+# polls carry the same stale bytes. This hook is not window-gated, so a mate
+# between restarts (registry backstop, no live meta) is migrated too, from its
+# own bin/fm-pr-poll.sh; a task it could not refresh is re-armed by hand.
+fm_ff_after_home_settled() {  # <id> <home> <status> <instr>
+  [ -d "$2/state" ] && [ ! -L "$2/state" ] || return 0
+  local poll_refresh_rc=0
+  "$SCRIPT_DIR/fm-pr-poll-refresh.sh" --state "$2/state" --template "$2/bin/fm-pr-poll.sh" || poll_refresh_rc=$?
+  [ "$poll_refresh_rc" -eq 0 ] \
+    || echo "error: secondmate $1 still has armed merge polls that need bin/fm-pr-check.sh by hand (named above)" >&2
+  return 0
+}
+
 # bin/fm-ff-lib.sh calls this for each local home it left AT the base with a live
 # endpoint - status "updated" or "current" alike. A skipped home never gets here.
 fm_ff_after_secondmate_settled() {  # <id> <home> <window> <status> <instr>
-  # A mate's home fast-forwarded to the same tracked files, so its own armed
-  # polls carry the same stale bytes and are migrated from here while its
-  # agent is still the pre-update one. Its own "poll-refresh:" line lands in
-  # this command's output; a task it could not refresh is re-armed by hand.
-  if [ -d "$2/state" ] && [ ! -L "$2/state" ]; then
-    local poll_refresh_rc=0
-    "$SCRIPT_DIR/fm-pr-poll-refresh.sh" --state "$2/state" --template "$2/bin/fm-pr-poll.sh" || poll_refresh_rc=$?
-    [ "$poll_refresh_rc" -eq 0 ] \
-      || echo "error: secondmate $1 still has armed merge polls that need bin/fm-pr-check.sh by hand (named above)" >&2
-  fi
   claim_settled_secondmate "$1"
 }
 
