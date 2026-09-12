@@ -2601,6 +2601,7 @@ teardown_slot_claim_is_uncontested() {  # <record-meta> <other-meta> <slot>
 # resolved physically, like every other record comparison here.
 teardown_record_is_non_occupant() {  # <meta>
   local meta=$1 dir base candidate candidate_dir
+  [ "${#TEARDOWN_NON_OCCUPANT_METAS[@]}" -eq 0 ] && return 1
   dir=$(canonical_existing_dir "${meta%/*}" 2>/dev/null) || return 1
   base=${meta##*/}
   for candidate in "${TEARDOWN_NON_OCCUPANT_METAS[@]}"; do
