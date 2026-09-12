@@ -1574,6 +1574,44 @@ test_superseded_claim_retirement_is_rewritten_for_a_later_incarnation() {
   pass "fm-teardown: a later occupant rewrites a predecessor's stale retirement, and a repeat does not"
 }
 
+# A retirement statement is about the record, not the slot it was written for: a
+# task respawned on another recycled pool slot that collides there again has that
+# statement rewritten for the current claim.
+test_superseded_claim_retirement_is_rewritten_after_the_task_moves_slots() {
+  local dir id=current-task other=stale-task owner rc slot marker
+
+  dir=$(make_case retire-moved-slot)
+  mark_case_as_treehouse_pool "$dir"
+  make_slot_copy_landed "$dir"
+  make_treehouse_return_fail "$dir"
+  owner=1789161032
+  set_case_slot_owner "$dir" "$owner"
+  slot=$(case_slot_path "$dir")
+  marker="$dir/home/state/$other.claim-retired"
+  write_retirement_marker "$dir" "$other" "$dir/previous-slot" "earlier-occupant" "$other" "$((owner - 46800))"
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=main:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+    "spawn_gen=s$((owner + 12)).4242.1"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+    "spawn_gen=s$((owner - 100)).4242.2"
+  write_tmux_agent_stub "$dir" "main:fm-$id=alive" "other:fm-$other=alive"
+
+  rc=0
+  run_case_with_flags "$dir" "$id" --retire-superseded-claim > "$dir/stdout" 2> "$dir/stderr" || rc=$?
+  [ "$rc" -ne 0 ] || fail "a failing slot return still reported a successful teardown"
+  assert_contains "$(cat "$marker")" "retired_by=$id" \
+    "a statement written for an earlier slot must not block the later retirement"
+  assert_contains "$(cat "$marker")" "retired_claim_epoch=$((owner - 100))" \
+    "the retirement must describe the incarnation it retired"
+  assert_contains "$(cat "$marker")" "slot=$slot" \
+    "the rewritten statement must name the slot it actually retired"
+
+  pass "fm-teardown: a retirement is rewritten after the task moves to another slot"
+}
+
 # Under --retire-superseded-claim a record the pool's own owner record shows as
 # the superseded side is cleaned up without returning the slot its occupant
 # holds. The same record still refuses without the flag (see
@@ -1653,6 +1691,55 @@ test_forced_secondmate_retires_a_descendant_claim_without_returning_the_slot() {
     || fail "exactly the occupant must return the shared slot, got $returns return(s): $(cat "$dir/runtime.log")"
 
   pass "fm-teardown: a forced secondmate retires a descendant claim and only the occupant returns the slot"
+}
+
+# A descendant whose own claim was retired no longer holds its slot: forced
+# secondmate cleanup removes the record without returning or touching that slot,
+# exactly as the record's own teardown would.
+test_forced_secondmate_skips_the_return_for_a_retired_descendant() {
+  local dir mate=mate-x home stale=stale-child owner rc slot
+
+  dir=$(make_case retire-descendant-marker)
+  mark_case_as_treehouse_pool "$dir"
+  make_slot_copy_landed "$dir"
+  owner=1789161032
+  set_case_slot_owner "$dir" "$owner"
+  slot=$(case_slot_path "$dir")
+  home="$dir/mate-home"
+  mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects"
+  printf '%s\n' "$mate" > "$home/.fm-secondmate-home"
+  write_local_parent_record "$home" "$dir/home"
+  fm_write_meta "$dir/home/state/$mate.meta" \
+    "window=firstmate:fm-$mate" "endpoint_task_id=$mate" \
+    "worktree=$home" "home=$home" "project=$dir/project" "kind=secondmate"
+  printf '%s\n' "- $mate - fixture (home: $home; scope: test; projects: project; added 2026-01-01)" \
+    > "$dir/home/data/secondmates.md"
+  fm_write_meta "$home/state/$stale.meta" \
+    "window=main:fm-$stale" "endpoint_task_id=$stale" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+    "spawn_gen=s$((owner - 100)).4242.1"
+  fm_write_meta "$home/state/$stale.claim-retired" \
+    "retired_by=earlier-occupant" \
+    "retired_task=$stale" \
+    "slot=$slot" \
+    "home=$dir/home" \
+    "operator=test" \
+    "retired_at=2026-01-01T00:00:00Z" \
+    "owner_started_at=$owner" \
+    "retiring_claim_epoch=$((owner + 12))" \
+    "retired_claim_epoch=$((owner - 100))" \
+    "reason=claim began before the pool current owner took the slot"
+  write_tmux_agent_stub "$dir" "firstmate:fm-$mate=alive" "main:fm-$stale=alive"
+
+  rc=0
+  run_case "$dir" "$mate" > "$dir/stdout" 2> "$dir/stderr" || rc=$?
+  [ "$rc" -eq 0 ] \
+    || fail "forced secondmate teardown could not clean up a retired descendant: $(cat "$dir/stderr")"
+  assert_absent "$home/state/$stale.meta" "the retired descendant was not cleaned up"
+  grep -Fq "treehouse <return>" "$dir/runtime.log" \
+    && fail "a descendant whose claim was retired returned the slot anyway"
+
+  pass "fm-teardown: forced cleanup skips the return for a descendant whose claim was retired"
 }
 
 test_shared_pool_slot_refusal_names_the_live_record_to_tear_down_first() {
@@ -2029,8 +2116,10 @@ test_superseded_claim_retirement_is_recorded_once_and_lets_the_retired_record_cl
 test_superseded_claim_retirement_is_bound_to_the_incarnation_it_retires
 test_superseded_claim_retirement_restamps_a_stale_marker_for_the_current_incarnation
 test_superseded_claim_retirement_is_rewritten_for_a_later_incarnation
+test_superseded_claim_retirement_is_rewritten_after_the_task_moves_slots
 test_slot_claim_superseded_side_takes_the_retire_flag_without_returning
 test_forced_secondmate_retires_a_descendant_claim_without_returning_the_slot
+test_forced_secondmate_skips_the_return_for_a_retired_descendant
 test_shared_pool_slot_refusal_names_the_live_record_to_tear_down_first
 test_cross_home_pool_slot_collision_refuses
 test_sole_slot_record_still_tears_down

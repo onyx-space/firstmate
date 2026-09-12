@@ -324,7 +324,6 @@ ID=$1
 FORCE=
 LEGACY_RECORD_GIVEN=0
 RETIRE_SUPERSEDED_CLAIM=0
-RETIRED_CLAIM_RECORDS=()
 TEARDOWN_NON_OCCUPANT_METAS=()
 shift
 while [ "$#" -gt 0 ]; do
@@ -2378,19 +2377,17 @@ teardown_claim_retirement_path() {  # <other-meta>
   printf '%s.claim-retired\n' "${1%.meta}"
 }
 
-# True when a record at that path describes this very claim: the retired task is
-# the record it sits beside, and the slot is this one, whatever retirer or
-# incarnation it recorded. It separates a stale statement about this claim, which
-# a later retirement may restamp, from an unrelated record, which is never
-# overwritten and never read as consent.
-teardown_claim_retirement_names_claim() {  # <marker> <other-id> <slot>
-  local marker=$1 id=$2 slot=$3 claimed
+# True when a record at that path retired a claim of the record it sits beside,
+# whatever retirer, slot, or incarnation it recorded. It separates a stale
+# statement about this record's claim, which a later retirement may restamp, from
+# an unrelated record, which is never overwritten and never read as consent. The
+# recorded slot is informational: a task respawned on another pool slot is still
+# the same record, and a statement that retired its earlier claim must not lock
+# that record out of being retired again.
+teardown_claim_retirement_names_claim() {  # <marker> <other-id>
+  local marker=$1
   [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
-  [ "$(fm_meta_get "$marker" retired_task)" = "$id" ] || return 1
-  claimed=$(fm_meta_get "$marker" slot)
-  [ -n "$claimed" ] || return 1
-  [ "$claimed" = "$slot" ] \
-    || [ "$(canonical_existing_dir "$claimed" 2>/dev/null)" = "$slot" ]
+  [ "$(fm_meta_get "$marker" retired_task)" = "$2" ]
 }
 
 # The address that makes a record at that path this run's own statement: the same
@@ -2512,7 +2509,7 @@ teardown_retire_superseded_slot_claim() {  # <record-meta> <record-id> <other-me
     fi
   fi
   if [ -e "$marker" ] || [ -L "$marker" ]; then
-    if ! teardown_claim_retirement_names_claim "$marker" "$other_id" "$slot"; then
+    if ! teardown_claim_retirement_names_claim "$marker" "$other_id"; then
       echo "REFUSED: $marker records another claim's retirement, and teardown never overwrites an unrelated record; task $other_id's claim was not retired." >&2
       [ "$held" = 1 ] || fm_lock_release "$lock"
       return 1
@@ -2524,7 +2521,6 @@ teardown_retire_superseded_slot_claim() {  # <record-meta> <record-id> <other-me
         return 1
       fi
       [ "$held" = 1 ] || fm_lock_release "$lock"
-      RETIRED_CLAIM_RECORDS+=("$marker")
       return 0
     fi
   fi
@@ -2535,7 +2531,6 @@ teardown_retire_superseded_slot_claim() {  # <record-meta> <record-id> <other-me
     return 1
   fi
   [ "$held" = 1 ] || fm_lock_release "$lock"
-  RETIRED_CLAIM_RECORDS+=("$marker")
   return 0
 }
 
@@ -2675,9 +2670,6 @@ require_exclusive_worktree_slot_record() {
         fi
         echo "REFUSED: task $record_id's recorded worktree $slot is also task $other_id's recorded $field." >&2
         echo "Returning that pool slot would kill $other_id's processes and reset its copy, so that pool slot was not released - not even with --force." >&2
-        if [ "${#RETIRED_CLAIM_RECORDS[@]}" -gt 0 ]; then
-          echo "A retirement already recorded this run stands: ${RETIRED_CLAIM_RECORDS[*]}" >&2
-        fi
         if teardown_slot_release_order_applies "$record_meta" "$other"; then
           echo "One record can release it: task $other_id's recorded endpoint is still alive. Tear down task $other_id first, then re-run this one." >&2
         fi
@@ -3389,7 +3381,7 @@ preflight_firstmate_home_herdr_children() {  # <home>
 }
 
 cleanup_firstmate_home_children() {
-  local home=$1 sub_state child_meta child_id child_t child_wt child_proj child_kind child_home child_backend child_orca_worktree_id child_return_rc child_busy_gen
+  local home=$1 sub_state child_meta child_id child_t child_wt child_slot child_proj child_kind child_home child_backend child_orca_worktree_id child_return_rc child_busy_gen
   sub_state="$home/state"
   [ -d "$sub_state" ] || return 0
   for child_meta in "$sub_state"/*.meta; do
@@ -3446,7 +3438,10 @@ cleanup_firstmate_home_children() {
       fi
       fm_backend_remove_worktree "$child_backend" "$child_orca_worktree_id" || return 1
     elif [ -n "$child_wt" ] && [ -d "$child_wt" ]; then
-      if teardown_record_is_non_occupant "$child_meta"; then
+      child_slot=$(canonical_existing_dir "$child_wt" 2>/dev/null) || child_slot=
+      if [ -n "$child_slot" ] && teardown_claim_is_retired "$child_meta" "$child_slot"; then
+        echo "teardown: child task $child_id's claim on $child_wt was retired at $(teardown_claim_retirement_path "$child_meta"); cleaning up the record without returning or touching that slot" >&2
+      elif teardown_record_is_non_occupant "$child_meta"; then
         echo "teardown: child task $child_id's claim on $child_wt is superseded by the slot's current occupant; cleaning up the record without returning or touching that slot" >&2
       else
         validate_child_worktree_for_removal "$child_wt" "$child_proj" >/dev/null || return 1
