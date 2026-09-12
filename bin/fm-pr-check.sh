@@ -4,7 +4,9 @@
 # The watcher check source is byte-for-byte bin/fm-pr-poll.sh; task and PR data
 # live only in a private sidecar and are never interpolated into shell source.
 # A GitHub pull request URL and a GitLab merge request URL are both accepted,
-# including a merge request on a self-hosted GitLab instance.
+# including a merge request on a self-hosted GitLab instance, plus an
+# instance-hosted HTTP forge pull request (Gitea and its descendants) on a host
+# this home names in its own config/pr-forge-hosts.
 # Usage: fm-pr-check.sh <task-id> <pr-url>
 set -eu
 
@@ -60,12 +62,59 @@ if [ "$PROVIDER" = gitlab ] && ! command -v glab >/dev/null 2>&1; then
   exit 1
 fi
 
+# An instance-hosted HTTP forge is read over the network rather than through a
+# vendor CLI, and the poll is silent on every error by design, so arming is
+# again the one point where an unusable setup can be reported. This home's
+# acceptance of such a host is its config/pr-forge-hosts list, whose one
+# implementation lives in the poll itself: the poll answers this single intake
+# question, so the same bytes that would later read the merge decide whether the
+# host is acceptable at all, and then a live read proves the host is reachable
+# and the token is accepted before a watch is armed on it.
+if [ "$PROVIDER" = gitea ]; then
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "error: watching an instance-hosted forge pull request requires curl on PATH" >&2
+    exit 1
+  fi
+  if ! FORGE_TOKEN=$(FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-pr-poll.sh" --forge-token "$URL"); then
+    echo "error: refusing to arm a watch for $URL" >&2
+    exit 1
+  fi
+  FORGE_BASE="${URL%%://*}://$HOST"
+  FORGE_AUTH=$(mktemp "${TMPDIR:-/tmp}/fm-pr-check.XXXXXX") || exit 1
+  chmod 0600 "$FORGE_AUTH" || { rm -f -- "$FORGE_AUTH"; exit 1; }
+  printf 'Authorization: token %s\n' "$FORGE_TOKEN" > "$FORGE_AUTH" \
+    || { rm -f -- "$FORGE_AUTH"; exit 1; }
+  FORGE_CODE=$(curl -m 10 -s -o /dev/null -w '%{http_code}' \
+    -H "@$FORGE_AUTH" -H 'Accept: application/json' \
+    "$FORGE_BASE/api/v1/repos/$PROJECT_PATH/pulls/$NUMBER" 2>/dev/null) || FORGE_CODE=000
+  rm -f -- "$FORGE_AUTH"
+  case "$FORGE_CODE" in
+    200) ;;
+    401|403)
+      printf 'error: %s refused the token configured for it (HTTP %s)\n' "$FORGE_BASE" "$FORGE_CODE" >&2
+      printf 'error: check the "%s <token>" line in %s/config/pr-forge-hosts\n' "$FORGE_BASE" "$FM_HOME" >&2
+      exit 1
+      ;;
+    404)
+      printf 'error: %s was not found (HTTP 404)\n' "$URL" >&2
+      printf 'error: check the pull request number, and that the configured token can read that repository\n' >&2
+      exit 1
+      ;;
+    *)
+      printf 'error: %s could not be reached (HTTP %s)\n' "$FORGE_BASE" "$FORGE_CODE" >&2
+      printf 'error: check that the forge is running and reachable from this machine before arming a watch on it\n' >&2
+      exit 1
+      ;;
+  esac
+fi
+
 "$FM_ROOT/bin/fm-guard.sh" || true
 
 # pr_head is recorded only when the forge's CLI can supply it. gh exposes the
 # head commit as a selectable field; plain glab exposes it only inside its JSON
 # output, which would need a JSON processor firstmate does not require, so a
-# GitLab task records no pr_head. Both consumers already treat it as optional:
+# GitLab task records no pr_head, and an instance-hosted forge pull request
+# records none either. Both consumers already treat it as optional:
 # bin/fm-teardown.sh reads the head from the forge at teardown rather than from
 # metadata and falls back to its provider-agnostic content check, and
 # bin/fm-review-diff.sh resolves the head from the remote when none is recorded.

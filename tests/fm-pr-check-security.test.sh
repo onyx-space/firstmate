@@ -175,10 +175,43 @@ printf '%s\n' "$*" >> "$FM_TEST_GLAB_LOG"
 printf 'title:\tfixture merge request\nstate:\t%s\nauthor:\tsomeone\n' "${FM_TEST_GLAB_STATE:-opened}"
 SH
   chmod +x "$fakebin/gh" "$fakebin/gh-axi" "$fakebin/glab"
+  # curl stands in for an HTTP forge read: it writes the body to -o or stdout,
+  # then the -w format's value, and logs the request line plus the contents of
+  # any -H @file header file, which is how a forge token reaches it.
+  cat > "$fakebin/curl" <<'SH'
+#!/usr/bin/env bash
+[ -n "${FM_TEST_CURL_LOG:-}" ] && printf '%s\n' "$*" >> "$FM_TEST_CURL_LOG"
+out=
+fmt=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) out=$2; shift 2 ;;
+    -w) fmt=$2; shift 2 ;;
+    -H)
+      case "$2" in
+        @*) cat "${2#@}" >> "${FM_TEST_CURL_LOG:-/dev/null}" 2>/dev/null
+            printf '%s\n' "$2" >> "${FM_TEST_CURL_LOG:-/dev/null}" ;;
+      esac
+      shift 2
+      ;;
+    -m) shift 2 ;;
+    *) shift ;;
+  esac
+done
+if [ -n "$out" ] && [ "$out" != /dev/null ]; then
+  printf '%s' "${FM_TEST_CURL_BODY:-}" > "$out"
+elif [ -z "$out" ]; then
+  printf '%s' "${FM_TEST_CURL_BODY:-}"
+fi
+[ -z "$fmt" ] || printf '%s' "${FM_TEST_CURL_CODE:-200}"
+exit "${FM_TEST_CURL_RC:-0}"
+SH
+  chmod +x "$fakebin/curl"
   : > "$dir/gh.log"
   : > "$dir/gh-axi.log"
   : > "$dir/glab.log"
   : > "$dir/guard.log"
+  : > "$dir/curl.log"
   printf '%s\n' "$dir"
 }
 
@@ -207,6 +240,7 @@ run_check_entry() {
   FM_ROOT_OVERRIDE="$dir/root" FM_HOME="$dir/home" \
     FM_TEST_GUARD_LOG="$dir/guard.log" FM_TEST_GH_LOG="$dir/gh.log" \
     FM_TEST_GH_AXI_LOG="$dir/gh-axi.log" FM_TEST_GLAB_LOG="$dir/glab.log" \
+    FM_TEST_CURL_LOG="$dir/curl.log" \
     PATH="$dir/fakebin:$BASE_PATH" \
     "$PR_CHECK" "$@"
 }
@@ -217,6 +251,7 @@ run_merge_entry() {
   FM_ROOT_OVERRIDE="$dir/root" FM_HOME="$dir/home" \
     FM_TEST_GUARD_LOG="$dir/guard.log" FM_TEST_GH_LOG="$dir/gh.log" \
     FM_TEST_GH_AXI_LOG="$dir/gh-axi.log" FM_TEST_GLAB_LOG="$dir/glab.log" \
+    FM_TEST_CURL_LOG="$dir/curl.log" \
     PATH="$dir/fakebin:$BASE_PATH" \
     "$PR_MERGE" "$@"
 }
@@ -240,6 +275,29 @@ INVALID_URLS=(
   'https://.gitlab.com/g/p/-/merge_requests/1'
   'https://gitlab.com./g/p/-/merge_requests/1'
   'http://gitlab.com/g/p/-/merge_requests/1'
+  'http://x.example/o/r/pulls/0'
+  'http://x.example/o/r/pulls/01'
+  'http://x.example/o/r/pulls/1/'
+  'http://x.example/o/r/pulls/1?x=1'
+  'http://x.example/o/r/pulls/1#note'
+  'http://x.example/o/pulls/1'
+  'http://x.example/a/b/c/pulls/1'
+  'http://x.example/o/r/pulls'
+  'http://user@x.example/o/r/pulls/1'
+  'http://x.example:0/o/r/pulls/1'
+  'http://x.example:70000/o/r/pulls/1'
+  'http://X.example/o/r/pulls/1'
+  'HTTP://x.example/o/r/pulls/1'
+  'http://.x.example/o/r/pulls/1'
+  'http://x.example./o/r/pulls/1'
+  'http://x.example//r/pulls/1'
+  'http://x.example/o//pulls/1'
+  'http://x.example/../r/pulls/1'
+  'http://x.example/o/../pulls/1'
+  'https://github.com/o/r/pulls/1'
+  'https://gitlab.com/g/p/-/pulls/1'
+  ' http://x.example/o/r/pulls/1'
+  'http://x.example/o/r/pulls/1 '
   'https://github.com/o/r/pull/1/'
   ' https://github.com/o/r/pull/1'
   'https://github.com/o/r/pull/1 '
@@ -347,7 +405,7 @@ UNSAFE_LIFECYCLE_IDS=(
 )
 
 test_parser_matrix() {
-  local id row url owner repo number
+  local id row url owner repo number host path
   while IFS='|' read -r url owner repo number; do
     [ -n "$url" ] || continue
     fm_pr_url_parse "$url" || fail "parser rejected canonical URL"
@@ -375,6 +433,19 @@ https://gitlab.com/group/project/-/merge_requests/1|gitlab.com|group/project|1
 https://gitlab.com/group/sub/deep/project/-/merge_requests/42|gitlab.com|group/sub/deep/project|42
 https://gitlab.example.co.uk/g/p/-/merge_requests/7|gitlab.example.co.uk|g/p|7
 https://code.internal/team/tools/ci-runner/-/merge_requests/123456|code.internal|team/tools/ci-runner|123456
+EOF
+  while IFS='|' read -r url host path number; do
+    [ -n "$url" ] || continue
+    fm_pr_url_parse "$url" || fail "parser rejected a canonical instance-hosted forge URL"
+    [ "$FM_PR_PROVIDER" = gitea ] || fail "parser did not tag an instance-hosted forge URL as gitea"
+    [ "$FM_PR_URL" = "$url" ] || fail "parser changed an instance-hosted forge URL"
+    [ "$FM_PR_HOST" = "$host" ] || fail "parser returned wrong instance-hosted forge authority"
+    [ "$FM_PR_PATH" = "$path" ] || fail "parser returned wrong instance-hosted forge project path"
+    [ "$FM_PR_NUMBER" = "$number" ] || fail "parser returned wrong instance-hosted forge number"
+  done <<'EOF'
+http://forge.internal:3000/team/widget/pulls/16|forge.internal:3000|team/widget|16
+http://127.0.0.1:8418/owner/repo/pulls/1|127.0.0.1:8418|owner/repo|1
+https://gitea.example/owner/repo-name_with.parts/pulls/123456|gitea.example|owner/repo-name_with.parts|123456
 EOF
   fm_pr_url_parse https://github.com/a/b/pull/1 || fail "parser rejected canonical URL"
   [ "$FM_PR_PROVIDER" = github ] || fail "parser did not tag a pull request URL as github"
@@ -1396,6 +1467,188 @@ EOF
   pass "GitLab merge requests are followed on any instance and never wake falsely"
 }
 
+# An instance-hosted HTTP forge (Gitea and its descendants) is not reached
+# through a vendor CLI, so the watch accepts only a host this home names in
+# config/pr-forge-hosts, refuses to arm when that host cannot be reached or its
+# token is refused, and reads a merged pull request from the instance's own
+# API. No live instance is involved here; the live run that armed a real one is
+# recorded in the PR that introduced this path.
+test_http_forge_merge_watch() {
+  local dir state url host path number out rc code nocurl bindir entry name
+  dir=$(make_case http-forge-merge-watch)
+  state="$dir/home/state"
+  url=http://forge.internal:3000/team/widget/pulls/16
+  host=forge.internal:3000
+  path=team/widget
+  number=16
+
+  write_task_meta "$dir" task-a
+
+  # A host this home has not named is refused at arming, the diagnostic names
+  # the exact line to add, and no poll is left behind.
+  set +e
+  run_check_entry "$dir" task-a "$url" > "$dir/stdout" 2> "$dir/stderr"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "armed an HTTP forge watch for a host this home has not named"
+  grep -qF "$host is not a configured forge host" "$dir/stderr" \
+    || fail "an unlisted HTTP forge host was refused without naming the host"
+  grep -qF "line to $dir/home/config/pr-forge-hosts" "$dir/stderr" \
+    || fail "an unlisted HTTP forge host did not name the file that fixes it"
+  [ ! -e "$state/task-a.check.sh" ] || fail "a refused HTTP forge arming left a poll armed"
+
+  # A named host is still refused when the forge will not accept its token, and
+  # that refusal points at the token line rather than at the pull request.
+  printf '%s\n' "http://$host forge-token" > "$dir/home/config/pr-forge-hosts"
+  for code in 401 403; do
+    set +e
+    FM_TEST_CURL_CODE="$code" run_check_entry "$dir" task-a "$url" > "$dir/stdout" 2> "$dir/stderr"
+    rc=$?
+    set -e
+    [ "$rc" -ne 0 ] || fail "armed an HTTP forge watch whose token the forge refused (HTTP $code)"
+    grep -qF "refused the token configured for it (HTTP $code)" "$dir/stderr" \
+      || fail "a refused HTTP forge token was not reported as a token problem"
+    grep -qF "\"http://$host <token>\" line in $dir/home/config/pr-forge-hosts" "$dir/stderr" \
+      || fail "a refused HTTP forge token did not point at the line to fix"
+    [ ! -e "$state/task-a.check.sh" ] || fail "a refused HTTP forge token left a poll armed"
+  done
+
+  # An unreachable host is refused too: arming is the one point where the poll's
+  # deliberate silence must not hide a watch that can never fire.
+  set +e
+  FM_TEST_CURL_CODE=000 FM_TEST_CURL_RC=7 run_check_entry "$dir" task-a "$url" \
+    > "$dir/stdout" 2> "$dir/stderr"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "armed an HTTP forge watch on a host that could not be reached"
+  grep -qF "could not be reached (HTTP 000)" "$dir/stderr" \
+    || fail "an unreachable HTTP forge host was not reported as unreachable"
+  [ ! -e "$state/task-a.check.sh" ] || fail "an unreachable HTTP forge host left a poll armed"
+
+  # A named, reachable host arms the poll, and the token reaches the instance as
+  # an authorization header read from a private file rather than from argv.
+  : > "$dir/curl.log"
+  run_check_entry "$dir" task-a "$url" > "$dir/stdout" 2> "$dir/stderr" \
+    || fail "arming a named, reachable HTTP forge host failed: $(cat "$dir/stderr")"
+  cmp -s "$POLL" "$state/task-a.check.sh" || fail "the armed HTTP forge check is not the static poll"
+  [ "$(cat "$state/task-a.pr-poll")" = "gitea
+$url
+$host
+$path
+$number" ] || fail "published HTTP forge sidecar bytes were not exact"
+  grep -qF "http://$host/api/v1/repos/$path/pulls/$number" "$dir/curl.log" \
+    || fail "arming did not read the pull request through the instance's own API"
+  grep -qF "Authorization: token forge-token" "$dir/curl.log" \
+    || fail "the configured token did not reach the forge as an authorization header"
+  ! grep -qE -- '-H .*forge-token' "$dir/curl.log" \
+    || fail "the configured token was passed on the curl command line"
+
+  # Only an exact merged true wakes: an unmerged, unreadable, or empty response
+  # stays silent, so a failed read can never be read as a merge.
+  out=$(FM_TEST_CURL_BODY='{"number":16,"state":"closed","merged":false}' run_poll "$dir")
+  [ -z "$out" ] || fail "HTTP forge poll emitted for an unmerged pull request"
+  out=$(FM_TEST_CURL_BODY='{"number":16,"state":"closed","merged":"true"}' run_poll "$dir")
+  [ -z "$out" ] || fail "HTTP forge poll emitted for a quoted merged value"
+  out=$(FM_TEST_CURL_BODY='{"number":16,"state":"closed"}' run_poll "$dir")
+  [ -z "$out" ] || fail "HTTP forge poll emitted for a response with no merged field"
+  out=$(FM_TEST_CURL_RC=22 run_poll "$dir")
+  [ -z "$out" ] || fail "HTTP forge poll emitted after a failed API read"
+  out=$(FM_TEST_CURL_BODY='{"number":16,"state":"closed","merged":true}' run_poll "$dir")
+  [ "$out" = merged ] || fail "HTTP forge poll did not emit exactly one merged line"
+
+  # A home that stops naming the host leaves the poll silent rather than waking
+  # on a host it no longer trusts.
+  rm -f "$dir/home/config/pr-forge-hosts"
+  out=$(FM_TEST_CURL_BODY='{"merged":true}' run_poll "$dir")
+  [ -z "$out" ] || fail "HTTP forge poll emitted while its host was no longer configured"
+  printf '%s\n' "http://$host forge-token" > "$dir/home/config/pr-forge-hosts"
+
+  # A doctored sidecar cannot redirect the read at another host: the stored
+  # parts must rebuild the stored URL exactly.
+  printf '%s\n%s\n%s\n%s\n%s\n' gitea "$url" elsewhere.example "$path" "$number" \
+    > "$state/task-a.pr-poll"
+  out=$(FM_TEST_CURL_BODY='{"merged":true}' run_poll "$dir")
+  [ -z "$out" ] || fail "HTTP forge poll emitted for a sidecar whose host was swapped"
+
+  # The intake answer the arm path relies on is owned by the poll itself, so it
+  # prints the token for a named host and refuses one this home does not name.
+  out=$(FM_HOME="$dir/home" bash "$POLL" --forge-token "$url") \
+    || fail "the poll intake mode refused a host this home names"
+  [ "$out" = forge-token ] || fail "the poll intake mode printed the wrong token"
+  set +e
+  out=$(FM_HOME="$dir/home" bash "$POLL" --forge-token http://unlisted.example/o/r/pulls/1 \
+    2> "$dir/stderr")
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "the poll intake mode accepted a host this home does not name"
+  [ -z "$out" ] || fail "the poll intake mode printed a token for an unlisted host"
+  grep -qF 'unlisted.example is not a configured forge host' "$dir/stderr" \
+    || fail "the poll intake mode did not report an unlisted host"
+
+  # An absent curl is refused at arming instead of arming a watch that could
+  # only ever stay silent, exactly as an absent glab is.
+  nocurl="$dir/nocurl"
+  mkdir -p "$nocurl"
+  while IFS= read -r bindir; do
+    [ -d "$bindir" ] || continue
+    for entry in "$bindir"/*; do
+      [ -e "$entry" ] || continue
+      name=$(basename "$entry")
+      [ "$name" = curl ] && continue
+      [ -e "$nocurl/$name" ] || ln -s "$entry" "$nocurl/$name" 2>/dev/null
+    done
+  done <<EOF
+$dir/fakebin
+$(printf '%s\n' "$BASE_PATH" | tr ':' '\n')
+EOF
+  ! PATH="$nocurl" command -v curl >/dev/null 2>&1 \
+    || fail "the curl-free search path still resolved curl"
+  set +e
+  out=$(FM_ROOT_OVERRIDE="$dir/root" FM_HOME="$dir/home" FM_TEST_GUARD_LOG="$dir/guard.log" \
+    PATH="$nocurl" "$PR_CHECK" task-a "$url" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "arming an HTTP forge watch succeeded with curl absent"
+  case "$out" in
+    *"requires curl on PATH"*) ;;
+    *) fail "arming without curl did not report the missing tool" ;;
+  esac
+
+  # The watcher path carries this home through to the poll, so a merged pull
+  # request is retired and wakes exactly as the vendor providers do.
+  rm -f "$state/task-a.check.sh" "$state/task-a.pr-poll" "$state/task-a.pr-poll-registration"
+  write_poll_meta "$state" task-a "$url"
+  seed_canonical_poll "$dir" task-a "$url"
+  rm -f "$state/.last-check"
+  set +e
+  FM_TEST_CURL_BODY='{"number":16,"state":"closed","merged":true}' \
+    run_watcher_bounded "$dir/home" "$dir/fakebin" > "$dir/watch.out" 2> "$dir/watch.err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "HTTP forge merged retirement watcher failed: $(cat "$dir/watch.err")"
+  case "$(cat "$dir/watch.out")" in
+    check:*task-a.check.sh:*merged) ;;
+    *) fail "HTTP forge merged wake was missing" ;;
+  esac
+  assert_poll_absent "$state" task-a
+  grep -qxF "pr=$url" "$state/task-a.meta" || fail "HTTP forge retirement removed canonical metadata"
+
+  # The merge path refuses this forge rather than recording merge state for a
+  # merge it cannot perform.
+  write_task_meta "$dir" task-a
+  before=$(state_snapshot "$state")
+  set +e
+  run_merge_entry "$dir" task-a "$url" > "$dir/merge.out" 2> "$dir/merge.err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "the merge path did not refuse an instance-hosted forge pull request"
+  grep -qF "does not merge an instance-hosted forge pull request" "$dir/merge.err" \
+    || fail "the merge refusal did not say why it refused"
+  [ "$(state_snapshot "$state")" = "$before" ] \
+    || fail "the merge refusal changed task state"
+  pass "an HTTP forge pull request is watched on a named host and never merged"
+}
+
 seed_canonical_poll() {
   local dir=$1 id=$2 url=$3 template=${4:-$POLL} state provider host path number
   state="$dir/home/state"
@@ -2129,6 +2382,7 @@ test_gitlab_merged_poll_retires() {
 
 test_parser_matrix
 test_gitlab_merge_watch
+test_http_forge_merge_watch
 test_merged_poll_retires_once
 test_merged_poll_reregistration_after_notification_is_absorbed
 test_merged_poll_retries_a_failed_upward_report

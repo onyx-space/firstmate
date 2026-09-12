@@ -1985,7 +1985,10 @@ while :; do
           host=$FM_PR_POLL_SNAPSHOT_HOST
           path=$FM_PR_POLL_SNAPSHOT_PATH
           number=$FM_PR_POLL_SNAPSHOT_NUMBER
-          run_check_capture "$SCRIPT_DIR/fm-pr-poll.sh" --validated \
+          # FM_HOME is passed because an instance-hosted forge poll resolves its
+          # own token from this home's config/pr-forge-hosts, the same way the
+          # Relay poll above is told which home it is reading for.
+          FM_HOME="$FM_HOME" run_check_capture "$SCRIPT_DIR/fm-pr-poll.sh" --validated \
             "$provider" "$url" "$host" "$path" "$number" || exit 1
           out=$FM_CHECK_RESULT
         elif fm_custom_check_snapshot_prepare "$STATE" "$id"; then

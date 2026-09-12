@@ -541,6 +541,27 @@ The sweep must finish inside `FM_CHECK_TIMEOUT` (default 30), because a run the 
 So a budget larger than that timeout allows is cut down to what fits instead of being refused, and the cut is reported in the report line.
 A budget that is not a whole number from 1 to 120 is still refused outright.
 
+## HTTP forge hosts (config/pr-forge-hosts)
+
+`config/pr-forge-hosts` is an optional local, gitignored file naming the instance-hosted HTTP forges this home watches, one entry per line:
+
+```
+<base-url> <token>
+```
+
+`<base-url>` is the scheme and authority of the instance, for example `http://gitea.internal:3000`, and `<token>` is a token that can read the repositories whose pull requests this home follows.
+Blank lines, and lines whose first character is `#`, are ignored.
+A host that is not listed is refused, so an internal forge is opted into explicitly rather than by any URL that happens to look like one.
+
+An instance-hosted forge (Gitea and its descendants) is watched but never merged by firstmate.
+A pull request URL is `<base-url>/<owner>/<repository>/pulls/<number>`, and `bin/fm-pr-check.sh` is the only path that arms a watch on one.
+It asks [`bin/fm-pr-poll.sh`](../bin/fm-pr-poll.sh), the single owner of this file's format, for the token, then reads the pull request once through `GET <base-url>/api/v1/repos/<owner>/<repository>/pulls/<number>` before arming.
+A missing `curl`, a token the instance refuses, an unreachable instance, and a pull request the token cannot see each refuse arming with the fix named, because the armed poll stays silent on every error by design.
+The armed poll then reports a merge from the same API, so the landing reaches firstmate the way a GitHub merge does.
+The captain merges the pull request in the forge; [`bin/fm-pr-merge.sh`](../bin/fm-pr-merge.sh) refuses to merge one itself.
+
+GitHub and GitLab need no entry here: they are read through `gh` and `glab`, and a GitLab merge request may live on any instance.
+
 ## Mail plane (.env)
 
 The mail plane (bin/fm-mail.sh) reads unseen IMAP messages and sends one SMTP message.

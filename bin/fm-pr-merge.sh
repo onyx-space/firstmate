@@ -4,7 +4,10 @@
 # The full canonical URL is parsed by bin/fm-pr-lib.sh. A GitHub pull request is
 # addressed through gh-axi by the derived owner and repository; a GitLab merge
 # request is addressed through glab by the project URL rebuilt from the parsed
-# host and path, so any instance works and no host is hardcoded.
+# host and path, so any instance works and no host is hardcoded. An
+# instance-hosted forge pull request (Gitea and its descendants) has no merge
+# implementation here and is refused before any merge state is recorded, so the
+# watch armed by bin/fm-pr-check.sh is the only path that reports its landing.
 #
 # Merge method on GitHub defaults to --squash when the caller passes none of
 # --squash, --merge, --rebase, or --method after the optional -- separator.
@@ -97,6 +100,14 @@ if ! fm_pr_task_id_valid "$ID" || ! fm_pr_url_parse "$RAW_URL"; then
 fi
 URL=$FM_PR_URL
 PROVIDER=$FM_PR_PROVIDER
+# An instance-hosted forge pull request is watched, never merged, by firstmate:
+# this path has no merge implementation for it, and recording merge state for a
+# merge it cannot perform would be worse than refusing. The captain merges it in
+# the forge, and the poll armed by bin/fm-pr-check.sh reports the landing.
+if [ "$PROVIDER" = gitea ]; then
+  echo "error: firstmate does not merge an instance-hosted forge pull request; merge it in the forge and the armed merge poll reports the landing" >&2
+  exit 2
+fi
 PR_OWNER=$FM_PR_OWNER
 PR_REPO=$FM_PR_REPO
 PR_NUMBER=$FM_PR_NUMBER
