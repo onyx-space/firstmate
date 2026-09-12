@@ -471,6 +471,162 @@ test_unsafe_secondmate_home_skipped_before_git_update() {
   pass "T11 unsafe secondmate home is not fast-forwarded"
 }
 
+# --- T12: a mate's armed poll is re-anchored against the MATE's own template ---
+# A secondmate home's watcher byte-compares each armed watch against that home's
+# OWN bin/fm-pr-poll.sh. A migration that resolved the template from the parent
+# repo could anchor a mate's watch to differing parent bytes while reporting
+# success, and the mate's watcher would then reject it. Pin the per-home template.
+test_mate_poll_refresh_uses_the_mate_template() {
+  local w state url head stale out
+  w=$(new_world t12)
+  mkdir -p "$w/seed/bin"
+  cp "$ROOT/bin/fm-pr-lib.sh" "$w/seed/bin/fm-pr-lib.sh"
+  cp "$ROOT/bin/fm-pr-poll.sh" "$w/seed/bin/fm-pr-poll.sh"
+  cp "$ROOT/bin/fm-pr-poll-refresh.sh" "$w/seed/bin/fm-pr-poll-refresh.sh"
+  chmod +x "$w/seed/bin/fm-pr-poll.sh" "$w/seed/bin/fm-pr-poll-refresh.sh"
+  printf 'state/\n' > "$w/seed/.gitignore"
+  git -C "$w/seed" add -A
+  git -C "$w/seed" commit -qm poll-contract
+  git -C "$w/seed" push -q origin main
+  git -C "$w/main" pull -q origin main
+  add_sm "$w" sm1
+
+  state="$w/sm1/state"
+  url=https://github.com/o/r/pull/9
+  head=0123456789abcdef0123456789abcdef01234567
+  mkdir -p "$state"
+  printf 'kind=secondmate\nwindow=main:fm-sm1\nharness=claude\nhome=%s\npr=%s\npr_head=%s\n' \
+    "$w/sm1" "$url" "$head" > "$state/sm1.meta"
+  stale="$w/seed/stale-poll.sh"
+  cp "$ROOT/bin/fm-pr-poll.sh" "$stale"
+  printf '# pre-change revision\n' >> "$stale"
+  (
+    # shellcheck source=/dev/null
+    . "$ROOT/bin/fm-pr-lib.sh"
+    fm_pr_poll_prepare "$state" sm1 github "$url" github.com o/r 9 "$stale" \
+      && fm_pr_poll_publish_prepared
+  ) || fail "could not arm the mate's stale poll fixture"
+
+  # The parent's own copy differs from the mate's committed one, so anchoring to
+  # the parent would corrupt the mate's watch.
+  printf '# parent-only revision\n' >> "$w/main/bin/fm-pr-poll.sh"
+
+  out=$(run_update "$w")
+
+  assert_contains "$out" "refreshed: sm1 $url" "the mate's armed poll was not refreshed"
+  cmp -s "$w/sm1/bin/fm-pr-poll.sh" "$state/sm1.check.sh" \
+    || fail "the mate's watch was not re-anchored to the mate's own template"
+  cmp -s "$w/main/bin/fm-pr-poll.sh" "$state/sm1.check.sh" \
+    && fail "the mate's watch was anchored to the parent's template"
+  grep -qxF "pr_head=$head" "$state/sm1.meta" || fail "the refresh dropped the mate's recorded head"
+  pass "T12 a mate's armed poll is re-anchored against the mate's own template"
+}
+
+# --- T13: a registry-backstop home's armed poll is refreshed too --------------
+# A mate registered in data/secondmates.md with no live state meta is advanced
+# via the registry backstop, which passes an empty window; the refresh must not
+# be window-gated, or that home keeps pre-change poll bytes and its watcher
+# rejects them on every sweep.
+test_registry_backstop_mate_poll_refreshed() {
+  local w c1 c2 state url head stale out
+  w=$(new_world t13)
+  printf 'state/\n' > "$w/seed/.gitignore"
+  git -C "$w/seed" add -A
+  git -C "$w/seed" commit -qm gitignore-state
+  git -C "$w/seed" push -q origin main
+  git -C "$w/main" pull -q origin main
+  c1=$(git -C "$w/main" rev-parse HEAD)
+
+  mkdir -p "$w/seed/bin"
+  cp "$ROOT/bin/fm-pr-lib.sh" "$w/seed/bin/fm-pr-lib.sh"
+  cp "$ROOT/bin/fm-pr-poll.sh" "$w/seed/bin/fm-pr-poll.sh"
+  cp "$ROOT/bin/fm-pr-poll-refresh.sh" "$w/seed/bin/fm-pr-poll-refresh.sh"
+  chmod +x "$w/seed/bin/fm-pr-poll.sh" "$w/seed/bin/fm-pr-poll-refresh.sh"
+  git -C "$w/seed" add -A
+  git -C "$w/seed" commit -qm poll-contract
+  git -C "$w/seed" push -q origin main
+  git -C "$w/main" pull -q origin main
+  c2=$(git -C "$w/main" rev-parse HEAD)
+  [ "$c1" != "$c2" ] || fail "precondition: the registry home must advance onto the poll contract"
+
+  git -C "$w/main" worktree add -q --detach "$w/reg1" "$c1"
+  printf 'reg1\n' > "$w/reg1/.fm-secondmate-home"
+  printf -- '- reg1 - registry-only (home: %s/reg1; scope: x; projects: p; added 2026-06-23)\n' "$w" \
+    > "$w/home/data/secondmates.md"
+
+  state="$w/reg1/state"
+  url=https://github.com/o/r/pull/13
+  head=0123456789abcdef0123456789abcdef01234567
+  mkdir -p "$state"
+  printf 'kind=secondmate\nharness=claude\nhome=%s\npr=%s\npr_head=%s\n' \
+    "$w/reg1" "$url" "$head" > "$state/reg1.meta"
+  stale="$w/seed/stale-poll.sh"
+  cp "$ROOT/bin/fm-pr-poll.sh" "$stale"
+  printf '# pre-change revision\n' >> "$stale"
+  (
+    # shellcheck source=/dev/null
+    . "$ROOT/bin/fm-pr-lib.sh"
+    fm_pr_poll_prepare "$state" reg1 github "$url" github.com o/r 13 "$stale" \
+      && fm_pr_poll_publish_prepared
+  ) || fail "could not arm the registry home's stale poll fixture"
+
+  out=$(run_update "$w")
+
+  assert_contains "$out" "secondmate reg1: updated " "registry-only secondmate was not advanced"
+  assert_contains "$out" "refreshed: reg1 $url" "the registry-only home's armed poll was not refreshed"
+  cmp -s "$w/reg1/bin/fm-pr-poll.sh" "$state/reg1.check.sh" \
+    || fail "the registry-only home's watch was not re-anchored to its own template"
+  grep -qxF "pr_head=$head" "$state/reg1.meta" || fail "the refresh dropped the recorded head"
+  pass "T13 a registry-backstop home's armed poll is refreshed without a live window"
+}
+
+# --- T14: the update hands its post-advance half to the on-disk copy once ----
+# A fast-forward replaces bin/fm-update.sh on disk while the running process
+# keeps the inode it started with, so everything after the advance could be the
+# previous release's bytes and its poll re-anchor never runs. The updater must
+# hand the rest of the run to the copy now on disk exactly once - the marker is
+# terminal, the summary prints once, and an already-current run does not hand
+# off at all.
+test_update_reexecs_the_on_disk_copy_once() {
+  local w out reexec_count
+  w=$(new_world t14)
+  mkdir -p "$w/seed/bin"
+  cat > "$w/seed/bin/fm-update.sh" <<SH
+#!/usr/bin/env bash
+set -eu
+[ "\${FM_UPDATE_REEXEC:-}" = 1 ] || { echo "on-disk updater ran without the reexec marker" >&2; exit 9; }
+printf '%s\n' reexec >> "$w/reexec.log"
+exec "$ROOT/bin/fm-update.sh"
+SH
+  chmod +x "$w/seed/bin/fm-update.sh"
+  git -C "$w/seed" add -A
+  git -C "$w/seed" commit -qm reexec-fixture
+  git -C "$w/seed" push -q origin main
+  git -C "$w/main" pull -q origin main
+  bump_origin "$w" instr
+
+  out=$(run_update "$w")
+
+  reexec_count=$(grep -c '^reexec$' "$w/reexec.log" 2>/dev/null || true)
+  [ "$reexec_count" = 1 ] \
+    || fail "the on-disk updater ran $reexec_count times, expected exactly 1"
+  [ "$(printf '%s\n' "$out" | grep -c '^reread-firstmate:')" = 1 ] \
+    || fail "the caller summary was not printed exactly once"
+  assert_contains "$out" "firstmate: updated " "the firstmate advance was not reported"
+  assert_contains "$out" "reread-firstmate: yes" \
+    "the pre-advance reread verdict was lost across the handoff"
+
+  out=$(run_update "$w")
+
+  reexec_count=$(grep -c '^reexec$' "$w/reexec.log" 2>/dev/null || true)
+  [ "$reexec_count" = 1 ] || fail "an already-current run handed off anyway"
+  [ "$(printf '%s\n' "$out" | grep -c '^reread-firstmate:')" = 1 ] \
+    || fail "the repeated run did not print the caller summary exactly once"
+  assert_contains "$out" "firstmate: already current" "the repeated run was not a no-op advance"
+  assert_contains "$out" "reread-firstmate: no" "an already-current firstmate did not need a reread"
+  pass "T14 the update hands the post-advance half to the on-disk copy once"
+}
+
 test_updates_main_and_secondmate
 test_reread_gate_is_instruction_only
 test_bin_only_advance_restarts
@@ -485,5 +641,8 @@ test_registry_backstop_dedup_and_self_exclusion
 test_firstmate_wrong_branch_skipped
 test_firstmate_detached_head_skipped
 test_unsafe_secondmate_home_skipped_before_git_update
+test_mate_poll_refresh_uses_the_mate_template
+test_registry_backstop_mate_poll_refreshed
+test_update_reexecs_the_on_disk_copy_once
 
 echo "# all fm-update tests passed"

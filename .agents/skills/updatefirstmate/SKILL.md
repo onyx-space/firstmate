@@ -49,6 +49,10 @@ This touches only the firstmate repo and its own worktrees, never anything under
    `restart-secondmates:` carries every live mate the pass left on the latest commit, whether it advanced or was already there.
    A mate reaches neither set only because its home was skipped, because it has no live endpoint recorded here, or because its endpoint was positively classified as dead or missing - none of those need any action from you.
 
+   The same run prints one `poll-refresh: refreshed=<n> current=<n> failed=<n>` line for this home and for each secondmate home the pass left on the latest commit, because an upgrade also re-anchors that home's already-armed PR merge polls (see below).
+   A remote mate's host prints its own `poll-refresh:` line for that mate's home, and the parent carries it through.
+   A task it could not re-anchor is named above that line with the exact `bin/fm-pr-check.sh <id> <pr-url>` command to run by hand.
+
 2. **Re-read AGENTS.md if your own instructions changed.**
    When the updater printed `reread-firstmate: yes`, the tracked instruction surface (`AGENTS.md`, `bin/`, or `.agents/skills/`) just advanced under you.
    **Read `AGENTS.md` now** (CLAUDE.md is a real `@AGENTS.md` pointer to it) to refresh your operating instructions before doing anything else, so you are acting on the new instructions rather than the stale ones you were started with.
@@ -88,6 +92,18 @@ This touches only the firstmate repo and its own worktrees, never anything under
    For example: "Captain, firstmate and both second mates are now on the latest."
    Say plainly when a mate got the message rather than a clean reload, and why - never let a partial reload read as a full one.
    Surface any skipped target whose reason needs the captain's attention - for instance a home with its own un-landed changes (diverged) or local edits (dirty), which were left untouched on purpose.
+
+## Armed PR merge polls
+
+An upgrade changes `bin/fm-pr-poll.sh`, and every already-armed merge watch is a byte copy of that file: the watcher runs the tracked template and refuses a task's state copy whose bytes differ from it.
+Left alone, each home this pass advanced would reject its own watches on the next check sweep, stop polling them, and wake firstmate about it on every sweep until each poll was re-armed by hand - and a merge landing in that window would be missed.
+
+`bin/fm-update.sh` therefore re-anchors this home's armed polls and those of every secondmate home it left on the latest commit onto the new bytes in the same pass, through `bin/fm-pr-poll-refresh.sh`; each home's copy is anchored against that home's own `bin/fm-pr-poll.sh`, which is the template its watcher executes, and a remote mate's own host runs the refresh for its home after the fast-forward.
+`bin/fm-watch-arm.sh` also re-anchors this home's armed polls just before it starts a watcher cycle, so the first check sweep after an upgrade can never reject a state copy the pass did not reach.
+That refresh is idempotent, needs no network and no forge CLI, and never writes task metadata, so a recorded `pr=` and `pr_head=` survive untouched.
+**One-time rollout note:** the update that first carries this re-anchoring is still executed by the previous release's bytes, which touch no poll, so for that one upgrade each home is re-anchored at its next supervision arm instead; a merge that lands before that arm is observed at that arm rather than on the check that follows the update.
+From the next update on, the answer to "does an update miss a merge?" is **no** for a poll armed before the update: its watch is re-anchored inside the pass, before supervision resumes on the new bytes.
+A task the refresh could not re-anchor is named in the run output (and on the arm's stderr) with the `bin/fm-pr-check.sh <id> <pr-url>` command that re-arms it by hand; nothing is dropped silently.
 
 ## Safety
 

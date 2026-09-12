@@ -32,6 +32,12 @@
 # code root from origin. Because this home is a standalone clone, the target
 # commit is imported here first and the fast-forward itself is the shared one in
 # bin/fm-ff-lib.sh, so the clean, ancestry, and branch guards have a single owner.
+# A sync that leaves the home on the target commit also re-anchors that home's
+# armed PR merge polls against the home's own bin/fm-pr-poll.sh, through the
+# home's own bin/fm-pr-poll-refresh.sh, so the remote path migrates in the same
+# pass as the local one. cmd_update hands the code root's update pass to the
+# on-disk bin/fm-update.sh once when its fast-forward advanced, so the newest
+# post-advance logic runs there too.
 # A private parent-route state directory stores only the remote secondmate
 # agent's endpoint record; the home's own
 # state/*.meta remains reserved for workers the secondmate supervises.
@@ -345,7 +351,7 @@ import_home_commit() { # <home> <commit>
 }
 
 cmd_sync() {
-  local id=$1 commit report out
+  local id=$1 commit report out refresh_script poll_refresh_rc
   validate_id "$id"
   validate_home "$id"
   if [ "$#" -ge 2 ]; then
@@ -363,6 +369,20 @@ cmd_sync() {
   out=$(cat "$report")
   rm -f "$report"
   case "$FF_STATUS" in
+    updated|current) ;;
+    *) die "remote secondmate home sync skipped: ${out#remote home: skipped: }" ;;
+  esac
+  # Each armed poll is a byte copy of this home's own bin/fm-pr-poll.sh, which
+  # is what its watcher executes, so the home re-anchors itself from the copy it
+  # just fast-forwarded to. A failed refresh does not fail the sync.
+  refresh_script="$TARGET_HOME/bin/fm-pr-poll-refresh.sh"
+  if [ -f "$refresh_script" ] && [ ! -L "$refresh_script" ]; then
+    poll_refresh_rc=0
+    "$refresh_script" --state "$TARGET_HOME/state" --template "$TARGET_HOME/bin/fm-pr-poll.sh" || poll_refresh_rc=$?
+    [ "$poll_refresh_rc" -eq 0 ] \
+      || echo "error: remote secondmate home $TARGET_HOME still has armed merge polls that need bin/fm-pr-check.sh by hand (named above)" >&2
+  fi
+  case "$FF_STATUS" in
     # instr= names the watched instruction paths this advance changed, with no
     # spaces so the whole result stays one parseable line. The parent needs it to
     # decide whether the running agent must reload; an older parent ignores the
@@ -370,12 +390,11 @@ cmd_sync() {
     # rather than as "nothing changed".
     updated) printf 'synced: %s instr=%s\n' "$commit" "$(printf '%s' "$FF_INSTR" | tr -d ' ')" ;;
     current) printf 'current: %s\n' "$commit" ;;
-    *) die "remote secondmate home sync skipped: ${out#remote home: skipped: }" ;;
   esac
 }
 
 cmd_update() {
-  local id=$1 update_out root_status
+  local id=$1 update_out root_status root_updated reexec_out
   validate_id "$id"
   validate_home "$id"
   if ! update_out=$(FM_HOME="$FM_ROOT" FM_ROOT_OVERRIDE="$FM_ROOT" \
@@ -384,13 +403,25 @@ cmd_update() {
     die "remote code root update failed"
   fi
   root_status=$(printf '%s\n' "$update_out" | grep '^firstmate:' | tail -1)
+  root_updated=0
   case "$root_status" in
-    'firstmate: updated '*|'firstmate: already current'*) ;;
+    'firstmate: updated '*) root_updated=1 ;;
+    'firstmate: already current'*) ;;
     *)
       [ -z "$update_out" ] || printf '%s\n' "$update_out" >&2
       die "remote code root did not complete a safe origin update"
       ;;
   esac
+  # The code root's fm-update.sh is replaced by the advance it performs, so a
+  # run that ends on "updated" was a pre-advance copy whose post-advance logic
+  # did not run. Hand the pass to the copy now on disk exactly once.
+  if [ "$root_updated" -eq 1 ] && [ -z "${FM_UPDATE_ROOT_REEXEC:-}" ]; then
+    if ! reexec_out=$(FM_HOME="$FM_ROOT" FM_ROOT_OVERRIDE="$FM_ROOT" FM_UPDATE_ROOT_REEXEC=1 \
+      "$SCRIPT_DIR/fm-update.sh" 2>&1); then
+      [ -z "$reexec_out" ] || printf '%s\n' "$reexec_out" >&2
+      die "remote code root re-run failed"
+    fi
+  fi
   cmd_sync "$id"
 }
 

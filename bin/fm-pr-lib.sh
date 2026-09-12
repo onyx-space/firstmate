@@ -8,7 +8,10 @@
 # arbitrarily nested group/subgroup/project namespace on GitLab. A GitLab
 # project can sit at any depth, so no owner/repository pair can address one and
 # the sidecar carries the whole path instead. GitLab also runs on self-hosted
-# instances, so the host is part of that identity rather than a constant. Every
+# instances, so the host is part of that identity rather than a constant. An
+# HTTP forge (Gitea and its descendants) also runs on an instance-local host,
+# and an internal instance is commonly plain HTTP, so that identity carries the
+# scheme and the host's optional port too. Every
 # consumer re-derives the identity from the stored URL and refuses any record
 # whose parts do not reconstruct that exact URL.
 #
@@ -109,14 +112,16 @@ fm_task_id_creation_valid() {
   [ "${#id}" -le 64 ]
 }
 
-# GitLab serves self-hosted instances, so the host is part of the identity
-# rather than a constant. It is accepted only as a lowercase DNS name with no
-# userinfo, port, or trailing dot, which keeps one canonical spelling per MR.
+# An instance-hosted forge is reached at its own host rather than at a vendor
+# constant, so that host is part of the identity. It is accepted only as a
+# lowercase DNS name or IPv4 literal with no userinfo and no trailing dot,
+# which keeps one canonical spelling per record; a provider branch whose URL
+# also carries a port validates that port inside that branch.
 # github.com is refused here even though its shape is otherwise valid: it is
-# GitHub's own host and never a GitLab instance, so a URL like
+# GitHub's own host and never another forge's instance, so a URL like
 # https://github.com/o/r/-/merge_requests/1 (a typo'd or spoofed GitHub URL)
-# would otherwise be armed as a GitLab watch that can never succeed.
-fm_pr_gitlab_host_valid() {
+# would otherwise be armed as a watch that can never succeed.
+fm_pr_forge_instance_host_valid() {
   local host=${1-} label
   local LC_ALL=C
   local -a labels
@@ -156,15 +161,60 @@ fm_pr_gitlab_path_valid() {
   done
 }
 
+# Gitea and its descendants serve a pull request at
+# /<owner>/<repository>/pulls/<number> on an instance-local host, and an
+# internal instance is commonly plain HTTP rather than TLS, so the scheme and
+# the authority are both part of the identity. Which hosts this home is willing
+# to talk to is deliberately NOT this parser's question: this is the shape
+# alone, and bin/fm-pr-check.sh refuses any host this home has not named in its
+# own configuration, so a stored record stays re-readable without that list.
+# FM_PR_HOST therefore carries host[:port] here, and a consumer rebuilds the
+# exact URL from the stored URL rather than assuming https the way GitHub's
+# fixed scheme allows.
+fm_pr_http_forge_url_parse() {
+  local raw=${1-} authority owner repo port pattern
+  local LC_ALL=C
+  FM_PR_PROVIDER=
+  FM_PR_URL=
+  FM_PR_HOST=
+  FM_PR_PATH=
+  FM_PR_OWNER=
+  FM_PR_REPO=
+  FM_PR_NUMBER=
+  pattern='^(https?)://([A-Za-z0-9.-]{1,253}(:[0-9]{1,5})?)/([A-Za-z0-9._-]{1,100})/([A-Za-z0-9._-]{1,100})/pulls/([1-9][0-9]*)$'
+  [[ "$raw" =~ $pattern ]] || return 1
+  authority=${BASH_REMATCH[2]}
+  owner=${BASH_REMATCH[4]}
+  repo=${BASH_REMATCH[5]}
+  fm_pr_forge_instance_host_valid "${authority%%:*}" || return 1
+  case "$authority" in
+    *:*) port=${authority#*:}
+         [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || return 1
+         ;;
+  esac
+  [ "$owner" != . ] && [ "$owner" != .. ] || return 1
+  [ "$repo" != . ] && [ "$repo" != .. ] || return 1
+  FM_PR_PROVIDER=gitea
+  FM_PR_URL=$raw
+  FM_PR_HOST=$authority
+  FM_PR_PATH="$owner/$repo"
+  FM_PR_OWNER=$owner
+  FM_PR_REPO=$repo
+  FM_PR_NUMBER=${BASH_REMATCH[6]}
+}
+
 # Parse a canonical PR or MR URL into the provider-tagged identity. Validation
 # is strict and per provider: the GitHub username and repository rules are
-# unchanged, and GitLab gets its own host and namespace rules rather than a
-# loosened GitHub rule.
+# unchanged, and GitLab and the HTTP forge get their own host and namespace
+# rules rather than a loosened GitHub rule.
 #
 # FM_PR_OWNER and FM_PR_REPO are additionally set for github because
 # bin/fm-pr-merge.sh addresses GitHub by owner/repository. A gitlab URL leaves
 # them empty, and that path addresses the project by FM_PR_HOST and FM_PR_PATH
 # instead, so a merge request on any instance resolves without a hardcoded host.
+# An HTTP forge fills the same shape as github, except that its scheme is not
+# fixed the way GitHub's https is: FM_PR_HOST is the authority (host with its
+# optional port) and a consumer rebuilds the exact URL from the stored URL.
 fm_pr_url_parse() {
   local raw=${1-} pattern host path
   local LC_ALL=C
@@ -195,16 +245,22 @@ fm_pr_url_parse() {
   # "/-/merge_requests/". Any earlier separator therefore lands inside the
   # captured path, where the reserved "-" segment is refused.
   pattern='^https://([a-z0-9.-]{1,253})/([A-Za-z0-9._/-]+)/-/merge_requests/([1-9][0-9]*)$'
-  [[ "$raw" =~ $pattern ]] || return 1
-  host=${BASH_REMATCH[1]}
-  path=${BASH_REMATCH[2]}
-  fm_pr_gitlab_host_valid "$host" || return 1
-  fm_pr_gitlab_path_valid "$path" || return 1
-  FM_PR_PROVIDER=gitlab
-  FM_PR_URL=$raw
-  FM_PR_HOST=$host
-  FM_PR_PATH=$path
-  FM_PR_NUMBER=${BASH_REMATCH[3]}
+  if [[ "$raw" =~ $pattern ]]; then
+    host=${BASH_REMATCH[1]}
+    path=${BASH_REMATCH[2]}
+    fm_pr_forge_instance_host_valid "$host" || return 1
+    fm_pr_gitlab_path_valid "$path" || return 1
+    FM_PR_PROVIDER=gitlab
+    FM_PR_URL=$raw
+    FM_PR_HOST=$host
+    FM_PR_PATH=$path
+    FM_PR_NUMBER=${BASH_REMATCH[3]}
+    return 0
+  fi
+  # Neither vendor shape: the remaining accepted class is an instance-hosted
+  # HTTP forge, whose own parser owns its scheme, authority, and namespace
+  # rules. Its result is this function's result.
+  fm_pr_http_forge_url_parse "$raw"
 }
 
 fm_pr_head_valid() {
