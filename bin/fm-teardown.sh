@@ -142,14 +142,15 @@
 # it, when, on what evidence, and why - which this guard and that record's own
 # teardown both honor. That record describes one claim, not a permanent tombstone
 # for the slot: retiring the same spawn incarnation again is idempotent and
-# rewrites nothing, while a later incarnation of the same task on the same
-# recycled slot is a new retirement, written over the earlier statement so a
-# later occupant is never blocked by its predecessor's marker; a record unrelated
-# to the claim it sits beside is never overwritten and never read as consent. The
-# shared-copy proof still has to hold for the occupant's retirement, the flag is
-# never implied by anything, the retired record itself is left intact with its
-# own fields for its own teardown, and every other combination, and every run
-# without the flag, keeps the refusal exactly as it was, --force included.
+# rewrites nothing, while a later incarnation of the same task is a new
+# retirement, restamped whatever slot that incarnation names, written over the
+# earlier statement so a later occupant is never blocked by its predecessor's
+# marker; a record unrelated to the claim it sits beside is never overwritten
+# and never read as consent. The shared-copy proof still has to hold for the
+# occupant's retirement, the flag is never implied by anything, the retired
+# record itself is left intact with its own fields for its own teardown, and
+# every other combination, and every run without the flag, keeps the refusal
+# exactly as it was, --force included.
 # Reconcile whichever record is wrong and re-run. Orca is not a pool slot and
 # proves its path through require_orca_worktree_path_match instead.
 # Orca tasks use the same safety checks, then close the recorded terminal and
