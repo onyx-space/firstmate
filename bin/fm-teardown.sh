@@ -130,25 +130,26 @@
 # from no live endpoint. Nothing can be proven in either state, so nothing is
 # released and the slot stays held. `--retire-superseded-claim` is the one
 # supported way through, and it is a claim-level action rather than a relaxed
-# proof: only when that flag is given, and only where the pool's own owner record
-# already shows this record is the slot's current occupant while the co-claimant's
-# claim began before that owner started, teardown retires the co-claimant's claim
-# - recording who retired it, when, on what evidence, and why at
-# `state/<other-id>.claim-retired`, which this guard and that record's own
-# teardown both honor - and then continues on the ordinary path. That record
-# describes one claim, not a permanent tombstone for the slot: retiring the same
-# spawn incarnation again is idempotent and rewrites nothing, while a later
-# incarnation of the same task on the same recycled slot is a new retirement,
-# written over the earlier statement so a later occupant is never blocked by its
-# predecessor's marker; a record unrelated to the claim it sits beside is never
-# overwritten and never read as consent. The same flag also carries the
-# superseded side: when the pool's own owner record names the co-claimant as the
-# slot's current occupant instead, this record is cleaned up without returning or
-# touching that slot. The shared-copy proof still has to hold for the retirement,
-# the flag is never implied by anything, the retired record itself is left intact
-# with its own fields for its own teardown, and every other combination, and
-# every run without the flag, keeps the refusal exactly as it was, --force
-# included.
+# proof. The pool's own owner record, read against both records' claim epochs,
+# says which side of the collision this record is, and the flag has one direction
+# for each: when it shows this record is the slot's current occupant while the
+# co-claimant's claim began before that owner started, teardown retires the
+# co-claimant's claim, then continues on the ordinary path and returns the slot;
+# when it names the co-claimant as the current occupant instead, teardown retires
+# this record's own superseded claim, then finishes this record's cleanup without
+# returning or touching that slot. Both directions record the retirement durably
+# beside the retired record at `state/<retired-id>.claim-retired` - who retired
+# it, when, on what evidence, and why - which this guard and that record's own
+# teardown both honor. That record describes one claim, not a permanent tombstone
+# for the slot: retiring the same spawn incarnation again is idempotent and
+# rewrites nothing, while a later incarnation of the same task on the same
+# recycled slot is a new retirement, written over the earlier statement so a
+# later occupant is never blocked by its predecessor's marker; a record unrelated
+# to the claim it sits beside is never overwritten and never read as consent. The
+# shared-copy proof still has to hold for the occupant's retirement, the flag is
+# never implied by anything, the retired record itself is left intact with its
+# own fields for its own teardown, and every other combination, and every run
+# without the flag, keeps the refusal exactly as it was, --force included.
 # Reconcile whichever record is wrong and re-run. Orca is not a pool slot and
 # proves its path through require_orca_worktree_path_match instead.
 # Orca tasks use the same safety checks, then close the recorded terminal and
@@ -179,11 +180,15 @@
 #   --force skips ordinary-task dirty and landed-work checks, skips scout report
 #   checks, and discards secondmate child work for kind=secondmate. Only use it
 #   when the captain has explicitly said to discard the work.
-#   --retire-superseded-claim retires a co-claimant's slot claim that the pool's
-#   own owner record shows began before this slot's current owner started,
-#   instead of refusing, and records that retirement beside the retired record.
-#   The flag is never implied: without it the co-claimant refusal above stands
-#   unchanged, and --force alone never reaches this path.
+#   --retire-superseded-claim retires exactly one stale side of a slot collision
+#   that the pool's own owner record, read against both records' claim epochs,
+#   separates, instead of refusing, and records that retirement beside the
+#   retired record. When this record is the slot's current occupant, it retires
+#   the co-claimant's superseded claim and continues to return the slot; when the
+#   owner record names the co-claimant as the current occupant, it retires this
+#   record's own superseded claim and cleans this record up without returning or
+#   touching that slot. The flag is never implied: without it the refusal above
+#   stands unchanged, and --force alone never reaches this path.
 #   --legacy-record accepts a task record that predates the spawn_gen field:
 #   teardown then proceeds only when the recorded endpoint is confirmed dead or
 #   agent-less (bin/fm-backend.sh's recovery-grade classifier), and without
@@ -2534,6 +2539,16 @@ teardown_retire_superseded_slot_claim() {  # <record-meta> <record-id> <other-me
   return 0
 }
 
+# Retire this record's own claim on the slot the pool's owner record shows the
+# co-claimant occupies: the superseded direction of --retire-superseded-claim.
+# The primitive above is symmetric in its two roles, so this is the same
+# retirement written from the other side, converging on the same marker beside
+# this record. This record's own meta lock is already held by its teardown, so the
+# primitive's held-lock fast path skips re-acquiring it.
+teardown_retire_own_superseded_slot_claim() {  # <record-meta> <record-id> <occupant-meta> <occupant-id> <slot>
+  teardown_retire_superseded_slot_claim "$3" "$4" "$1" "$2" "$5"
+}
+
 # True only in the reading where the refusal may still name the sanctioned
 # release order: a co-claimant that is not a secondmate home reads a live
 # agent while this record's own endpoint does not. Every other reading - both
@@ -2663,8 +2678,9 @@ require_exclusive_worktree_slot_record() {
           echo "teardown: task $other_id also records $slot, and the pool's current owner of that slot is task $record_id, so task $other_id's superseded claim was retired at $(teardown_claim_retirement_path "$other"); cleanup continues" >&2
           continue
         fi
-        if [ "$occupied" = other ] && [ "$RETIRE_SUPERSEDED_CLAIM" = 1 ]; then
-          echo "teardown: task $other_id also records $slot, and the pool's owner record names task $other_id as the slot's current occupant, so task $record_id's claim is superseded; task $record_id will not return that slot, and cleanup continues" >&2
+        if [ "$occupied" = other ] && [ "$RETIRE_SUPERSEDED_CLAIM" = 1 ] \
+           && teardown_retire_own_superseded_slot_claim "$record_meta" "$record_id" "$other" "$other_id" "$slot"; then
+          echo "teardown: task $other_id also records $slot, and the pool's owner record names task $other_id as the slot's current occupant, so task $record_id's superseded claim was retired at $(teardown_claim_retirement_path "$record_meta"); task $record_id will not return that slot, and cleanup continues" >&2
           TEARDOWN_NON_OCCUPANT_METAS+=("$record_meta")
           continue
         fi

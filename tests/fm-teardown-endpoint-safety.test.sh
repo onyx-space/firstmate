@@ -1617,7 +1617,7 @@ test_superseded_claim_retirement_is_rewritten_after_the_task_moves_slots() {
 # holds. The same record still refuses without the flag (see
 # test_slot_claim_superseded_side_still_refuses_the_occupants_slot).
 test_slot_claim_superseded_side_takes_the_retire_flag_without_returning() {
-  local dir id=stale-task other=current-task owner rc
+  local dir id=stale-task other=current-task owner rc marker
 
   dir=$(make_case slot-superseded-side-flag)
   mark_case_as_treehouse_pool "$dir"
@@ -1641,6 +1641,14 @@ test_slot_claim_superseded_side_takes_the_retire_flag_without_returning() {
   assert_absent "$dir/home/state/$id.meta" "the superseded record was not cleaned up"
   assert_present "$dir/home/state/$other.meta" "the superseded cleanup removed the occupant's record"
   assert_present "$dir/worktree/sentinel" "the superseded cleanup reset the shared slot"
+  marker="$dir/home/state/$id.claim-retired"
+  assert_present "$marker" "the superseded side left no durable retirement record"
+  assert_contains "$(cat "$marker")" "retired_by=$other" \
+    "the marker must name the occupant the pool owner record points to"
+  assert_contains "$(cat "$marker")" "retired_task=$id" \
+    "the marker must name the superseded record it retires"
+  assert_contains "$(cat "$marker")" "retired_claim_epoch=$((owner - 100))" \
+    "the marker must carry the superseded record's own claim epoch"
   grep -Fq "treehouse <return>" "$dir/runtime.log" \
     && fail "the superseded record returned a slot its occupant holds"
   assert_contains "$(cat "$dir/stderr")" "will not return that slot" \
