@@ -16,6 +16,19 @@
 # default branch, so a fast-forward there advances HEAD only and never touches
 # any other worktree's checkout or the shared `main` branch.
 #
+# An upgrade also changes tracked bytes that each home mirrors into its own
+# state: every armed merge poll is a byte copy of bin/fm-pr-poll.sh, and
+# bin/fm-pr-lib.sh owns that contract. Without a migration a home that
+# fast-forwards would reject its own watches on the next check sweep, stop
+# polling them, and wake firstmate about it on every sweep until each poll was
+# re-armed by hand - and a merge landing in that window would be missed. Every
+# home this command advances, the running one and each local secondmate home,
+# therefore has its armed polls refreshed onto the new bytes by
+# bin/fm-pr-poll-refresh.sh, which is idempotent, needs no network, and never
+# writes task metadata. That script's own "poll-refresh:" line reports what it
+# found, and a task it could not refresh is named with the
+# "bin/fm-pr-check.sh <id> <pr-url>" re-arm command to run by hand.
+#
 # The fast-forward mechanics live in bin/fm-ff-lib.sh (base_mode "origin" here);
 # the same library drives local and remote parent-targeted secondmate sync, so
 # there is one ff implementation, not several.
@@ -82,6 +95,16 @@ if [ "$FF_STATUS" = "updated" ] && [ -n "$FF_INSTR" ]; then
   reread_firstmate="yes"
 fi
 
+# This home's armed merge polls ride the same tracked-files fast-forward, so
+# they are migrated onto the new poll bytes here, before the session that
+# resumes after this command can see them as stale. A failure does not fail the
+# update: the git advance already happened, and the refresh has already named
+# each task that still needs a hand re-arm.
+poll_refresh_rc=0
+"$SCRIPT_DIR/fm-pr-poll-refresh.sh" --state "$STATE" || poll_refresh_rc=$?
+[ "$poll_refresh_rc" -eq 0 ] \
+  || echo "error: this home still has armed merge polls that need bin/fm-pr-check.sh by hand (named above)" >&2
+
 # --- secondmates -----------------------------------------------------------
 # Every live secondmate this pass leaves on origin's tip is restarted, whether it
 # advanced or was already there. The header above owns why the git diff does not
@@ -137,6 +160,16 @@ claim_settled_secondmate() {  # <id>
 # bin/fm-ff-lib.sh calls this for each local home it left AT the base with a live
 # endpoint - status "updated" or "current" alike. A skipped home never gets here.
 fm_ff_after_secondmate_settled() {  # <id> <home> <window> <status> <instr>
+  # A mate's home fast-forwarded to the same tracked files, so its own armed
+  # polls carry the same stale bytes and are migrated from here while its
+  # agent is still the pre-update one. Its own "poll-refresh:" line lands in
+  # this command's output; a task it could not refresh is re-armed by hand.
+  if [ -d "$2/state" ] && [ ! -L "$2/state" ]; then
+    local poll_refresh_rc=0
+    "$SCRIPT_DIR/fm-pr-poll-refresh.sh" --state "$2/state" || poll_refresh_rc=$?
+    [ "$poll_refresh_rc" -eq 0 ] \
+      || echo "error: secondmate $1 still has armed merge polls that need bin/fm-pr-check.sh by hand (named above)" >&2
+  fi
   claim_settled_secondmate "$1"
 }
 

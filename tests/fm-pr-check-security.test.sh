@@ -687,8 +687,13 @@ SH
 
 run_watcher_bounded() {
   local home=$1 fakebin=$2 check_interval=${FM_TEST_CHECK_INTERVAL:-0} watch_root=${FM_TEST_WATCH_ROOT:-$ROOT}
+  # The alarm is the bound on a watcher that never wakes at all. A case whose
+  # poll does real work on a fresh home can need longer than the default to
+  # finish its first cycle, and that is not the property being pinned, so it
+  # raises the bound instead of racing a daemon's exit.
+  local alarm=${FM_TEST_WATCH_ALARM:-10}
   shift 2
-  perl -e 'my $pid=fork; die unless defined $pid; if (!$pid) { exec @ARGV } local $SIG{ALRM}=sub { kill "TERM", $pid; waitpid $pid, 0; exit 124 }; alarm 10; waitpid $pid, 0; alarm 0; exit($? >> 8)' \
+  perl -e 'my $alarm=shift; my $pid=fork; die unless defined $pid; if (!$pid) { exec @ARGV } local $SIG{ALRM}=sub { kill "TERM", $pid; waitpid $pid, 0; exit 124 }; alarm $alarm; waitpid $pid, 0; alarm 0; exit($? >> 8)' "$alarm" \
     env FM_HOME="$home" FM_ROOT_OVERRIDE="$watch_root" FM_CHECK_INTERVAL="$check_interval" FM_CHECK_TIMEOUT=1 \
       FM_POLL=0.02 FM_HEARTBEAT=999999 FM_SIGNAL_GRACE=0 PATH="$fakebin:$BASE_PATH" "$WATCH" "$@"
 }
@@ -1635,7 +1640,7 @@ EOF
   seed_canonical_poll "$dir" task-a "$url"
   rm -f "$state/.last-check"
   set +e
-  FM_TEST_CURL_BODY='{"number":16,"state":"closed","merged":true}' \
+  FM_TEST_WATCH_ALARM=60 FM_TEST_CURL_BODY='{"number":16,"state":"closed","merged":true}' \
     run_watcher_bounded "$dir/home" "$dir/fakebin" > "$dir/watch.out" 2> "$dir/watch.err"
   rc=$?
   set -e
@@ -1661,6 +1666,118 @@ EOF
   [ "$(state_snapshot "$state")" = "$before" ] \
     || fail "the merge refusal changed task state"
   pass "an HTTP forge pull request is watched on a named host and never merged"
+}
+
+# An upgrade that changes bin/fm-pr-poll.sh bytes leaves every already-armed
+# watch stale, because the watcher requires each task's state copy to be
+# byte-identical to the tracked template. bin/fm-pr-poll-refresh.sh is the
+# migration the fleet-update path runs for that window; this pins that a
+# pre-upgrade poll is re-anchored onto the current bytes and then really polls,
+# that task metadata survives, that a second run is a no-op, and that a poll the
+# migration cannot re-anchor is reported rather than silently dropped.
+test_pr_poll_template_refresh() {
+  local dir state id url head stale out rc before refresh
+  dir=$(make_case poll-template-refresh)
+  state="$dir/home/state"
+  id=task-a
+  url=https://github.com/o/r/pull/7
+  head=0123456789abcdef0123456789abcdef01234567
+  refresh="$ROOT/bin/fm-pr-poll-refresh.sh"
+
+  fm_write_meta "$state/$id.meta" \
+    "window=fm-$id" \
+    "worktree=$dir/wt" \
+    "project=$dir/project" \
+    "kind=ship" \
+    "mode=no-mistakes" \
+    "pr=$url" \
+    "pr_head=$head"
+
+  # A home that armed this poll before the template changed holds exactly these
+  # bytes.
+  stale="$dir/pre-upgrade-template.sh"
+  cp "$POLL" "$stale"
+  printf '# pre-upgrade revision\n' >> "$stale"
+  fm_pr_poll_prepare "$state" "$id" github "$url" github.com o/r 7 "$stale" \
+    || fail "could not prepare the pre-upgrade poll fixture"
+  fm_pr_poll_publish_prepared || fail "could not publish the pre-upgrade poll fixture"
+
+  # RED: under the current contract this poll is rejected, which is the missed
+  # merge and the repeating rejection wake the migration exists to remove.
+  cmp -s "$POLL" "$state/$id.check.sh" && fail "the fixture check was not pre-upgrade bytes"
+  fm_pr_poll_artifacts_valid "$state" "$id" "$POLL" \
+    && fail "a pre-upgrade poll was accepted before the migration"
+
+  # GREEN: the migration re-anchors it and keeps the recorded metadata.
+  out=$(FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$dir/home" "$refresh" --state "$state" 2> "$dir/refresh.err") \
+    || fail "the poll refresh failed: $(cat "$dir/refresh.err")"
+  grep -qxF "refreshed: $id $url" <<< "$out" \
+    || fail "the refresh did not report migrating the stale poll"
+  grep -qxF 'poll-refresh: refreshed=1 current=0 failed=0' <<< "$out" \
+    || fail "the refresh summary did not count exactly one migrated poll"
+  fm_pr_poll_artifacts_valid "$state" "$id" "$POLL" \
+    || fail "the migrated poll is still not the current contract"
+  cmp -s "$POLL" "$state/$id.check.sh" || fail "the migrated check is not the current template"
+  grep -qxF "pr=$url" "$state/$id.meta" || fail "the migration dropped the recorded pull request"
+  grep -qxF "pr_head=$head" "$state/$id.meta" || fail "the migration dropped the recorded head"
+
+  # Idempotent: a second run changes nothing at all.
+  before=$(state_snapshot "$state")
+  out=$(FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$dir/home" "$refresh" --state "$state" 2> "$dir/refresh2.err") \
+    || fail "the repeated poll refresh failed: $(cat "$dir/refresh2.err")"
+  grep -qxF 'poll-refresh: refreshed=0 current=1 failed=0' <<< "$out" \
+    || fail "the repeated refresh did not treat the migrated poll as current"
+  [ "$(state_snapshot "$state")" = "$before" ] || fail "the repeated refresh changed the state"
+
+  # It really polls on the migrated artifacts, through the watcher's own
+  # two-step decision rather than through the daemon: the acceptance predicate
+  # must now pass, and the poll is then invoked exactly as run_check_capture
+  # invokes it. Without the migration both halves fail, which is the missed
+  # merge and the rejection wake this migration removes.
+  fm_pr_poll_snapshot_capture "$state" "$id" "$POLL" \
+    || fail "the watcher's acceptance predicate still rejects the migrated poll"
+  out=$(FM_TEST_GH_STATE=MERGED PATH="$dir/fakebin:$BASE_PATH" \
+    bash "$POLL" --validated "$FM_PR_POLL_SNAPSHOT_PROVIDER" "$FM_PR_POLL_SNAPSHOT_URL" \
+      "$FM_PR_POLL_SNAPSHOT_HOST" "$FM_PR_POLL_SNAPSHOT_PATH" "$FM_PR_POLL_SNAPSHOT_NUMBER")
+  [ "$out" = merged ] || fail "the migrated poll did not wake on a merged pull request"
+  rm -f "$state/$id.pr-poll-merge-notified"
+
+  # A poll the migration cannot re-anchor is reported, never silently dropped,
+  # and its artifacts are left exactly as they were.
+  fm_write_meta "$state/$id.meta" \
+    "window=fm-$id" \
+    "worktree=$dir/wt" \
+    "project=$dir/project" \
+    "kind=ship" \
+    "mode=no-mistakes" \
+    "pr=$url" \
+    "pr_head=$head"
+  fm_pr_poll_prepare "$state" "$id" github "$url" github.com o/r 7 "$stale" \
+    || fail "could not prepare the divergent-record fixture"
+  fm_pr_poll_publish_prepared || fail "could not publish the divergent-record fixture"
+  # The record now names a different pull request than the poll it is bound to.
+  fm_write_meta "$state/$id.meta" \
+    "window=fm-$id" \
+    "worktree=$dir/wt" \
+    "project=$dir/project" \
+    "kind=ship" \
+    "mode=no-mistakes" \
+    "pr=https://github.com/o/r/pull/8" \
+    "pr_head=$head"
+  before=$(state_snapshot "$state")
+  set +e
+  out=$(FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$dir/home" "$refresh" --state "$state" 2> "$dir/refresh3.err")
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "the refresh succeeded while a poll's record did not match it"
+  grep -qF "merge poll for $id could not be refreshed" "$dir/refresh3.err" \
+    || fail "the unrefreshable poll was not named"
+  grep -qF "bin/fm-pr-check.sh" "$dir/refresh3.err" \
+    || fail "the unrefreshable poll did not name the re-arm command to run"
+  grep -qxF 'poll-refresh: refreshed=0 current=0 failed=1' <<< "$out" \
+    || fail "the refresh summary did not count the unrefreshable poll as failed"
+  [ "$(state_snapshot "$state")" = "$before" ] || fail "the unrefreshable poll's artifacts were changed"
+  pass "an upgrade migrates already-armed polls and never drops one silently"
 }
 
 seed_canonical_poll() {
@@ -2397,6 +2514,7 @@ test_gitlab_merged_poll_retires() {
 test_parser_matrix
 test_gitlab_merge_watch
 test_http_forge_merge_watch
+test_pr_poll_template_refresh
 test_merged_poll_retires_once
 test_merged_poll_reregistration_after_notification_is_absorbed
 test_merged_poll_retries_a_failed_upward_report
