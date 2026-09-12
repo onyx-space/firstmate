@@ -135,13 +135,14 @@
 # claim began before that owner started, teardown retires the co-claimant's claim
 # - recording who retired it, when, on what evidence, and why at
 # `state/<other-id>.claim-retired`, which this guard and that record's own
-# teardown both honor, so the retired record neither blocks this release nor
-# returns a slot it no longer holds - and then continues on the ordinary path.
-# The shared-copy proof still has to hold for that retirement, the flag is never
-# implied by anything, the retired record itself is left intact with its own
-# fields for its own teardown, and the retirement record outlives it. Every other
-# combination, and every run without the flag, keeps the refusal exactly as it
-# was, --force included.
+# teardown both honor for that one spawn incarnation, so the retired record
+# neither blocks this release nor returns a slot it no longer holds - and then
+# continues on the ordinary path. The shared-copy proof still has to hold for
+# that retirement, the flag is never implied by anything, the retired record
+# itself is left intact with its own fields for its own teardown, and the
+# retirement record outlives it without authorizing a later incarnation that
+# reuses the same task id and slot. Every other combination, and every run
+# without the flag, keeps the refusal exactly as it was, --force included.
 # Reconcile whichever record is wrong and re-run. Orca is not a pool slot and
 # proves its path through require_orca_worktree_path_match instead.
 # Orca tasks use the same safety checks, then close the recorded terminal and
@@ -2361,17 +2362,21 @@ teardown_slot_current_occupant() {  # <record-meta> <other-meta> <slot>
 }
 
 # The durable record of one retired stale slot claim, written beside the record
-# whose claim it retires. Deliberately outside the volatile files teardown
-# removes with a record, so why a task stopped naming its pool slot stays
-# readable after that record itself is cleaned up.
+# whose claim it retires. It names the spawn incarnation whose claim it retires,
+# so it speaks only for that incarnation and never for a later one that reuses
+# the same task id. Deliberately outside the volatile files teardown removes with
+# a record, so why a task stopped naming its pool slot stays readable after that
+# record itself is cleaned up.
 teardown_claim_retirement_path() {  # <other-meta>
   printf '%s.claim-retired\n' "${1%.meta}"
 }
 
-# The identity a retirement record must carry to be the retirement of exactly
-# this claim: the same retiring task, the same retired task, the same slot. An
-# unrelated or malformed record at that path is never overwritten, and is never
-# read as consent for a retirement it does not describe.
+# The identity a retirement record at that path must carry for the writer to
+# leave it in place as the retirement it was asked to record: the same retiring
+# task, the same retired task, the same slot. An unrelated or malformed record is
+# never overwritten. The read path (teardown_claim_is_retired) is stricter still,
+# binding the marker to the retired claim's own spawn incarnation, so the same
+# file is never read as consent for a claim it does not describe.
 teardown_claim_retirement_matches() {  # <marker> <record-id> <other-id> <slot>
   local marker=$1
   [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
@@ -2414,22 +2419,36 @@ teardown_claim_retirement_write() {  # <marker> <record-id> <other-id> <slot> <o
 }
 
 # True when one record's claim on <slot> has been retired: a retirement record
-# naming exactly this record and slot sits beside it, and the claim it retires is
-# the record's own `worktree=` field. A missing, malformed, symlinked, or
-# differently-addressed record is never a retirement, so an unreadable or
-# unrelated file fails closed and the claim stands. <slot> is compared as the
-# physical path, because that is the identity the guard and this record's own
+# naming exactly this record, its slot, and the spawn incarnation whose claim it
+# retires sits beside it, and the claim it retires is the record's own
+# `worktree=` field. The incarnation binding is what keeps a tombstone for an
+# earlier spawn of a reused task id from authorizing anything for a later one:
+# Treehouse hands a respawned task the same recycled slot path under a fresh
+# spawn_gen, so the record's claim epoch must equal the one the retirement
+# recorded. The reader is never looser than the writer: a marker whose retired_by
+# is empty, or whose retired_task is not this record, is malformed or unrelated
+# and is never read as consent. So is a missing, symlinked, or
+# differently-addressed record, and the claim then stands. <slot> is compared as
+# the physical path, because that is the identity the guard and this record's own
 # teardown both resolve the field to.
 teardown_claim_is_retired() {  # <meta> <slot>
-  local meta=$1 slot=$2 marker claimed
+  local meta=$1 slot=$2 marker claimed retirer retired_task record_claim retired_claim
   marker=$(teardown_claim_retirement_path "$meta")
   [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
+  retirer=$(fm_meta_get "$marker" retired_by)
+  [ -n "$retirer" ] || return 1
+  retired_task=$(fm_meta_get "$marker" retired_task)
+  [ "$retired_task" = "$(basename "$meta" .meta)" ] || return 1
+  [ "$retirer" != "$retired_task" ] || return 1
   claimed=$(fm_meta_get "$marker" slot)
   [ -n "$claimed" ] || return 1
   if [ "$claimed" != "$slot" ] \
      && [ "$(canonical_existing_dir "$claimed" 2>/dev/null)" != "$slot" ]; then
     return 1
   fi
+  record_claim=$(teardown_meta_slot_claim_epoch "$meta") || return 1
+  retired_claim=$(fm_meta_get "$marker" retired_claim_epoch)
+  [ "$retired_claim" = "$record_claim" ] || return 1
   [ "$(fm_meta_get "$meta" worktree)" != "" ]
 }
 

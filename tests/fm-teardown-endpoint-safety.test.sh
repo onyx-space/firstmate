@@ -1367,6 +1367,113 @@ test_superseded_claim_retirement_is_recorded_once_and_lets_the_retired_record_cl
   pass "fm-teardown: a retirement is recorded once, survives its record, and stops that record returning the slot"
 }
 
+# Reproduce the durable record bin/fm-teardown.sh's retirement primitive writes,
+# one field per line beside the record whose claim it retires.
+write_retirement_marker() {  # <case> <marker-id> <slot> <retired-by> <retired-task> <retired-claim-epoch>
+  local dir=$1 marker_id=$2 slot=$3 by=$4 task=$5 epoch=$6
+  fm_write_meta "$dir/home/state/$marker_id.claim-retired" \
+    "retired_by=$by" \
+    "retired_task=$task" \
+    "slot=$slot" \
+    "home=$dir/home" \
+    "operator=test" \
+    "retired_at=2026-01-01T00:00:00Z" \
+    "owner_started_at=1789161032" \
+    "retiring_claim_epoch=1789161044" \
+    "retired_claim_epoch=$epoch" \
+    "reason=claim began before the pool current owner took the slot"
+}
+
+# A retirement is a tombstone for one spawn incarnation, not for a task id: the
+# same id respawned on the same recycled slot is a new claim, and a tombstone
+# written for its predecessor must never authorize it. The cases below pin where
+# the read path stops trusting one: the incarnation it recorded, the retiring
+# record's identity, and the record it names.
+test_superseded_claim_retirement_is_bound_to_the_incarnation_it_retires() {
+  local dir id=current-task other=stale-task owner rc slot marker variant
+
+  # (a) a tombstone for incarnation N authorizes nothing for incarnation N+1:
+  # the republished record must return its slot on the ordinary path.
+  dir=$(make_case retire-incarnation-binding)
+  mark_case_as_treehouse_pool "$dir"
+  make_slot_copy_landed "$dir"
+  owner=1789161032
+  set_case_slot_owner "$dir" "$owner"
+  slot=$(case_slot_path "$dir")
+  marker="$dir/home/state/$other.claim-retired"
+  write_retirement_marker "$dir" "$other" "$slot" "$id" "$other" "$((owner - 46800))"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+    "spawn_gen=s$((owner - 100)).4242.9"
+  rc=0
+  run_case "$dir" "$other" > "$dir/stdout" 2> "$dir/stderr" || rc=$?
+  [ "$rc" -eq 0 ] \
+    || fail "a record whose predecessor's claim was retired could not tear down: $(cat "$dir/stderr")"
+  grep -Fq "treehouse <return>" "$dir/runtime.log" \
+    || fail "a tombstone for an earlier incarnation leaked the slot instead of letting the record return it"
+  assert_absent "$dir/home/state/$other.meta" "the republished record's own teardown left its record"
+  assert_present "$marker" "the republished record's teardown destroyed its predecessor's tombstone"
+
+  # (b) the guard must not read a tombstone for another incarnation as license
+  # to skip the co-claimant evidence: with the pool's owner record separating
+  # neither claim, the collision still refuses.
+  dir=$(make_case retire-incarnation-guard)
+  mark_case_as_treehouse_pool "$dir"
+  make_slot_copy_landed "$dir"
+  set_case_slot_owner "$dir" "$owner"
+  slot=$(case_slot_path "$dir")
+  write_retirement_marker "$dir" "$other" "$slot" "$id" "$other" "$((owner - 46800))"
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=main:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+    "spawn_gen=s$((owner - 10)).4242.1"
+  fm_write_meta "$dir/home/state/$other.meta" \
+    "window=other:fm-$other" "endpoint_task_id=$other" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+    "spawn_gen=s$((owner - 20)).4242.2"
+  write_tmux_agent_stub "$dir" "main:fm-$id=alive" "other:fm-$other=alive"
+  set +e
+  run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] \
+    || fail "a stale tombstone let the guard release a slot with no co-claimant evidence"
+  assert_shared_slot_refused "$dir" "$id" "$other" "stale tombstone beside a new incarnation"
+  assert_not_contains "$(refusal_output "$dir")" "was retired" \
+    "the guard must not read a tombstone for another incarnation as a retirement"
+
+  # (c) the reader is never looser than the writer: a marker missing retired_by,
+  # or naming a different retired_task, is not consent.
+  for variant in missing-retired-by wrong-retired-task; do
+    dir=$(make_case "retire-marker-$variant")
+    mark_case_as_treehouse_pool "$dir"
+    make_slot_copy_landed "$dir"
+    set_case_slot_owner "$dir" "$owner"
+    slot=$(case_slot_path "$dir")
+    marker="$dir/home/state/$other.claim-retired"
+    if [ "$variant" = missing-retired-by ]; then
+      fm_write_meta "$marker" \
+        "retired_task=$other" "slot=$slot" \
+        "retired_claim_epoch=$((owner - 100))"
+    else
+      write_retirement_marker "$dir" "$other" "$slot" "$id" "someone-else" "$((owner - 100))"
+    fi
+    fm_write_meta "$dir/home/state/$other.meta" \
+      "window=other:fm-$other" "endpoint_task_id=$other" \
+      "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+      "spawn_gen=s$((owner - 100)).4242.9"
+    rc=0
+    run_case "$dir" "$other" > "$dir/stdout" 2> "$dir/stderr" || rc=$?
+    [ "$rc" -eq 0 ] \
+      || fail "$variant: a malformed tombstone blocked the record's own teardown: $(cat "$dir/stderr")"
+    grep -Fq "treehouse <return>" "$dir/runtime.log" \
+      || fail "$variant: a malformed tombstone leaked the slot instead of letting the record return it"
+  done
+
+  pass "fm-teardown: a stale-claim retirement is bound to the incarnation, retiring record, and slot it names"
+}
+
 test_shared_pool_slot_refusal_names_the_live_record_to_tear_down_first() {
   local dir id=stale-task other=live-task rc
 
@@ -1738,6 +1845,7 @@ test_slot_claim_superseded_side_still_refuses_the_occupants_slot
 test_slot_claim_evidence_never_relaxes_force
 test_superseded_claim_retirement_clears_states_no_proof_can_reach
 test_superseded_claim_retirement_is_recorded_once_and_lets_the_retired_record_clean_up
+test_superseded_claim_retirement_is_bound_to_the_incarnation_it_retires
 test_shared_pool_slot_refusal_names_the_live_record_to_tear_down_first
 test_cross_home_pool_slot_collision_refuses
 test_sole_slot_record_still_tears_down
