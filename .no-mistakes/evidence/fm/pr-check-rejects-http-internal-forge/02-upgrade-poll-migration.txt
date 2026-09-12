@@ -1,0 +1,125 @@
+Scenario: upgrading firstmate must not make an already-armed merge watch go
+stale. The watcher byte-compares each state/<id>.check.sh against the tracked
+bin/fm-pr-poll.sh, so an upgrade that changes those bytes would otherwise leave
+every live watch rejected ("check: rejected unauthenticated state checks") and
+its merge unobserved. The migration must re-anchor the watch onto the new bytes
+without touching task metadata, be idempotent, and never fail silently.
+
+The "pre-change bytes" used below are the real bin/fm-pr-poll.sh from the base
+commit of this change:
+$ git show 3e447e7fbd668e3d9424e211102e9315f4fd5fa1:bin/fm-pr-poll.sh
+base sha256   = e87aae384ec62ae28f78a0779020f52f7b891ba0cafea2551b5a2c4e967870cf
+current sha256= f1cdadd397e405cf8fc4b565d42e5addafdc1ac026d96f9e6125eadcff214a65
+
+--- RED, BEFORE THE MIGRATION: the reported failure mode ------------------------
+A watch armed with the pre-change bytes, while its pull request is already
+merged in the forge:
+
+$ . bin/fm-pr-lib.sh; fm_pr_poll_artifacts_valid <state> task-r <current template>
+REJECTED
+
+$ bin/fm-watch.sh     # the real watcher, forge reports merged:true
+check: rejected unauthenticated state checks: /tmp/fm-live/home-red/state/task-r.check.sh
+poll hits against the live forge while rejected: 0
+poll artifacts after the rejection:
+task-r.check.sh
+task-r.meta
+task-r.pr-poll
+task-r.pr-poll-registration
+=> the merge was silently missed and MAIN was woken about a rejected check.
+
+--- GREEN, AFTER the migration the upgrade path runs ---------------------------
+$ bin/fm-pr-poll-refresh.sh --state <state> --template <current bin/fm-pr-poll.sh>
+refreshed: task-g http://127.0.0.1:8731/team/widget/pulls/16
+poll-refresh: refreshed=1 current=0 failed=0
+accepted by the watcher predicate after the migration
+
+$ bin/fm-watch.sh     # forge reports merged:true
+check: /tmp/fm-live/home-green/state/task-g.check.sh: merged
+live forge hits by the re-anchored poll: 1
+$ cat state/.wake-queue
+1789203882	1	check	merged-task-g-http://127.0.0.1:8731/team/widget/pulls/16	check: merge landed: task-g http://127.0.0.1:8731/team/widget/pulls/16
+$ cat state/task-g.meta         # pr= and pr_head= survive the migration
+window=fm-task-g
+kind=ship
+pr=http://127.0.0.1:8731/team/widget/pulls/16
+pr_head=0123456789abcdef0123456789abcdef01234567
+
+--- THE UPGRADE ITSELF runs the migration: real bin/fm-update.sh ----------------
+A scratch git world: a home carrying an armed watch, and an origin whose tip is
+a later release that changes bin/fm-pr-poll.sh (simulated upgrade commit).
+$ bin/fm-update.sh
+firstmate: updated 92b146c..7202d28 (instructions changed: bin)
+firstmate: already current
+refreshed: task-up https://github.com/o/r/pull/5
+poll-refresh: refreshed=1 current=0 failed=0
+reread-firstmate: yes
+restart-secondmates: none
+nudge-secondmates: none
+Note the two lines: "firstmate: updated <old>..<new>" is the pre-advance copy's
+verdict, "firstmate: already current" is the on-disk copy the run handed itself
+to (the re-exec), and the caller summary is printed exactly once.
+After the update:
+  root HEAD == origin/main (7202d28)
+  armed poll bytes == the new bin/fm-pr-poll.sh: yes
+  accepted by the watcher predicate
+  meta unchanged (pr= and pr_head= intact)
+A second run is a no-op and does not hand off again:
+$ bin/fm-update.sh
+firstmate: already current
+poll-refresh: refreshed=0 current=1 failed=0
+reread-firstmate: no
+restart-secondmates: none
+nudge-secondmates: none
+The upgraded home's watcher (its own bin/fm-watch.sh) then runs its check sweeps
+without a single rejection:
+$ bin/fm-watch.sh   # 7s, PR kept open
+watcher output: (empty)
+"rejected unauthenticated state checks" occurrences: 0
+poll artifacts still armed and being polled:
+task-up.check.sh
+task-up.meta
+task-up.pr-poll
+task-up.pr-poll-registration
+
+--- IDEMPOTENT: a repeated refresh changes nothing ------------------------------
+$ bin/fm-pr-poll-refresh.sh --state <state>            # first run
+refreshed: task-i http://127.0.0.1:8731/team/widget/pulls/16
+poll-refresh: refreshed=1 current=0 failed=0
+$ bin/fm-pr-poll-refresh.sh --state <state>            # second run, same home
+poll-refresh: refreshed=0 current=1 failed=0
+$ bin/fm-pr-poll-refresh.sh --state <state>            # third run
+poll-refresh: refreshed=0 current=1 failed=0
+sha256 of every file under state/ before and after the second run:
+$ diff snapshot1 snapshot2
+(silence: identical)
+no wake-queue file was created or consumed by any refresh run
+$ cat state/task-i.meta
+window=fm-task-i
+kind=ship
+pr=http://127.0.0.1:8731/team/widget/pulls/16
+pr_head=0123456789abcdef0123456789abcdef01234567
+
+--- NO WAKE STORM after the upgrade --------------------------------------------
+A home whose watch was armed with pre-change bytes, then migrated, watched with
+its pull request still OPEN for 8 seconds:
+watcher output: (empty)
+"rejected unauthenticated state checks" occurrences: 0
+live poll hits in that window: 7
+poll still armed and polling afterwards.
+
+--- A LIVE POLL THAT CANNOT BE MIGRATED IS REPORTED, NEVER DROPPED -------------
+[case 1] the task record is missing while the watch is live
+$ bin/fm-pr-poll-refresh.sh --state <state>
+poll-refresh: refreshed=0 current=0 failed=1
+stderr:
+error: merge poll for task-l could not be refreshed: its task record is missing; re-arm it with bin/fm-pr-check.sh task-l http://127.0.0.1:8731/team/widget/pulls/16
+exit status: 1
+sha256 snapshot of state/ before and after: identical (artifacts untouched)
+
+[case 2] the poll sidecar is unreadable
+$ bin/fm-pr-poll-refresh.sh --state <state>
+poll-refresh: refreshed=0 current=0 failed=1
+stderr:
+error: merge poll for task-m could not be refreshed: its poll sidecar is unreadable; re-arm it with bin/fm-pr-check.sh
+exit status: 1

@@ -1,0 +1,58 @@
+Scenarios: the guards around accepting and reading an instance-hosted HTTP forge
+pull request are not bypassable, and a stale watch is re-anchored by the
+supervision arm even before any check sweep runs.
+
+All commands below drive the real product against the live forge on
+127.0.0.1:8731 (real HTTP, real curl, token file in the home's config), or the
+real arming/refusal path.
+
+--- ARMING REFUSES A HOST THIS HOME HAS NOT NAMED -------------------------------
+The host is reachable (it is the same listening server, addressed as localhost),
+so the refusal is the allow-list, not connectivity:
+$ bin/fm-pr-check.sh task-b http://localhost:8731/team/widget/pulls/16
+exit status: 1
+error: http://localhost:8731 is not a configured forge host for this home
+error: add a "http://localhost:8731 <token>" line to /tmp/fm-live/home/config/pr-forge-hosts
+error: refusing to arm a watch for http://localhost:8731/team/widget/pulls/16
+poll armed? no
+
+--- ARMING REFUSES A TOKEN THE FORGE REJECTS (HTTP 401) ------------------------
+config/pr-forge-hosts lists the host with a token the forge refuses:
+$ bin/fm-pr-check.sh task-c http://127.0.0.1:8731/team/widget/pulls/16
+exit status: 1
+error: http://127.0.0.1:8731 refused the token configured for it (HTTP 401)
+error: check the "http://127.0.0.1:8731 <token>" line in /tmp/fm-live/home/config/pr-forge-hosts
+poll armed? no
+
+--- THE POLL REFUSES A READ THAT DOES NOT PROVE A MERGE ------------------------
+Direct drive of the poll's executable interface (bin/fm-pr-poll.sh --validated)
+while the live forge reports merged:true:
+  A) honest identity                              -> merged
+  B) sidecar host points at another host          -> (silent)
+  C) sidecar path disagrees with the stored URL   -> (silent)
+  D) reserved "." / ".." path segment             -> (silent)
+  E) github.com masquerading as an instance forge -> (silent)
+  F) the host is no longer in config/pr-forge-hosts-> (silent)
+Only A reached the network; no doctored record can produce a false merge.
+
+--- THE SUPERVISION ARM RE-ANCHORS BEFORE THE FIRST CHECK SWEEP ----------------
+A watch armed with the pre-change poll bytes, with the pull request already
+merged in the live forge, and the migration deliberately NOT pre-run:
+$ bin/fm-watch-arm.sh
+watcher: started pid=66948 (beacon fresh)
+check: /tmp/fm-live/home-arm/state/task-arm.check.sh: merged
+live forge hits by the first sweep: 1
+"rejected unauthenticated state checks" occurrences: 0
+poll retired after the merge:
+task-arm.meta
+task-arm.pr-poll-merge-notified
+=> the arm path closes the window left by the upgrade that first ships the
+   migration, so the first sweep executes the poll instead of rejecting it.
+
+--- THE MERGE PATH REFUSES TO MERGE ONE ITSELF --------------------------------
+$ bin/fm-pr-merge.sh task-mr http://127.0.0.1:8731/team/widget/pulls/16
+error: firstmate does not merge an instance-hosted forge pull request; merge it in the forge and the armed merge poll reports the landing
+exit status: 2
+task state afterwards: only task-mr.meta, unchanged (no merge state recorded)
+=> the captain merges in the forge; the armed poll is the only path that reports
+   the landing.

@@ -1,0 +1,105 @@
+Scenario: the captain merges a pull request on an instance-hosted HTTP forge
+(Gitea) and MAIN is woken, exactly as a GitHub merge does.
+
+Product driven: the real bin/fm-pr-check.sh, bin/fm-pr-poll.sh and
+bin/fm-watch.sh from this change, against a live HTTP forge API on
+127.0.0.1:8731 serving /api/v1/repos/<o>/<r>/pulls/<n> with the Gitea response
+shape ({"number":16,"state":"open","merged":false,...}) and requiring
+"Authorization: token <t>". No fake curl, no stub: the poll makes a real HTTP
+request over the loopback socket.
+
+[1] config/pr-forge-hosts opts this home into the forge host
+$ cat /tmp/fm-live/home/config/pr-forge-hosts
+http://127.0.0.1:8731 live-forge-token
+
+[2] Arm the watch (real bin/fm-pr-check.sh, live forge read of PR 16)
+$ FM_ROOT_OVERRIDE=<worktree> FM_HOME=/tmp/fm-live/home bin/fm-pr-check.sh task-a http://127.0.0.1:8731/team/widget/pulls/16
+armed: state/task-a.check.sh
+armed: state/task-a.check.sh
+
+[3] Armed sidecar records the provider-tagged identity
+$ cat state/task-a.pr-poll
+gitea
+http://127.0.0.1:8731/team/widget/pulls/16
+127.0.0.1:8731
+team/widget
+16
+
+[4] Real watcher, PR still open: it polls and stays silent (no false wake)
+$ bin/fm-watch.sh            # 5s window, forge reports merged:false
+watcher wake output: (empty)
+poll hits against the live forge in that window: 6
+
+[5] The captain merges the pull request in the forge (forge now reports merged:true)
+[6] Same watcher process wakes MAIN and retires the poll
+$ cat watcher-output
+check: /tmp/fm-live/home/state/task-a.check.sh: merged
+
+[7] The durable wake queued for MAIN
+$ cat state/.wake-queue
+1789204064	1	check	merged-task-a-http://127.0.0.1:8731/team/widget/pulls/16	check: merge landed: task-a http://127.0.0.1:8731/team/widget/pulls/16
+
+[8] The poll artifacts are retired; task metadata keeps its canonical pr=
+$ ls state | grep task-a
+task-a.meta
+task-a.pr-poll-merge-notified
+$ cat state/task-a.meta
+window=fm-task-a
+kind=ship
+mode=no-mistakes
+pr=http://127.0.0.1:8731/team/widget/pulls/16
+$ cat state/task-a.pr-poll-merge-notified
+fm-pr-poll-merge-notified-v1
+gitea
+127.0.0.1:8731
+team/widget
+16
+
+================================================================================
+Scenario: the same wake, driven against the REAL internal Gitea the captain
+named (h machine, http://10.0.99.5:3000), with a real merged pull request.
+A throwaway repository admin/fm-live-e2e and pull 1 were created through the
+Gitea API, watched end to end, then deleted again (the instance is back to its
+original three repositories).
+
+[1] the real Gitea pull request response carries the field the poll reads
+$ curl -H "Authorization: token <admin>" http://10.0.99.5:3000/api/v1/repos/admin/fm-live-e2e/pulls/1
+... "merged":false ...
+raw bytes: b'true,"merged":false,"merged_at":nul'   (compact JSON, as Gitea emits)
+
+[2] Arming against the real forge
+$ FM_ROOT_OVERRIDE=<worktree> FM_HOME=/tmp/fm-live/home-real bin/fm-pr-check.sh task-real http://10.0.99.5:3000/admin/fm-live-e2e/pulls/1
+armed: state/task-real.check.sh
+$ cat state/task-real.pr-poll
+gitea
+http://10.0.99.5:3000/admin/fm-live-e2e/pulls/1
+10.0.99.5:3000
+admin/fm-live-e2e
+1
+
+[3] Real watcher against the real forge, PR open: silent, poll armed
+watcher output: (empty; watcher still running)
+
+[4] The merge lands in the real Gitea (POST /api/v1/repos/admin/fm-live-e2e/pulls/1/merge;
+     the same server-side merge event the captain's web-UI click produces)
+post-merge PR bytes: b'true,"merged":true,"merge'
+
+[5] Same watcher process wakes MAIN
+$ cat watcher-output
+check: /tmp/fm-live/home-real/state/task-real.check.sh: merged
+
+[6] Durable wake queued for MAIN, poll retired, metadata preserved
+$ cat state/.wake-queue
+1789203978	1	check	merged-task-real-http://10.0.99.5:3000/admin/fm-live-e2e/pulls/1	check: merge landed: task-real http://10.0.99.5:3000/admin/fm-live-e2e/pulls/1
+$ ls state | grep task-real
+task-real.meta
+task-real.pr-poll-merge-notified
+$ cat state/task-real.meta
+window=fm-task-real
+kind=ship
+mode=no-mistakes
+pr=http://10.0.99.5:3000/admin/fm-live-e2e/pulls/1
+
+[7] scratch repository removed again
+DELETE /api/v1/repos/admin/fm-live-e2e -> 204
+repos on 10.0.99.5:3000 afterwards: ['admin/seed-hunter', 'admin/test', 'admin/test-repo']
