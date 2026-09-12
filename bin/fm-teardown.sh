@@ -122,6 +122,35 @@
 # above are not a relaxation of it - a co-claimant proven gone, or one whose
 # claim the pool's own owner record shows superseded, is not live work - so
 # --force still changes nothing about a live co-claimant.
+# Two states still refuse BOTH release readings even though the pool's own owner
+# record has already classified the stale claim, because a state is what makes
+# the process proof unprovable rather than contradictory: the occupant's pane was
+# closed, so no backend can name the pane leader that proof starts from, or an
+# orphan of the superseded allocation is still rooted in the slot and descends
+# from no live endpoint. Nothing can be proven in either state, so nothing is
+# released and the slot stays held. `--retire-superseded-claim` is the one
+# supported way through, and it is a claim-level action rather than a relaxed
+# proof. The pool's own owner record, read against both records' claim epochs,
+# says which side of the collision this record is, and the flag has one direction
+# for each: when it shows this record is the slot's current occupant while the
+# co-claimant's claim began before that owner started, teardown retires the
+# co-claimant's claim, then continues on the ordinary path and returns the slot;
+# when it names the co-claimant as the current occupant instead, teardown retires
+# this record's own superseded claim, then finishes this record's cleanup without
+# returning or touching that slot. Both directions record the retirement durably
+# beside the retired record at `state/<retired-id>.claim-retired` - who retired
+# it, when, on what evidence, and why - which this guard and that record's own
+# teardown both honor. That record describes one claim, not a permanent tombstone
+# for the slot: retiring the same spawn incarnation again is idempotent and
+# rewrites nothing, while a later incarnation of the same task is a new
+# retirement, restamped whatever slot that incarnation names, written over the
+# earlier statement so a later occupant is never blocked by its predecessor's
+# marker; a record unrelated to the claim it sits beside is never overwritten
+# and never read as consent. The shared-copy proof still has to hold for the
+# occupant's retirement, the flag is never implied by anything, the retired
+# record itself is left intact with its own fields for its own teardown, and
+# every other combination, and every run without the flag, keeps the refusal
+# exactly as it was, --force included.
 # Reconcile whichever record is wrong and re-run. Orca is not a pool slot and
 # proves its path through require_orca_worktree_path_match instead.
 # Orca tasks use the same safety checks, then close the recorded terminal and
@@ -148,10 +177,19 @@
 # releases its durable treehouse lease so the pool slot is freed,
 # never left leased forever. If the treehouse return fails, teardown leaves the
 # leased home and state in place instead of hiding a still-held lease.
-# Usage: fm-teardown.sh <task-id> [--force] [--legacy-record]
+# Usage: fm-teardown.sh <task-id> [--force] [--legacy-record] [--retire-superseded-claim]
 #   --force skips ordinary-task dirty and landed-work checks, skips scout report
 #   checks, and discards secondmate child work for kind=secondmate. Only use it
 #   when the captain has explicitly said to discard the work.
+#   --retire-superseded-claim retires exactly one stale side of a slot collision
+#   that the pool's own owner record, read against both records' claim epochs,
+#   separates, instead of refusing, and records that retirement beside the
+#   retired record. When this record is the slot's current occupant, it retires
+#   the co-claimant's superseded claim and continues to return the slot; when the
+#   owner record names the co-claimant as the current occupant, it retires this
+#   record's own superseded claim and cleans this record up without returning or
+#   touching that slot. The flag is never implied: without it the refusal above
+#   stands unchanged, and --force alone never reaches this path.
 #   --legacy-record accepts a task record that predates the spawn_gen field:
 #   teardown then proceeds only when the recorded endpoint is confirmed dead or
 #   agent-less (bin/fm-backend.sh's recovery-grade classifier), and without
@@ -291,11 +329,14 @@ fi
 ID=$1
 FORCE=
 LEGACY_RECORD_GIVEN=0
+RETIRE_SUPERSEDED_CLAIM=0
+TEARDOWN_NON_OCCUPANT_METAS=()
 shift
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --force) FORCE=--force ;;
     --legacy-record) LEGACY_RECORD_GIVEN=1 ;;
+    --retire-superseded-claim) RETIRE_SUPERSEDED_CLAIM=1 ;;
     *)
       echo "error: invalid teardown request" >&2
       exit 2
@@ -2332,6 +2373,183 @@ teardown_slot_current_occupant() {  # <record-meta> <other-meta> <slot>
   return 1
 }
 
+# The durable record of one retired stale slot claim, written beside the record
+# whose claim it retires. It names the spawn incarnation whose claim it retires,
+# so it speaks only for that incarnation and never for a later one that reuses
+# the same task id. Deliberately outside the volatile files teardown removes with
+# a record, so why a task stopped naming its pool slot stays readable after that
+# record itself is cleaned up.
+teardown_claim_retirement_path() {  # <other-meta>
+  printf '%s.claim-retired\n' "${1%.meta}"
+}
+
+# True when a record at that path retired a claim of the record it sits beside,
+# whatever retirer, slot, or incarnation it recorded. It separates a stale
+# statement about this record's claim, which a later retirement may restamp, from
+# an unrelated record, which is never overwritten and never read as consent. The
+# recorded slot is informational: a task respawned on another pool slot is still
+# the same record, and a statement that retired its earlier claim must not lock
+# that record out of being retired again.
+teardown_claim_retirement_names_claim() {  # <marker> <other-id>
+  local marker=$1
+  [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
+  [ "$(fm_meta_get "$marker" retired_task)" = "$2" ]
+}
+
+# The address that makes a record at that path this run's own statement: the same
+# retiring task, the same retired task, and the same slot. It is read together
+# with the recorded incarnation to decide idempotency; a record naming another
+# retirer is not this run's statement.
+teardown_claim_retirement_address_matches() {  # <marker> <record-id> <other-id> <slot>
+  local marker=$1
+  [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
+  [ "$(fm_meta_get "$marker" retired_by)" = "$2" ] || return 1
+  [ "$(fm_meta_get "$marker" retired_task)" = "$3" ] || return 1
+  [ "$(fm_meta_get "$marker" slot)" = "$4" ]
+}
+
+# Write one retirement record atomically, one `key=value` line per fact so it
+# reads back through the same field lookup every task record uses. Every fact an
+# audit needs is required: who retired the claim and from which home, when, the
+# pool's own owner-start instant and both claim epochs that are its evidence, and
+# the reason that claim reads as superseded. One retirement is written once for
+# the incarnation it retires; a retry of that same retirement finds the marker
+# already describing it and leaves it untouched, while a marker left by an
+# earlier incarnation of the same retirement is restamped for the current one.
+teardown_claim_retirement_write() {  # <marker> <record-id> <other-id> <slot> <owner-started> <record-claim> <other-claim>
+  local marker=$1 record_id=$2 other_id=$3 slot=$4 owner_started=$5 record_claim=$6 other_claim=$7 tmp
+  tmp="$marker.tmp.$$"
+  if ! (
+    umask 077
+    {
+      printf 'retired_by=%s\n' "$record_id"
+      printf 'retired_task=%s\n' "$other_id"
+      printf 'slot=%s\n' "$slot"
+      printf 'home=%s\n' "$FM_HOME"
+      printf 'operator=%s\n' "$(id -un 2>/dev/null || printf unknown)"
+      printf 'retired_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      printf 'owner_started_at=%s\n' "$owner_started"
+      printf 'retiring_claim_epoch=%s\n' "$record_claim"
+      printf 'retired_claim_epoch=%s\n' "$other_claim"
+      printf 'reason=claim began before the pool current owner took the slot\n'
+    } > "$tmp"
+  ); then
+    rm -f "$tmp"
+    return 1
+  fi
+  mv -f "$tmp" "$marker" || {
+    rm -f "$tmp"
+    return 1
+  }
+}
+
+# True when one record's claim on <slot> has been retired: a retirement record
+# naming exactly this record, its slot, and the spawn incarnation whose claim it
+# retires sits beside it, and the claim it retires is the record's own
+# `worktree=` field. The incarnation binding is what keeps a tombstone for an
+# earlier spawn of a reused task id from authorizing anything for a later one:
+# Treehouse hands a respawned task the same recycled slot path under a fresh
+# spawn_gen, so the record's claim epoch must equal the one the retirement
+# recorded. The reader is never looser than the writer: a marker whose retired_by
+# is empty, or whose retired_task is not this record, is malformed or unrelated
+# and is never read as consent. So is a missing, symlinked, or
+# differently-addressed record, and the claim then stands. <slot> is compared as
+# the physical path, because that is the identity the guard and this record's own
+# teardown both resolve the field to.
+teardown_claim_is_retired() {  # <meta> <slot>
+  local meta=$1 slot=$2 marker claimed retirer retired_task record_claim retired_claim
+  marker=$(teardown_claim_retirement_path "$meta")
+  [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
+  retirer=$(fm_meta_get "$marker" retired_by)
+  [ -n "$retirer" ] || return 1
+  retired_task=$(fm_meta_get "$marker" retired_task)
+  [ "$retired_task" = "$(basename "$meta" .meta)" ] || return 1
+  [ "$retirer" != "$retired_task" ] || return 1
+  claimed=$(fm_meta_get "$marker" slot)
+  [ -n "$claimed" ] || return 1
+  if [ "$claimed" != "$slot" ] \
+     && [ "$(canonical_existing_dir "$claimed" 2>/dev/null)" != "$slot" ]; then
+    return 1
+  fi
+  record_claim=$(teardown_meta_slot_claim_epoch "$meta") || return 1
+  retired_claim=$(fm_meta_get "$marker" retired_claim_epoch)
+  [ "$retired_claim" = "$record_claim" ] || return 1
+  [ "$(fm_meta_get "$meta" worktree)" != "" ]
+}
+
+# Retire a co-claimant's claim on the live slot this record is the pool's current
+# occupant of, as the one supported alternative to refusing when no process proof
+# can be made. The caller has already established the occupancy reading, and this
+# function re-reads every fact it records rather than trusting the caller's copy.
+# The record itself is never rewritten: retirement is a durable statement BESIDE
+# it, so a record keeps every field its own teardown needs (bin/fm-backend.sh
+# refuses a record whose worktree identity went missing) and the retirement stays
+# readable after that record is cleaned up. The retired record's own meta lock
+# serializes the write against its lifecycle; teardown already holds the shared
+# Treehouse project lock, which every pool-slot teardown takes before its meta
+# lock, so this nesting cannot invert. Idempotent: a retirement already recorded
+# for this same claim incarnation is not rewritten, so a retry cannot restamp it;
+# a marker left for an earlier incarnation of the same claim is restamped for the
+# current one, because a tombstone that does not describe the claim it retires is
+# never treated as consent.
+teardown_retire_superseded_slot_claim() {  # <record-meta> <record-id> <other-meta> <other-id> <slot>
+  local record_meta=$1 record_id=$2 other=$3 other_id=$4 slot=$5
+  local marker lock lock_pid cur_pid owner_started record_claim other_claim held
+  marker=$(teardown_claim_retirement_path "$other")
+  owner_started=$(teardown_slot_owner_started_at "$slot") || return 1
+  record_claim=$(teardown_meta_slot_claim_epoch "$record_meta") || return 1
+  other_claim=$(teardown_meta_slot_claim_epoch "$other") || return 1
+  lock=$(fm_meta_lock_path "$other") || return 1
+  held=0
+  fm_current_pid cur_pid || return 1
+  lock_pid=$(cat "$lock/pid" 2>/dev/null || true)
+  if [ -n "$lock_pid" ] && [ "$lock_pid" = "$cur_pid" ]; then
+    held=1
+  fi
+  if [ "$held" = 0 ]; then
+    fm_lock_acquire_wait "$lock" || return 1
+    if [ "$(teardown_meta_slot_claim_epoch "$other")" != "$other_claim" ]; then
+      echo "REFUSED: task $other_id's claim on $slot changed while teardown waited for that record's lock; that claim was not retired." >&2
+      fm_lock_release "$lock"
+      return 1
+    fi
+  fi
+  if [ -e "$marker" ] || [ -L "$marker" ]; then
+    if ! teardown_claim_retirement_names_claim "$marker" "$other_id"; then
+      echo "REFUSED: $marker records another claim's retirement, and teardown never overwrites an unrelated record; task $other_id's claim was not retired." >&2
+      [ "$held" = 1 ] || fm_lock_release "$lock"
+      return 1
+    fi
+    if [ "$(fm_meta_get "$marker" retired_claim_epoch)" = "$other_claim" ]; then
+      if ! teardown_claim_retirement_address_matches "$marker" "$record_id" "$other_id" "$slot"; then
+        echo "REFUSED: $marker already records task $other_id's claim on $slot as retired by another task; task $other_id's claim was not retired by this one." >&2
+        [ "$held" = 1 ] || fm_lock_release "$lock"
+        return 1
+      fi
+      [ "$held" = 1 ] || fm_lock_release "$lock"
+      return 0
+    fi
+  fi
+  if ! teardown_claim_retirement_write "$marker" "$record_id" "$other_id" "$slot" \
+      "$owner_started" "$record_claim" "$other_claim"; then
+    echo "REFUSED: could not record the retirement of task $other_id's claim on $slot; nothing was changed." >&2
+    [ "$held" = 1 ] || fm_lock_release "$lock"
+    return 1
+  fi
+  [ "$held" = 1 ] || fm_lock_release "$lock"
+  return 0
+}
+
+# Retire this record's own claim on the slot the pool's owner record shows the
+# co-claimant occupies: the superseded direction of --retire-superseded-claim.
+# The primitive above is symmetric in its two roles, so this is the same
+# retirement written from the other side, converging on the same marker beside
+# this record. This record's own meta lock is already held by its teardown, so the
+# primitive's held-lock fast path skips re-acquiring it.
+teardown_retire_own_superseded_slot_claim() {  # <record-meta> <record-id> <occupant-meta> <occupant-id> <slot>
+  teardown_retire_superseded_slot_claim "$3" "$4" "$1" "$2" "$5"
+}
+
 # True only in the reading where the refusal may still name the sanctioned
 # release order: a co-claimant that is not a secondmate home reads a live
 # agent while this record's own endpoint does not. Every other reading - both
@@ -2387,6 +2605,23 @@ teardown_slot_claim_is_uncontested() {  # <record-meta> <other-meta> <slot>
   teardown_slot_processes_belong_to "$record_meta" "$slot"
 }
 
+# True when the slot-ownership guard classified this record as the superseded
+# side of a collision under --retire-superseded-claim: the pool's own owner
+# record names another record as the slot's current occupant, so this record is
+# cleaned up without returning or touching that slot. The recorded identity is
+# resolved physically, like every other record comparison here.
+teardown_record_is_non_occupant() {  # <meta>
+  local meta=$1 dir base candidate candidate_dir
+  [ "${#TEARDOWN_NON_OCCUPANT_METAS[@]}" -eq 0 ] && return 1
+  dir=$(canonical_existing_dir "${meta%/*}" 2>/dev/null) || return 1
+  base=${meta##*/}
+  for candidate in "${TEARDOWN_NON_OCCUPANT_METAS[@]}"; do
+    candidate_dir=$(canonical_existing_dir "${candidate%/*}" 2>/dev/null) || continue
+    [ "$candidate_dir" != "$dir" ] || [ "${candidate##*/}" != "$base" ] || return 0
+  done
+  return 1
+}
+
 require_exclusive_worktree_slot_record() {
   local record_meta=$1 record_id=$2 record_state=$3 worktree=$4
   local slot state_dir other_dir other other_id field other_path other_slot own_dir own_name occupied
@@ -2419,6 +2654,10 @@ require_exclusive_worktree_slot_record() {
         [ -n "$other_path" ] || continue
         other_slot=$(canonical_existing_dir "$other_path") || continue
         [ "$other_slot" = "$slot" ] || continue
+        if [ "$field" = worktree ] && teardown_claim_is_retired "$other" "$slot"; then
+          echo "teardown: task $other_id also records $slot, but its claim on that slot was retired at $(teardown_claim_retirement_path "$other"), so it no longer holds the slot; cleanup continues" >&2
+          continue
+        fi
         if [ "$field" = worktree ] && teardown_slot_claim_is_uncontested "$record_meta" "$other" "$slot"; then
           echo "teardown: task $other_id also records $slot, but its endpoint reads no live agent, the shared copy holds no unlanded work, and nothing rooted in the slot belongs to anyone else; task $record_id is the surviving claimant, so cleanup continues" >&2
           continue
@@ -2433,13 +2672,29 @@ require_exclusive_worktree_slot_record() {
           echo "teardown: task $other_id also records $slot, but its claim began before the pool's current owner took the slot, so that claim is superseded; task $record_id is the slot's true occupant and cleanup continues" >&2
           continue
         fi
+        if [ "$RETIRE_SUPERSEDED_CLAIM" = 1 ] \
+           && [ "$occupied" = record ] \
+           && teardown_slot_copy_is_landed "$slot" \
+           && teardown_retire_superseded_slot_claim "$record_meta" "$record_id" "$other" "$other_id" "$slot"; then
+          echo "teardown: task $other_id also records $slot, and the pool's current owner of that slot is task $record_id, so task $other_id's superseded claim was retired at $(teardown_claim_retirement_path "$other"); cleanup continues" >&2
+          continue
+        fi
+        if [ "$occupied" = other ] && [ "$RETIRE_SUPERSEDED_CLAIM" = 1 ] \
+           && teardown_retire_own_superseded_slot_claim "$record_meta" "$record_id" "$other" "$other_id" "$slot"; then
+          echo "teardown: task $other_id also records $slot, and the pool's owner record names task $other_id as the slot's current occupant, so task $record_id's superseded claim was retired at $(teardown_claim_retirement_path "$record_meta"); task $record_id will not return that slot, and cleanup continues" >&2
+          TEARDOWN_NON_OCCUPANT_METAS+=("$record_meta")
+          continue
+        fi
         echo "REFUSED: task $record_id's recorded worktree $slot is also task $other_id's recorded $field." >&2
-        echo "Returning that pool slot would kill $other_id's processes and reset its copy, so nothing was changed - not even with --force." >&2
+        echo "Returning that pool slot would kill $other_id's processes and reset its copy, so that pool slot was not released - not even with --force." >&2
         if teardown_slot_release_order_applies "$record_meta" "$other"; then
           echo "One record can release it: task $other_id's recorded endpoint is still alive. Tear down task $other_id first, then re-run this one." >&2
         fi
         if [ "$occupied" = other ]; then
           echo "Treehouse's pool state names task $other_id as the slot's current occupant: tear down task $other_id first, then re-run this one." >&2
+        fi
+        if [ "$occupied" = record ] && [ "$RETIRE_SUPERSEDED_CLAIM" != 1 ]; then
+          echo "If the pool's owner record is right, the shared copy holds no unlanded work, and task $other_id's claim is a superseded allocation, retire that stale claim explicitly with: bin/fm-teardown.sh $record_id --retire-superseded-claim" >&2
         fi
         echo "Reconcile whichever record is wrong (bin/fm-crew-state.sh $record_id; bin/fm-crew-state.sh $other_id), then re-run teardown." >&2
         return 1
@@ -3143,7 +3398,7 @@ preflight_firstmate_home_herdr_children() {  # <home>
 }
 
 cleanup_firstmate_home_children() {
-  local home=$1 sub_state child_meta child_id child_t child_wt child_proj child_kind child_home child_backend child_orca_worktree_id child_return_rc child_busy_gen
+  local home=$1 sub_state child_meta child_id child_t child_wt child_slot child_proj child_kind child_home child_backend child_orca_worktree_id child_return_rc child_busy_gen
   sub_state="$home/state"
   [ -d "$sub_state" ] || return 0
   for child_meta in "$sub_state"/*.meta; do
@@ -3200,22 +3455,29 @@ cleanup_firstmate_home_children() {
       fi
       fm_backend_remove_worktree "$child_backend" "$child_orca_worktree_id" || return 1
     elif [ -n "$child_wt" ] && [ -d "$child_wt" ]; then
-      validate_child_worktree_for_removal "$child_wt" "$child_proj" >/dev/null || return 1
-      rm -f "$child_wt/.claude/settings.local.json" "$child_wt/.opencode/plugins/fm-turn-end.js" \
-        "$child_wt/.opencode/plugins/fm-busy-state.js" \
-        "$child_wt/.fm-grok-turnend" "$child_wt/.fm-kimi-turnend"
-      if [ -n "$child_proj" ] && [ -d "$child_proj" ] && command -v treehouse >/dev/null 2>&1; then
-        if teardown_treehouse_return "$child_wt" "$child_proj" "child worktree"; then
-          :
-        else
-          child_return_rc=$?
-          if [ "$child_return_rc" -eq "$TEARDOWN_TREEHOUSE_LOCK_REFUSED" ]; then
-            return "$child_return_rc"
+      child_slot=$(canonical_existing_dir "$child_wt" 2>/dev/null) || child_slot=
+      if [ -n "$child_slot" ] && teardown_claim_is_retired "$child_meta" "$child_slot"; then
+        echo "teardown: child task $child_id's claim on $child_wt was retired at $(teardown_claim_retirement_path "$child_meta"); cleaning up the record without returning or touching that slot" >&2
+      elif teardown_record_is_non_occupant "$child_meta"; then
+        echo "teardown: child task $child_id's claim on $child_wt is superseded by the slot's current occupant; cleaning up the record without returning or touching that slot" >&2
+      else
+        validate_child_worktree_for_removal "$child_wt" "$child_proj" >/dev/null || return 1
+        rm -f "$child_wt/.claude/settings.local.json" "$child_wt/.opencode/plugins/fm-turn-end.js" \
+          "$child_wt/.opencode/plugins/fm-busy-state.js" \
+          "$child_wt/.fm-grok-turnend" "$child_wt/.fm-kimi-turnend"
+        if [ -n "$child_proj" ] && [ -d "$child_proj" ] && command -v treehouse >/dev/null 2>&1; then
+          if teardown_treehouse_return "$child_wt" "$child_proj" "child worktree"; then
+            :
+          else
+            child_return_rc=$?
+            if [ "$child_return_rc" -eq "$TEARDOWN_TREEHOUSE_LOCK_REFUSED" ]; then
+              return "$child_return_rc"
+            fi
+            safe_rm_rf_child_worktree "$child_wt" "$child_proj"
           fi
+        else
           safe_rm_rf_child_worktree "$child_wt" "$child_proj"
         fi
-      else
-        safe_rm_rf_child_worktree "$child_wt" "$child_proj"
       fi
     fi
     remove_grok_turnend_auth "$sub_state" "$child_id" || return 1
@@ -3252,7 +3514,29 @@ remove_secondmate_registry_entry() {
   return "$rc"
 }
 
+# A claim already retired from this record is no longer this record's to return:
+# the pool's current owner of that slot holds it, or already collected it. Blank
+# the in-memory claim here - after the lock-identity check that reads the record,
+# and before every step that acts on the path - so a retired record is cleaned up
+# exactly like one that never named a slot: no landed-work proof judged against
+# another task's copy, no process reaping inside it, no treehouse return of it.
+# The record's own fields stay intact, so its endpoint and identity validation
+# still run and the retirement stays auditable beside it.
+if [ -n "$WT" ]; then
+  TEARDOWN_RETIRED_SLOT=$(canonical_existing_dir "$WT" 2>/dev/null) || TEARDOWN_RETIRED_SLOT=
+  if [ -n "$TEARDOWN_RETIRED_SLOT" ] && teardown_claim_is_retired "$META" "$TEARDOWN_RETIRED_SLOT"; then
+    echo "teardown: task $ID's claim on $WT was retired by $(teardown_claim_retirement_path "$META"); cleaning up the record without returning or touching that slot" >&2
+    WT=
+  fi
+  TEARDOWN_RETIRED_SLOT=
+fi
+
 require_exclusive_task_worktree_slot || exit 1
+
+if [ -n "$WT" ] && teardown_record_is_non_occupant "$META"; then
+  echo "teardown: task $ID's claim on $WT is superseded by the slot's current occupant; cleaning up the record without returning or touching that slot" >&2
+  WT=
+fi
 
 validate_pr_poll_cleanup "$STATE" "$ID" || exit 1
 
