@@ -1,0 +1,15 @@
+engine: /tmp/fm-engines/target   (real tmux on a private socket)
+
+### an existing endpoint with no agent (the reuse case)
+    recorded endpoint: firstmate:fm-live6  id=@1
+    agent-state before: dead
+
+$ bin/fm-control.sh live6 relaunch --note "..."
+    exit=0
+    warning: /tmp/fm-reuse.mcXSQD/fmhome/data/live6/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+    relaunched live6 harness=pi from=pi model=default effort=default backend=tmux endpoint=firstmate:fm-live6 worktree=/tmp/fm-reuse.mcXSQD/wt
+
+    window id before=@1 after=@1
+    windows named fm-live6: 1
+    agent-state after: alive
+    record window: window=firstmate:fm-live6

@@ -1,0 +1,11 @@
+=== engine: /tmp/fm-engines/target
+=== pre-state: recorded firstmate-other:fm-live2 is structurally gone
+=== attempt 1 output (exit above)
+warning: /tmp/fm-abort.YjzdXr/fmhome/data/live2/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+error: refusing to pre-register Claude trust: '/private/tmp/fm-abort.YjzdXr/home/.claude.json' is not a regular file
+error: could not pre-register Claude workspace trust for /tmp/fm-abort.YjzdXr/wt; refusing to launch a claude worker that would wedge on the trust dialog; inspect window firstmate:fm-live2
+error: the replacement agent for live2 could not be launched on claude
+error: live2's agent was stopped but the replacement did not launch; no agent is running, and its work plus the recorded progress note are preserved at /tmp/fm-abort.YjzdXr/wt
+=== attempt 2 output
+warning: /tmp/fm-abort.YjzdXr/fmhome/data/live2/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+relaunched live2 harness=pi from=claude model=default effort=default backend=tmux endpoint=firstmate:fm-live2 worktree=/tmp/fm-abort.YjzdXr/wt

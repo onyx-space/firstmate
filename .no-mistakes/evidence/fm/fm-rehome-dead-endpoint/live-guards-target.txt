@@ -1,0 +1,17 @@
+engine: /tmp/fm-engines/target   (real tmux on a private socket)
+
+### a) fm-control exit on a structurally gone endpoint
+    recorded endpoint: firstmate:fm-live5  (no such window)
+    agent-state: missing
+    exit=1
+    error: task live5's recorded endpoint is gone, so there is no agent to stop; reconcile the task before any further control action
+
+### b) fm-spawn --relaunch with a LIVE agent at the recorded endpoint
+    agent-state: alive
+    exit=1
+    error: task live5's endpoint reads 'alive'; a relaunch requires a positively agent-free endpoint (stop the agent first with bin/fm-control.sh live5 exit)
+
+    window inventory after both refusals:
+      firstmate:zsh id=@0 cmd=zsh
+      firstmate:fm-live5 id=@1 cmd=node
+    record unchanged: yes

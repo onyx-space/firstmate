@@ -1,0 +1,88 @@
+############################################################
+# engine: /tmp/fm-engines/target
+# real tmux server: /opt/homebrew/bin/tmux -L fmrehome-42998 (private socket, real panes)
+# isolated home: FM_HOME=/tmp/fm-rehome.98zRtM/fmhome   HOME=/tmp/fm-rehome.98zRtM/home
+############################################################
+
+### 1. the reported state: the task's endpoint is entirely gone
+$ tmux list-windows -a
+    firstmate:zsh
+    firstmate-old:tmux
+$ recorded endpoint: firstmate-old:fm-live1
+    agent-state of the recorded endpoint: missing
+    (the window does not exist anywhere; nothing to stop and nothing to relaunch into)
+
+### 2. restart it through the supported path
+$ bin/fm-control.sh live1 relaunch --note "..."
+    warning: /tmp/fm-rehome.98zRtM/fmhome/data/live1/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+    relaunched live1 harness=pi from=pi model=default effort=default backend=tmux endpoint=firstmate:fm-live1 worktree=/tmp/fm-rehome.98zRtM/wt
+    exit=0
+
+### 3. what the restart left behind
+$ tmux list-windows -a  (with pane state)
+    firstmate:zsh id=@0 cmd=zsh cwd=/Users/onyx/.no-mistakes/worktrees/9573b29b9316/01M2A8S1D5S7RKPHA8XZBCMWST
+    firstmate:fm-live1 id=@2 cmd=node cwd=/private/tmp/fm-rehome.98zRtM/wt
+    firstmate-old:zsh id=@1 cmd=zsh cwd=/Users/onyx/.no-mistakes/worktrees/9573b29b9316/01M2A8S1D5S7RKPHA8XZBCMWST
+    agent-state of the rebuilt endpoint: alive
+
+$ state/live1.meta before -> after (the record, not a hand edit)
+<     - window=firstmate-old:fm-live1
+<     - endpoint_task_id=live1
+<     - worktree=/tmp/fm-rehome.98zRtM/wt
+<     - project=/tmp/fm-rehome.98zRtM/proj
+<     - harness=pi
+<     - kind=ship
+<     - mode=no-mistakes
+<     - yolo=off
+<     - tasktmp=/tmp/fm-live1
+<     - model=default
+<     - effort=default
+---
+>     + window=firstmate:fm-live1
+>     + endpoint_task_id=live1
+>     + worktree=/tmp/fm-rehome.98zRtM/wt
+>     + project=/tmp/fm-rehome.98zRtM/proj
+>     + harness=pi
+>     + kind=ship
+>     + mode=no-mistakes
+>     + yolo=off
+>     + tasktmp=/tmp/fm-live1
+>     + model=default
+>     + effort=default
+>     + busy_gen=g1789201287.43879.30087
+>     + spawn_gen=s1789201287.43328.3789
+>     + control_relaunch_tx=43166.20260912T082125Z.21258
+
+$ state/live1.control-relaunch (transaction journal)
+    v1
+    task=live1
+    phase=complete
+    ts=2026-09-12T08:21:29Z
+    backend=tmux
+    endpoint=firstmate:fm-live1
+    worktree=/tmp/fm-rehome.98zRtM/wt
+    kind=ship
+    from_harness=pi
+    from_model=default
+    from_effort=default
+    to_harness=pi
+    to_model=default
+    to_effort=default
+    worktree_head=d6c7d215a41f010fc9c3d1b6b6fe318961e30140
+    worktree_dirty=yes
+    note_file=/tmp/fm-rehome.98zRtM/fmhome/state/live1.control-relaunch.note
+    exit_result=endpoint-missing
+
+$ git status in the recorded worktree (uncommitted work preserved)
+    ?? wip.txt
+    wip.txt: uncommitted work that must survive
+
+### 4. what a live agent is doing in the rebuilt endpoint
+    
+     But there's a strong explicit instruction: "Reply
+    
+    ── ⠧ Working ───────────────────────────────────────────────────────────────────
+    
+    ────────────────────────────────────────────────────────────────────────────────
+    /private/tmp/fm-rehome.98zRtM/wt (task-live1)
+    0.1%/1.0M (auto)                                           deepseek-flash • high

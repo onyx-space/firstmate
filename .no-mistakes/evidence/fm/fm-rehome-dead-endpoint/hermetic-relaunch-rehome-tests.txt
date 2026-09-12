@@ -1,0 +1,7 @@
+ok - fm-control relaunch: a structurally gone endpoint is rebuilt rather than hand-edited
+ok - fm-spawn --relaunch: rebuilds a structurally gone endpoint through the backend's own creation path
+ok - fm-control relaunch: an abort between endpoint creation and publication reclaims the created endpoint
+ok - fm-spawn --relaunch: an aborted flat-herdr rehome reclaims the tab it created
+ok - fm-spawn --relaunch: an abort never reclaims an adopted herdr tab
+ok - fm-control relaunch: a same-harness relaunch replaces the agent in the same endpoint and worktree
+ok - fm-spawn --relaunch: refuses to launch a second agent into a live endpoint

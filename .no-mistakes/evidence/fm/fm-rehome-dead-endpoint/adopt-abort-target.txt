@@ -1,0 +1,5 @@
+warning: /tmp/fm-adopt.zVtBx5/fmhome/data/live3/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+error: refusing to pre-register Claude trust: '/private/tmp/fm-adopt.zVtBx5/home/.claude.json' is not a regular file
+error: could not pre-register Claude workspace trust for /tmp/fm-adopt.zVtBx5/wt; refusing to launch a claude worker that would wedge on the trust dialog; inspect window firstmate:fm-live3
+error: the replacement agent for live3 could not be launched on claude
+error: live3's agent was stopped but the replacement did not launch; no agent is running, and its work plus the recorded progress note are preserved at /tmp/fm-adopt.zVtBx5/wt
