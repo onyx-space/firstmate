@@ -152,7 +152,7 @@ bounded_scan_all() {  # <log> <start> <max-rounds> -> "<rc>|<record>|<needs>"
     rounds=$((rounds + 1))
     status_span_first_actionable_record "$log" "$start" FM_TEST_RECORD FM_TEST_NEEDS 2>/dev/null
     rc=$?
-    [ "$rc" -eq 2 ] || break
+    [ "$rc" -eq 4 ] || break
     [ "$rounds" -lt "$max" ] || { printf '3||'; return 0; }
   done
   printf '%s|%s|%s' "$rc" "$FM_TEST_RECORD" "$FM_TEST_NEEDS"
@@ -366,7 +366,7 @@ while :; do
   # The caller's poll loop touches its beacon at the top of every cycle, so a
   # scan split across cycles leaves the beacon advancing throughout.
   touch "$beat"
-  [ "$rc" -eq 2 ] || break
+  [ "$rc" -eq 4 ] || break
   [ "$rounds" -lt 400 ] || fail "the bounded scan never completed"
 done
 scan_ms=$(( $(now_ms) - scan_start_ms ))
@@ -406,7 +406,7 @@ record=$(FM_CLASSIFY_SCAN_BUDGET_SECS=1 bash -c \
   '. "$1/bin/fm-classify-lib.sh"; status_span_first_actionable_record "$2" 0' \
   _ "$ROOT" "$resume_log" 2>/dev/null)
 first_rc=$?
-[ "$first_rc" -eq 2 ] || fail "the first round completed instead of deferring"
+[ "$first_rc" -eq 4 ] || fail "the first round completed instead of deferring"
 if [ -e "$cursor" ]; then :; else fail "an unfinished round left no cursor to resume from"; fi
 resumed=$(bounded_scan_all "$resume_log" 0)
 assert_equals "$(reference_scan "$resume_log" 0)" "$resumed" \
@@ -451,12 +451,14 @@ leak_log="$leak_dir/status.status"
 } > "$leak_log" || fail "could not build the cursor-leak fixture"
 leak_start=$(line_offset "$leak_log" 2)
 leak_cursor="$leak_dir/.status.span-scan-cursor.$leak_start"
-printf 'version=%s\n' "$FM_CLASSIFY_SPAN_SCAN_VERSION" > "$leak_cursor"
-printf 'ident=%s\n' "$(_fm_open_decisions_file_ident "$leak_log")" >> "$leak_cursor"
-printf 'start=0\nsize=999\nline=1\nnd=0\nndp=0\n' >> "$leak_cursor"
-printf 'o\talpha\tneeds-decision\tquestion one\n' >> "$leak_cursor"
-printf 'p\talpha\t1\n' >> "$leak_cursor"
-printf 'e\tD\talpha\t1\tneeds-decision\tneeds-decision: [key=alpha] question one\n' >> "$leak_cursor"
+{
+  printf 'version=%s\n' "$FM_CLASSIFY_SPAN_SCAN_VERSION"
+  printf 'ident=%s\n' "$(_fm_open_decisions_file_ident "$leak_log")"
+  printf 'start=0\nsize=999\nline=1\nnd=0\nndp=0\n'
+  printf 'o\talpha\tneeds-decision\tquestion one\n'
+  printf 'p\talpha\t1\n'
+  printf 'e\tD\talpha\t1\tneeds-decision\tneeds-decision: [key=alpha] question one\n'
+} > "$leak_cursor"
 assert_equivalent "$leak_log" "$leak_start" \
   "a rejected cursor contributed none of its own records to the answered span"
 if [ -e "$leak_cursor" ]; then fail "the classification left a rejected cursor behind"; fi
@@ -479,14 +481,14 @@ b_cursor="$iso_dir/.status.span-scan-cursor.$iso_start_b"
 
 FM_CLASSIFY_SCAN_BUDGET_SECS=1 \
   status_span_first_actionable_record "$iso_log" "$iso_start_a" FM_TEST_RECORD FM_TEST_NEEDS 2>/dev/null
-[ "$?" -eq 2 ] || fail "A's first isolation round completed instead of deferring"
+[ "$?" -eq 4 ] || fail "A's first isolation round completed instead of deferring"
 [ -e "$a_cursor" ] || fail "A's round persisted no per-start progress cursor"
 a_line=$(sed -n 's/^line=//p' "$a_cursor")
 [ "${a_line:-0}" -gt 0 ] || fail "A's cursor recorded no folded lines"
 
 FM_CLASSIFY_SCAN_BUDGET_SECS=1 \
   status_span_first_actionable_record "$iso_log" "$iso_start_b" FM_TEST_RECORD FM_TEST_NEEDS 2>/dev/null
-[ "$?" -eq 2 ] || fail "B's first isolation round completed instead of deferring"
+[ "$?" -eq 4 ] || fail "B's first isolation round completed instead of deferring"
 [ -e "$b_cursor" ] || fail "B's round persisted no per-start progress cursor"
 b_line=$(sed -n 's/^line=//p' "$b_cursor")
 [ "${b_line:-0}" -gt 0 ] || fail "B's cursor recorded no folded lines"
@@ -495,7 +497,7 @@ b_line=$(sed -n 's/^line=//p' "$b_cursor")
 
 FM_CLASSIFY_SCAN_BUDGET_SECS=1 \
   status_span_first_actionable_record "$iso_log" "$iso_start_a" FM_TEST_RECORD FM_TEST_NEEDS 2>/dev/null
-[ "$?" -eq 2 ] || fail "A's resumed isolation round completed instead of deferring"
+[ "$?" -eq 4 ] || fail "A's resumed isolation round completed instead of deferring"
 a_advanced=$(sed -n 's/^line=//p' "$a_cursor")
 [ "${a_advanced:-0}" -gt "$a_line" ] || fail "A restarted instead of resuming its folded position"
 [ "$(sed -n 's/^line=//p' "$b_cursor")" = "$b_line" ] \
@@ -508,5 +510,77 @@ iso_b_final=$(bounded_scan_all "$iso_log" "$iso_start_b")
 [ "${iso_b_final%%|*}" = 0 ] || [ "${iso_b_final%%|*}" = 1 ] \
   || fail "B did not complete after A's rounds interleaved: $iso_b_final"
 pass "isolation: two callers keep separate span progress without restarting"
+
+
+# --- a deferral is not an unreadable log ------------------------------------
+
+# Callers branch on this verdict: the watcher routes a deferral, the away daemon
+# explains it, and the push paths mark surfaced positions from it. A readable log
+# whose classification is still running must therefore never report the same
+# value a genuinely unreadable status object does.
+verdict_dir="$STATE/verdicts"
+mkdir -p "$verdict_dir" || fail "could not create $verdict_dir"
+build_log "$verdict_dir/status.status" 400 || fail "could not build the verdict fixture"
+verdict_log="$verdict_dir/status.status"
+FM_CLASSIFY_SPAN_SCAN_NOTICE=''
+FM_TEST_RECORD=''
+FM_TEST_NEEDS=0
+FM_CLASSIFY_SCAN_BUDGET_SECS=1 \
+  status_span_first_actionable_record "$verdict_log" 0 FM_TEST_RECORD FM_TEST_NEEDS 2>/dev/null
+defer_rc=$?
+[ "$defer_rc" -eq 4 ] \
+  || fail "a readable over-budget span did not report the deferral verdict (got $defer_rc)"
+[ -n "$FM_CLASSIFY_SPAN_SCAN_NOTICE" ] || fail "a deferral reported no reason"
+assert_contains "$FM_CLASSIFY_SPAN_SCAN_NOTICE" 'scan budget exceeded' \
+  "the deferral reason did not name the budget"
+
+unreadable_log="$verdict_dir/unreadable.status"
+ln -s "$verdict_dir/absent.status" "$unreadable_log" || fail "could not build the unreadable fixture"
+FM_TEST_RECORD=''
+FM_TEST_NEEDS=0
+status_span_first_actionable_record "$unreadable_log" 0 FM_TEST_RECORD FM_TEST_NEEDS 2>/dev/null
+unreadable_rc=$?
+[ "$unreadable_rc" -eq 2 ] \
+  || fail "an unreadable status object did not report the unreadable verdict (got $unreadable_rc)"
+rm -f "$unreadable_log" "$verdict_dir/.status.span-scan-cursor.0"
+pass "verdicts: a bounded deferral reports 4, a genuinely unreadable log still reports 2"
+
+# --- a decision in the span's TAIL is reached by resuming -------------------
+
+# The reported workload is a long log whose decision sits at the END of the span,
+# and a log that stops growing afterwards. One bounded round must not answer for
+# a tail it never folded, and the resumed rounds must find it exactly as the
+# whole-file fold does.
+tail_dir="$STATE/tail-decision"
+mkdir -p "$tail_dir" || fail "could not create $tail_dir"
+tail_log="$tail_dir/status.status"
+{
+  i=0
+  while [ "$i" -lt 600 ]; do
+    printf 'working: routine progress line %s with some words in it\n' "$i"
+    i=$((i + 1))
+  done
+  printf 'needs-decision: [key=tail] pick the release target\n'
+} > "$tail_log" || fail "could not build the tail fixture"
+
+FM_TEST_RECORD=''
+FM_TEST_NEEDS=0
+FM_CLASSIFY_SCAN_BUDGET_SECS=1 \
+  status_span_first_actionable_record "$tail_log" 0 FM_TEST_RECORD FM_TEST_NEEDS 2>/dev/null
+tail_first_rc=$?
+[ "$tail_first_rc" -eq 4 ] \
+  || fail "the tail fixture finished in one round, so it proves nothing"
+[ "$FM_TEST_NEEDS" -eq 0 ] \
+  || fail "an unfinished round reported a decision it had not folded yet"
+tail_final=$(bounded_scan_all "$tail_log" 0)
+assert_contains "$tail_final" 'needs-decision: [key=tail] pick the release target' \
+  "the resumed scan never reached the decision at the span's tail"
+assert_equals "$(reference_scan "$tail_log" 0)" "$tail_final" \
+  "a tail decision reached by resuming differs from the whole-file fold"
+[ "${tail_final##*|}" = 1 ] || fail "the tail decision was not reported as decision-owned"
+if [ -e "$tail_dir/.status.span-scan-cursor.0" ]; then
+  fail "the resumed tail scan left a cursor behind"
+fi
+pass "tail decision: resuming reaches a decision in the span's tail, and an unfinished round reports none of it"
 
 printf 'ok - fm-classify-span-scan\n'

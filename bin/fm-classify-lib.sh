@@ -1705,12 +1705,24 @@ _fm_status_open_decision_origins() {  # <status-file>
 #     reached - in a cursor beside the status log, one per span start, and
 #     reports "not yet classified". Keying the cursor by the span start keeps
 #     two callers classifying different spans of the same log from rejecting,
-#     overwriting, or deleting each other's progress. Every caller already
-#     answers that verdict by surfacing the wake and classifying the log again
-#     later, which is the same handling an unreadable log gets, so a round that
-#     stops short delays a verdict instead of losing one. The next call resumes
-#     at the persisted line, so the answer is what one unbounded pass would have
+#     overwriting, or deleting each other's progress. The next call resumes at
+#     the persisted line, so the answer is what one unbounded pass would have
 #     produced and no input is skipped.
+#
+# The verdict is what tells a caller whether a span still needs classifying.
+# This function returns:
+#   0  the span is classified and holds actionable content
+#   1  the span is classified and holds nothing actionable
+#   2  the status object could not be read at all - genuinely unclassifiable
+#   4  the span is readable but the bounded round stopped short: the scan is
+#      unfinished, its progress is persisted, and the caller must come back.
+# The deferral is deliberately NOT 2: an unreadable log and a readable log whose
+# classification is still running call for different handling - the first is a
+# failure to report, the second is work in progress whose remaining content is
+# still unknown. FM_CLASSIFY_SPAN_SCAN_NOTICE carries the deferral's reason, and
+# the needs-decision verdict computed from the folded prefix is published
+# through the caller's needs-decision variable before returning 4, so a caller
+# that must route while the scan is unfinished can still route decision-owned.
 #
 # Positions are the span's own line numbers, one numbering for both the origin
 # map and the candidate lines it is compared against. That is exactly what the
@@ -2082,7 +2094,8 @@ status_span_first_actionable_record() {  # <status-file> <start-offset> [record-
   rm -f "$chunk_file" "$rest_file"
   if [ "$scan_rc" -eq 2 ]; then
     # The remaining span could not be read. That is a classification failure,
-    # never an answer built from part of the input.
+    # never an answer built from part of the input, and the caller must keep
+    # treating it as unreadable content.
     return 2
   fi
   if [ "$scan_rc" -ne 0 ]; then
@@ -2095,8 +2108,8 @@ status_span_first_actionable_record() {  # <status-file> <start-offset> [record-
     fi
     # A round that stopped short is a deferral, never an answer: persist what it
     # folded so the next call resumes exactly there, say so in one line, and
-    # report the "could not classify this round" verdict callers already handle
-    # by surfacing the wake and classifying the log again later.
+    # report the deferral verdict (4) rather than the unreadable one (2) - the
+    # log is readable, its classification simply is not finished.
     if _fm_span_scan_save "$cursor" "$ident" "$start" "$size"; then
       _fm_span_scan_stopped "$(basename "$f" .status)"
     else
@@ -2104,7 +2117,7 @@ status_span_first_actionable_record() {  # <status-file> <start-offset> [record-
       FM_CLASSIFY_SPAN_SCAN_NOTICE="scan progress for $(basename "$f" .status) could not be persisted; the log will be re-classified"
       printf '%s\n' "$FM_CLASSIFY_SPAN_SCAN_NOTICE" >&2
     fi
-    return 2
+    return 4
   fi
   rm -f "$cursor"
   _fm_span_scan_finalize "$size" "$ident" "$output_var" "$needs_var"

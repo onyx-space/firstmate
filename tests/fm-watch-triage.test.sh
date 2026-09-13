@@ -1590,6 +1590,46 @@ test_over_budget_needs_decision_signal_payload_marked() {
   pass "an over-budget needs-decision span still queues a decision-owned signal row"
 }
 
+# A decision at the TAIL of an over-budget span is the case the reported bug
+# produced: the round never reaches it, so no marker can come from the folded
+# prefix. The row must still be decision-owned, and the deferral may not record
+# the span as reported - the file has to come back and the scan has to resume
+# until the span is finished, or that tail decision is stranded unclassified.
+test_over_budget_tail_decision_routes_and_retries() {
+  local dir state fakebin out status_file pid i cursor first_line second_line
+  dir=$(make_case over-budget-tail-decision); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"
+  status_file="$state/task.status"
+  {
+    i=0
+    while [ "$i" -lt 4000 ]; do
+      printf 'working: routine progress line %s with some words in it\n' "$i"
+      i=$((i + 1))
+    done
+    printf 'needs-decision: [key=tail] pick the release target\n'
+  } > "$status_file"
+  export FM_CLASSIFY_SCAN_BUDGET_SECS=1
+
+  watch_bg "$state" "$fakebin" "$out"; pid=$!
+  wait_for_exit "$pid" 300 || fail "the watcher did not surface an over-budget tail decision"
+  grep -F "$(printf 'signal\ttask.status\tneeds-decision:')" "$state/.wake-queue" >/dev/null \
+    || fail "an over-budget span with an unfolded tail decision was queued as an ordinary signal: $(cat "$state/.wake-queue")"
+  cursor="$state/.task.span-scan-cursor.0"
+  [ -e "$cursor" ] || fail "the deferred round left no resumable progress behind"
+  first_line=$(sed -n 's/^line=//p' "$cursor")
+
+  ack_stopped_cycle "$state" || fail "could not acknowledge the deferred over-budget wake"
+  watch_bg "$state" "$fakebin" "$out"; pid=$!
+  wait_for_exit "$pid" 300 || fail "the unfinished span did not come back for a second classification"
+  grep -F 'task.status' "$state/.wake-queue" >/dev/null \
+    || fail "the unfinished span was recorded as reported and never came back"
+  second_line=$(sed -n 's/^line=//p' "$cursor" 2>/dev/null)
+  [ "${second_line:-0}" -gt "${first_line:-0}" ] \
+    || fail "the resumed round did not advance past ${first_line:-none}"
+  unset FM_CLASSIFY_SCAN_BUDGET_SECS
+  pass "an over-budget span keeps a tail decision decision-owned and is retried until the span is finished"
+}
+
 # A captain-held declaration is itself actionable. Positive evidence that the
 # crew is still working must not absorb the signal before its main-only marker
 # can be delivered.
@@ -4847,6 +4887,7 @@ test_actionable_signal_surfaced
 test_needs_decision_signal_payload_marked_for_branch_exclusion
 test_needs_decision_reconciliation_required_still_marked
 test_over_budget_needs_decision_signal_payload_marked
+test_over_budget_tail_decision_routes_and_retries
 test_captain_held_signal_payload_marked_for_branch_exclusion
 test_pending_reply_escalation_signal_payload_marked_for_branch_exclusion
 test_ordinary_blocked_signal_payload_remains_branch_eligible
@@ -4916,3 +4957,8 @@ test_afk_one_shot_never_hands_off_captain_held_under_away_record
 test_paused_until_near_future_is_quiet_before_the_cadence
 test_paused_until_wrong_year_is_bounded_by_the_cadence
 test_paused_until_that_passed_is_rechecked_before_the_cadence
+
+# A watcher this suite started and never reaped keeps polling a fixture state
+# directory that cleanup is about to remove, which is how an earlier run left
+# orphaned watchers behind. Judge only the pids this shell started.
+fm_test_assert_no_leftover_processes "watcher triage left no process behind"

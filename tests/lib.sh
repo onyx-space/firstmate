@@ -146,8 +146,85 @@ fm_test_reap_procevent_homes() {
 FM_TEST_STUB_MAX_BLOCK_SECONDS=${FM_TEST_STUB_MAX_BLOCK_SECONDS:-120}
 export FM_TEST_STUB_MAX_BLOCK_SECONDS
 
+# --- tracked test processes -------------------------------------------------
+#
+# A test spawns watchers and other long-lived children with `&`. Cleanup removed
+# their directories but reaped no processes, so a case that exited without
+# killing one - or a run killed hard enough to skip its traps - left a watcher
+# polling against a state directory that no longer existed. Every spawned pid is
+# tracked in a `$$`-keyed registry for the same reason the temp roots are: the
+# spawn usually happens inside a command substitution, so a shell array would
+# silently track nothing. Reaping uses exactly those pids and the current shell's
+# own background jobs - never a name or command pattern, which would reach into
+# another home's live watcher.
+FM_TEST_PID_REGISTRY=$(mktemp "${TMPDIR:-/tmp}/.fm-test-pids.$$.XXXXXX") || return 1
+
+# Register a process this test started so cleanup can reap it. An empty or
+# non-numeric pid is ignored rather than recorded as something unkillable.
+fm_test_track_pid() {  # <pid>
+  local pid=$1
+  case "$pid" in ''|*[!0-9]*) return 0 ;; esac
+  printf '%s\n' "$pid" >> "$FM_TEST_PID_REGISTRY" 2>/dev/null || true
+}
+
+# Add this shell's still-running background jobs to the tracked set, so a test
+# that never called fm_test_track_pid still cannot leak the watcher it spawned.
+fm_test_track_background_jobs() {
+  local pid
+  for pid in $(jobs -p 2>/dev/null); do
+    fm_test_track_pid "$pid"
+  done
+}
+
+# Reap every tracked pid: TERM first so a watcher runs its own exit path, then
+# KILL whatever is still alive. Called before the temp roots are removed so no
+# child is left racing a state directory that is going away.
+fm_test_reap_tracked_pids() {
+  local pid i alive
+  fm_test_track_background_jobs
+  [ -f "$FM_TEST_PID_REGISTRY" ] || return 0
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    kill -TERM "$pid" 2>/dev/null || true
+  done < "$FM_TEST_PID_REGISTRY"
+  i=0
+  while [ "$i" -lt 20 ]; do
+    alive=0
+    while IFS= read -r pid; do
+      [ -n "$pid" ] || continue
+      kill -0 "$pid" 2>/dev/null && alive=1
+    done < "$FM_TEST_PID_REGISTRY"
+    [ "$alive" -eq 0 ] && break
+    sleep 0.05
+    i=$((i + 1))
+  done
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    kill -KILL "$pid" 2>/dev/null || true
+  done < "$FM_TEST_PID_REGISTRY"
+  rm -f "$FM_TEST_PID_REGISTRY"
+}
+
+# Fail the case when a process it started is still alive at its end. The check
+# reads the tracked set only, so another home's live watcher can never trip it.
+fm_test_assert_no_leftover_processes() {  # <label>
+  local pid alive=''
+  fm_test_track_background_jobs
+  if [ ! -f "$FM_TEST_PID_REGISTRY" ]; then
+    pass "$1: no process this case started is still running"
+    return 0
+  fi
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    kill -0 "$pid" 2>/dev/null && alive="$alive $pid"
+  done < "$FM_TEST_PID_REGISTRY"
+  [ -z "$alive" ] || fail "$1: process(es) this case started are still running:$alive"
+  pass "$1: every process this case started was reaped"
+}
+
 fm_test_cleanup() {
   local d
+  fm_test_reap_tracked_pids
   fm_test_reap_procevent_homes
   for d in "${FM_TEST_CLEANUP_DIRS[@]:-}"; do
     [ -n "$d" ] && rm -rf "$d"

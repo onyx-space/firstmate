@@ -359,6 +359,12 @@ classify_signal() {  # <reason-after-colon> <state>
     record=$(status_span_first_actionable_record "$f" \
       "$(status_seen_offset "$state" "$task")")
     rc=$?
+    # A bounded-scan deferral (fm-classify-lib.sh verdict 4) is a readable log
+    # whose classification has not finished; it is not unreadable content. Read
+    # it as "nothing actionable yet" and commit no position, so the next scan
+    # resumes it instead of reporting a permission or I/O failure that is not
+    # there.
+    [ "$rc" -eq 4 ] && { rc=1; record=''; }
     [ "$rc" -eq 1 ] && [ -z "$record" ] && continue
     if [ "$rc" -eq 2 ]; then
       sig=$(status_observed_signature "$f")
@@ -413,6 +419,10 @@ classify_stale() {  # <window> <state> [<span-record> <span-status>]
       "$(status_seen_offset "$state" "$task")")
     rc=$?
   fi
+  # A bounded-scan deferral is unfinished classification of a readable log, not
+  # unreadable content: read it as "nothing actionable yet" so the next tick
+  # resumes it, and keep the unreadable wording for a genuinely unreadable log.
+  [ "$rc" -eq 4 ] && { rc=1; record=''; }
   last=$(last_status_line "$state/$task.status")
   if [ "$rc" -eq 2 ]; then
     printf 'escalate|unreadable status span for %s' "$task"
@@ -1181,6 +1191,10 @@ housekeeping() {  # <state>
       record=$(status_span_first_actionable_record "$f" \
         "$(status_seen_offset "$state" "$task")")
       rc=$?
+      # A bounded-scan deferral is unfinished classification of a readable log,
+      # not an unreadable one: skip it for this catch-all pass and let the next
+      # scan resume it, rather than alarming about a failure that is not there.
+      [ "$rc" -eq 4 ] && continue
       if [ "$rc" -eq 2 ]; then
         ident=$(status_observed_signature "$f")
         status_presentation_marker_reported_matches "$(_seen_status_path "$state" "$task")" "$ident" \
@@ -1350,6 +1364,10 @@ handle_wake() {  # <reason> <state>
                 span_record=$(status_span_first_actionable_record "$state/$task.status" \
                   "$(status_seen_offset "$state" "$task")")
                 span_rc=$?
+                # A deferral is unfinished classification, not unreadability:
+                # treat it as a span that yielded nothing, so no ERROR marker is
+                # written and the next tick resumes it.
+                [ "$span_rc" -eq 4 ] && { span_rc=1; span_record=''; }
                 case "$span_rc" in
                   0|1)
                     if [ -n "$span_record" ]; then endpoint=${span_record%%$'\t'*}; rest=${span_record#*$'\t'}; ident=${rest%%$'\t'*}; printf '%s\t%s\t%s\n' "$task" "$endpoint" "$ident" > "$capture"; fi
