@@ -340,11 +340,63 @@ assert_not_equals "$(scan_events "$honest")" "$(scan_events "$skipped")" \
   "a scan that skipped the unfolded tail produced the same answer as the honest scan"
 pass "teeth: the equivalence assertion detects a scan that skips its input"
 
+# Deferral is budget-bounded, and the budget is wall clock, so a fixture that
+# merely exceeds one round's folding on this host could finish in a single round
+# on a faster one - and a fast Linux CI host folds pure bash several times quicker
+# than the macOS host these cases were written on. Deferral-dependent cases
+# therefore grow their fixture until one round provably cannot finish it, so the
+# case asserts a property of the code instead of the speed of the host.
+defer_fixture() {  # <path> <seed-repeat> -> echoes the repeat that deferred
+  local path=$1 n=$2 rc i=0
+  while :; do
+    build_log "$path" "$n" || return 1
+    FM_CLASSIFY_SCAN_BUDGET_SECS=1 \
+      status_span_first_actionable_record "$path" 0 FM_TEST_RECORD FM_TEST_NEEDS 2>/dev/null
+    rc=$?
+    if [ "$rc" -eq 4 ]; then
+      rm -f "$(dirname "$path")"/.*.span-scan-cursor.*
+      printf '%s' "$n"
+      return 0
+    fi
+    i=$((i + 1))
+    [ "$i" -lt 6 ] || return 1
+    n=$((n * 2))
+  done
+}
+
+# The same growth for a log whose decision sits at its END: every round must stop
+# short of the tail on any host.
+defer_tail_fixture() {  # <path> <seed-lines> -> echoes the line count that deferred
+  local path=$1 n=$2 rc i=0 j
+  while :; do
+    {
+      j=0
+      while [ "$j" -lt "$n" ]; do
+        printf 'working: routine progress line %s with some words in it\n' "$j"
+        j=$((j + 1))
+      done
+      printf 'needs-decision: [key=tail] pick the release target\n'
+    } > "$path" || return 1
+    FM_CLASSIFY_SCAN_BUDGET_SECS=1 \
+      status_span_first_actionable_record "$path" 0 FM_TEST_RECORD FM_TEST_NEEDS 2>/dev/null
+    rc=$?
+    if [ "$rc" -eq 4 ]; then
+      rm -f "$(dirname "$path")"/.*.span-scan-cursor.*
+      printf '%s' "$n"
+      return 0
+    fi
+    i=$((i + 1))
+    [ "$i" -lt 8 ] || return 1
+    n=$((n * 2))
+  done
+}
+
 # --- bounded rounds and a beacon that keeps advancing ----------------------
 
 round_dir="$STATE/rounds"
 mkdir -p "$round_dir" || fail "could not create $round_dir"
-build_log "$round_dir/status.status" 500 || fail "could not build the round fixture"
+defer_fixture "$round_dir/status.status" 400 >/dev/null \
+  || fail "no fixture size in this range deferred the round"
 round_log="$round_dir/status.status"
 beat="$round_dir/.beat"
 : > "$beat"
@@ -398,7 +450,8 @@ assert_equals "$(bounded_scan_all "$round_log" 0 | sed 's/^[0-9]*|//')" \
 
 resume_dir="$STATE/resume"
 mkdir -p "$resume_dir" || fail "could not create $resume_dir"
-build_log "$resume_dir/status.status" 400 || fail "could not build the resume fixture"
+defer_fixture "$resume_dir/status.status" 400 >/dev/null \
+  || fail "no fixture size in this range deferred the resume round"
 resume_log="$resume_dir/status.status"
 cursor="$resume_dir/.status.span-scan-cursor.0"
 # One round in its own process, then abandon that process entirely: everything
@@ -473,7 +526,8 @@ pass "resumption: a rejected cursor's records never leak into the answered span"
 # silently degrade into a full rescan from line 0.
 iso_dir="$STATE/isolation"
 mkdir -p "$iso_dir" || fail "could not create $iso_dir"
-build_log "$iso_dir/status.status" 400 || fail "could not build the isolation fixture"
+defer_fixture "$iso_dir/status.status" 400 >/dev/null \
+  || fail "no fixture size in this range deferred the isolation round"
 iso_log="$iso_dir/status.status"
 iso_start_a=0
 iso_start_b=$(line_offset "$iso_log" 2)
@@ -521,7 +575,8 @@ pass "isolation: two callers keep separate span progress without restarting"
 # value a genuinely unreadable status object does.
 verdict_dir="$STATE/verdicts"
 mkdir -p "$verdict_dir" || fail "could not create $verdict_dir"
-build_log "$verdict_dir/status.status" 400 || fail "could not build the verdict fixture"
+defer_fixture "$verdict_dir/status.status" 400 >/dev/null \
+  || fail "no fixture size in this range deferred the verdict round"
 verdict_log="$verdict_dir/status.status"
 FM_CLASSIFY_SPAN_SCAN_NOTICE=''
 FM_TEST_RECORD=''
@@ -555,14 +610,8 @@ pass "verdicts: a bounded deferral reports 4, a genuinely unreadable log still r
 tail_dir="$STATE/tail-decision"
 mkdir -p "$tail_dir" || fail "could not create $tail_dir"
 tail_log="$tail_dir/status.status"
-{
-  i=0
-  while [ "$i" -lt 600 ]; do
-    printf 'working: routine progress line %s with some words in it\n' "$i"
-    i=$((i + 1))
-  done
-  printf 'needs-decision: [key=tail] pick the release target\n'
-} > "$tail_log" || fail "could not build the tail fixture"
+defer_tail_fixture "$tail_log" 2000 >/dev/null \
+  || fail "no fixture size in this range kept the decision out of the first round"
 
 FM_TEST_RECORD=''
 FM_TEST_NEEDS=0

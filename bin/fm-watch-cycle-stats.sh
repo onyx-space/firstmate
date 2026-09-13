@@ -41,7 +41,16 @@ case "$THRESHOLD" in ''|*[!0-9]*|0) THRESHOLD=$(( GRACE / 2 )) ;; esac
 RECENT=''
 while [ $# -gt 0 ]; do
   case "$1" in
-    --recent) RECENT=${2-}; shift 2 ;;
+    --recent)
+      RECENT=${2-}
+      case "$RECENT" in
+        ''|*[!0-9]*)
+          printf 'error: --recent needs a whole number of cycles\nhelp: fm-watch-cycle-stats.sh [--recent <n>]\n' >&2
+          exit 2
+          ;;
+      esac
+      shift 2
+      ;;
     -h|--help) sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) printf 'error: unknown argument: %s\nhelp: fm-watch-cycle-stats.sh [--recent <n>]\n' "$1" >&2; exit 2 ;;
   esac

@@ -61,6 +61,17 @@ assert_contains "$out" 'median 60s' "the recent window did not narrow the median
 assert_contains "$out" 'cycles 1 of 3' "the recent window did not report how much of the ledger it used"
 pass "cycle stats: --recent narrows the window and still reports the total"
 
+# A documented option that hangs when its value is omitted is worse than one that
+# refuses: --recent must fail with usage instead of spinning on the same argument.
+out=$(FM_STATE_OVERRIDE="$state" "$STATS" --recent 2>&1)
+rc=$?
+[ "$rc" -eq 2 ] || fail "an omitted --recent value did not fail with usage (exit $rc)"
+assert_contains "$out" 'needs a whole number' "an omitted --recent value gave no usage"
+out=$(FM_STATE_OVERRIDE="$state" "$STATS" --recent not-a-number 2>&1)
+rc=$?
+[ "$rc" -eq 2 ] || fail "a non-numeric --recent value did not fail with usage (exit $rc)"
+pass "cycle stats: an omitted or malformed --recent value refuses with usage instead of hanging"
+
 # A row without a numeric span is not a cycle: counting it as a zero-length one
 # would report an artificially healthy median exactly when the ledger is damaged.
 printf 'arm_pid=1\twatcher_pid=2\torigin=arm\tstarted_at=\tended_at=\texit_code=0\tsignal=none\treason=wake\tbeacon_age=0\tlock_before=a\tlock_after=b\tsuccessor=none\n' \

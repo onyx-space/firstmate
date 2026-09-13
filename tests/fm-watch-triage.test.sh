@@ -1601,8 +1601,10 @@ test_over_budget_tail_decision_routes_and_retries() {
   out="$dir/watch.out"
   status_file="$state/task.status"
   {
+    # Sized far past the measured folding rate so the first round cannot reach
+    # the tail on any plausible host, rather than only on this one.
     i=0
-    while [ "$i" -lt 4000 ]; do
+    while [ "$i" -lt 6000 ]; do
       printf 'working: routine progress line %s with some words in it\n' "$i"
       i=$((i + 1))
     done
