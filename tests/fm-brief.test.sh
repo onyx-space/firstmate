@@ -959,13 +959,19 @@ test_ce_workflow_boundary_section() {
 }
 
 # The captain's PR-language discipline (2026-09-11) must reach every worker that
-# can open a pull request, and it is owned by the separately installed
-# `pr-description` skill, so the brief only points at that skill instead of
-# restating its format. Ship modes that can open a PR carry it; local-only opens
-# none and must not, because there the discipline describes work the task cannot
-# do. The retired ce-translate route for PR text is stated as a prohibition rather
-# than removed from the CE allow-list, since ce-translate is still a general
-# capability.
+# can open a pull request, and its full format is owned by the separately
+# installed `pr-description` skill. Six PR-opening tasks in one week still shipped
+# non-compliant descriptions, because the brief pointed at the skill without
+# stating the shape anywhere, so the block now also carries a three-question
+# self-check a worker can act on without loading the skill. Ship modes that can
+# open a PR carry it; local-only opens none and must not, because there the
+# discipline describes work the task cannot do. The self-check states only the
+# three decisions; the skill's format details must not be duplicated here. It is
+# scope-aware, because the Chinese-first contract is the captain's own-repo rule:
+# a third-party upstream PR follows that upstream's conventions instead, so the
+# brief must never send a worker to retitle an upstream PR into Chinese. The
+# retired ce-translate route for PR text is stated as a prohibition rather than
+# removed from the CE allow-list, since ce-translate is still a general capability.
 test_pr_description_discipline_section() {
   local home id mode brief
   home="$TMP_ROOT/pr-description-home"
@@ -984,15 +990,40 @@ test_pr_description_discipline_section() {
     # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
     assert_grep 'Do not use `ce-translate` for a PR description' "$brief" \
       "$mode brief does not prohibit routing PR text through ce-translate"
-    assert_no_grep '<details><summary>English</summary>' "$brief" \
-      "$mode brief restates the pr-description skill's format instead of pointing at it"
+    # The three decisions a worker makes at the PR moment must be answerable from
+    # the brief alone, because that is the surface every worker reads.
+    assert_grep 'Before you report the PR ready, self-check the live title and body' "$brief" \
+      "$mode brief does not gate the self-check on the PR-ready moment"
+    assert_grep 'Title: Chinese after the conventional-commit prefix' "$brief" \
+      "$mode brief does not self-check the PR title language"
+    assert_grep 'Body: Chinese visible first, above the fold' "$brief" \
+      "$mode brief does not self-check the visible PR body language"
+    assert_grep 'the English body folded inside' "$brief" \
+      "$mode brief does not self-check the folded English body"
+    assert_grep '<details><summary>English</summary>' "$brief" \
+      "$mode brief does not name the required English fold"
+    # The contract is the captain's own-repo rule, so the self-check must first
+    # make the worker classify the PR and must exempt a third-party upstream
+    # instead of directing it to a Chinese title.
+    assert_grep "Captain's own repo" "$brief" \
+      "$mode brief does not scope the Chinese-first contract to the captain's own repos"
+    assert_grep 'Third-party upstream repo' "$brief" \
+      "$mode brief does not name the third-party upstream branch"
+    assert_grep 'never rewrite a third-party upstream PR title into Chinese' "$brief" \
+      "$mode brief does not exempt a third-party upstream PR from the Chinese title rule"
+    # Only the three decisions move here; the skill stays the single owner of the
+    # full contract, so its format spec and per-platform commands must not leak in.
+    assert_no_grep 'gh pr edit' "$brief" \
+      "$mode brief restates the pr-description skill's platform commands"
+    assert_no_grep '## 摘要' "$brief" \
+      "$mode brief restates the pr-description skill's format headings"
   done
   id="brief-prdesc-local-only"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode local-only >/dev/null 2>&1 \
     || fail "local-only: scaffold failed"
   assert_no_grep "# PR description" "$home/data/$id/brief.md" \
     "local-only brief carries a PR description discipline for a path it cannot take"
-  pass "fm-brief.sh: PR-opening briefs point the worker at the pr-description skill"
+  pass "fm-brief.sh: PR-opening briefs point at the pr-description skill and carry its pre-PR self-check"
 }
 
 # Scout and secondmate paths still scaffold well-formed briefs.

@@ -9,8 +9,9 @@
 # Ship briefs also carry the fixed `# PR description` section, rendered from
 # bin/fm-dod-lib.sh's fm_pr_description_block rather than owned here, like the
 # Definition of done: it points the worker at the separately installed
-# `pr-description` skill, which owns that contract, and is omitted for `local-only`,
-# which opens no PR.
+# `pr-description` skill, which owns that contract, and carries the pre-PR
+# self-check that makes the discipline visible without loading the skill; it is
+# omitted for `local-only`, which opens no PR.
 # Ship and scout `# Task` sections have two subsections Firstmate
 # fills before dispatch: `{TASK}` under `## Captain's intent` (the captain's
 # own ask plus the context needed to read it, including the substance of any
@@ -421,8 +422,8 @@ CE_BOUNDARY_SECTION=${CE_BOUNDARY_SECTION%$'\n'}
 
 # Worker-facing PR-description language discipline, owned by
 # bin/fm-dod-lib.sh's fm_pr_description_block so the ship brief and a promoted
-# scout's ship instructions render the same pointer. It is empty for `local-only`,
-# which opens no PR; a scout never reaches this scaffold.
+# scout's ship instructions render the same pointer and self-check. It is empty
+# for `local-only`, which opens no PR; a scout never reaches this scaffold.
 PR_DESCRIPTION_SECTION=$(fm_pr_description_block "$MODE")
 
 # Worker-facing artifact-placement contract. This file is its single owner: the

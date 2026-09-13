@@ -198,7 +198,17 @@ EOF
 
 # Owner of the worker-facing PR-description language discipline. The separately
 # installed `pr-description` skill is the single owner of that contract, so this
-# block only wires the worker to it instead of restating the format.
+# block wires the worker to it instead of restating the full format.
+# It also carries the deliberate PR self-check, because the pointer alone left the
+# shape invisible: the discipline is stated nowhere else in a brief, so a worker
+# that never loaded the skill could not comply, and six PR-opening tasks in one
+# week shipped non-compliant descriptions that firstmate had to send back. The
+# self-check makes the worker pick the PR's kind first, then points that kind at
+# the skill's rule for it: the three own-repo decisions (title language,
+# visible-body language, English fold) for the captain's own repos, and the fact
+# that the Chinese-first contract does not apply to a third-party upstream. The
+# format details, translation rules, and per-platform commands stay with the
+# skill, which remains the single owner of the contract.
 # bin/fm-brief.sh renders it into a ship brief and bin/fm-promote.sh into the ship
 # instructions a promoted scout receives, so both PR-opening paths carry it.
 # `local-only` opens no PR, so it renders nothing: there the discipline would
@@ -210,6 +220,12 @@ fm_pr_description_block() {  # <mode>
 # PR description
 Before you write or edit a pull request description, read the `pr-description` skill (`~/.agents/skills/pr-description/SKILL.md`); it is the single owner of that contract.
 Do not use `ce-translate` for a PR description.
+Before you report the PR ready, self-check the live title and body against that skill's rule for this PR's kind:
+- Captain's own repo (GitHub `onyx-space/*`, internal Gitea `admin/*` and `AI.Buddy/*`) - the Chinese-first contract applies; fix any "no" before you report:
+  - Title: Chinese after the conventional-commit prefix (`feat(scope): <中文>`)?
+  - Body: Chinese visible first, above the fold?
+  - Body: the English body folded inside `<details><summary>English</summary>`?
+- Third-party upstream repo - the Chinese-first contract does not apply; follow that upstream's own conventions, usually English, and never rewrite a third-party upstream PR title into Chinese.
 EOF
 }
 
