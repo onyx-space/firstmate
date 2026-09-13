@@ -2891,6 +2891,109 @@ test_dispatch_and_completion_are_structural() {
   pass "dispatch and completion transition structurally with evidence"
 }
 
+# The recorded PR artifact accepts a plain http:// URL only when this home's own
+# config/pr-forge-hosts names that exact scheme+authority, which is the same
+# list, read by the same parser, that lets bin/fm-pr-check.sh arm a watch on an
+# instance-hosted forge. https is unchanged: it needs no entry, and an internal
+# host that is not listed stays refused.
+#
+# These cases drive the pending-close write itself - the exact step teardown
+# takes before its backlog close - so they pin this home's acceptance rule
+# without depending on what the configured backlog adapter accepts.
+close_marker_write() {  # <case-dir> <id> <pr-url>
+  local case_dir=$1 id=$2 url=$3
+  (
+    set -u
+    # shellcheck source=bin/fm-tasks-axi-lib.sh
+    . "$ROOT/bin/fm-tasks-axi-lib.sh"
+    # shellcheck source=bin/fm-backlog-transition-lib.sh
+    . "$ROOT/bin/fm-backlog-transition-lib.sh"
+    FM_HOME="$(home_of "$case_dir")"
+    fm_backlog_close_marker_write "$(home_of "$case_dir")/state" "$id" \
+      "$(home_of "$case_dir")/data" spawn-1 --pr "$url" \
+      || { printf '%s\n' "${FM_BACKLOG_TRANSITION_ERROR:-pending close failed}"; exit 1; }
+  ) 2>&1
+}
+
+test_pending_close_accepts_a_listed_http_forge_pr() {
+  local case_dir home marker out pr
+  pr=http://10.0.99.5:3000/admin/Glitter/pulls/19
+  case_dir=$(make_home pending-close-http-forge)
+  home=$(home_of "$case_dir")
+  marker="$home/state/probe.backlog-close"
+  printf '%s forge-token\n' "http://10.0.99.5:3000" > "$home/config/pr-forge-hosts"
+
+  out=$(close_marker_write "$case_dir" probe "$pr") \
+    || fail "a listed http forge PR was refused as a pending close: $out"
+  assert_present "$marker" "the pending close was not published"
+  assert_grep "arg=$pr" "$marker" \
+    "the pending close did not record the listed http forge PR"
+  pass "the pending close accepts an http forge PR this home lists"
+}
+
+test_pending_close_refuses_an_unlisted_http_forge_pr() {
+  local case_dir home marker out pr rc=0
+  pr=http://10.0.99.5:3000/admin/Glitter/pulls/19
+  case_dir=$(make_home pending-close-http-forge-unlisted)
+  home=$(home_of "$case_dir")
+  marker="$home/state/probe.backlog-close"
+
+  out=$(close_marker_write "$case_dir" probe "$pr") || rc=$?
+  [ "$rc" -ne 0 ] || fail "the pending close accepted an http forge host this home does not list"
+  assert_contains "$out" "invalid pending-close arguments" \
+    "the refusal did not name the unacceptable artifact"
+  assert_absent "$marker" "the refusal published a pending close"
+
+  # The list, and not a hardcoded host, is the judge: naming the base now lets
+  # the same artifact through.
+  printf '%s forge-token\n' "http://10.0.99.5:3000" > "$home/config/pr-forge-hosts"
+  out=$(close_marker_write "$case_dir" probe "$pr") \
+    || fail "the pending close still refused after the host was listed: $out"
+  assert_grep "arg=$pr" "$marker" \
+    "the listed retry did not record the http forge PR"
+  pass "the pending close judges an http forge PR by this home's list, not a fixed host"
+}
+
+test_pending_close_accepts_https_without_a_forge_entry() {
+  local case_dir home marker out pr
+  pr=https://gitea.internal:3000/admin/Glitter/pulls/19
+  case_dir=$(make_home pending-close-https-unlisted-host)
+  home=$(home_of "$case_dir")
+  marker="$home/state/probe.backlog-close"
+
+  out=$(close_marker_write "$case_dir" probe "$pr") \
+    || fail "an https artifact needed a forge entry it never did before: $out"
+  assert_grep "arg=$pr" "$marker" \
+    "the pending close did not record the https artifact"
+  pass "https pending-close artifacts need no forge entry"
+}
+
+test_teardown_clears_the_artifact_gate_for_a_listed_http_forge_pr() {
+  local case_dir home id out rc=0
+  id=atomic-teardown-http-forge-gate-b16
+  case_dir=$(make_home teardown-http-forge-gate "$id")
+  home=$(home_of "$case_dir")
+  add_item "$case_dir" "$id"
+  start_item "$case_dir" "$id"
+  write_task_meta "$case_dir" "$id" ship no-mistakes "spawn_gen=spawn-teardown-http-forge"
+  printf 'pr=%s\n' "http://10.0.99.5:3000/admin/Glitter/pulls/19" >> "$home/state/$id.meta"
+
+  # Unlisted, the artifact gate refuses before any destructive step.
+  out=$(run_teardown "$case_dir" "$id") || rc=$?
+  [ "$rc" -ne 0 ] || fail "teardown accepted an unlisted http forge host"
+  assert_contains "$out" "invalid pending-close arguments" \
+    "teardown did not refuse the unlisted http forge artifact at the gate"
+  assert_present "$home/state/$id.meta" "the refusal discarded the task record"
+
+  # Listed, the gate is cleared; what the backlog adapter does next is outside
+  # this fix and deliberately not asserted.
+  printf '%s forge-token\n' "http://10.0.99.5:3000" > "$home/config/pr-forge-hosts"
+  out=$(run_teardown "$case_dir" "$id") || true
+  assert_not_contains "$out" "invalid pending-close arguments" \
+    "teardown still refused a listed http forge artifact at the gate"
+  pass "teardown clears the artifact gate for a listed http forge PR"
+}
+
 test_refused_teardown_leaves_the_item_live() {
   local case_dir home id out rc=0
   id=fm-structural-refusal-b15
@@ -3087,6 +3190,10 @@ test_spawn_refuses_an_unsafe_tasks_config_before_exempting_a_missing_backlog
 test_spawn_refuses_a_data_directory_symlinked_outside_the_home
 test_configured_adapter_refuses_a_data_directory_outside_the_home
 test_dispatch_and_completion_are_structural
+test_pending_close_accepts_a_listed_http_forge_pr
+test_pending_close_refuses_an_unlisted_http_forge_pr
+test_pending_close_accepts_https_without_a_forge_entry
+test_teardown_clears_the_artifact_gate_for_a_listed_http_forge_pr
 test_refused_teardown_leaves_the_item_live
 test_environment_selected_adapter_is_not_forced_to_markdown
 test_manual_backend_home_dispatches_and_completes_without_touching_the_backlog

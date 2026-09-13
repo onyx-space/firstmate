@@ -11,10 +11,13 @@
 # supplies in local, gitignored <home>/config/pr-forge-hosts; that file's
 # format and owner are documented in docs/configuration.md "HTTP forge hosts".
 #
-# This script also owns that file's one implementation, so the arm path asks it
-# whether a forge URL is acceptable (`--forge-token <pr-url>`) rather than
-# reading the list a second way; that intake mode reports failures on stderr,
-# while the merge path above stays silent as always.
+# This script also owns that file's one implementation, so callers ask it
+# whether a forge URL is acceptable rather than reading the list a second way:
+# `--forge-token <pr-url>` prints the base's token for the arm path, and
+# `--forge-host <scheme>://<host>[:<port>]` answers the same list membership
+# without ever emitting the token, for a caller that only needs acceptance.
+# Both intake modes report failures on stderr, while the merge path above stays
+# silent as always.
 set -u
 LC_ALL=C
 export LC_ALL
@@ -66,6 +69,18 @@ http_forge_base() {
   printf '%s://%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
 }
 
+# Reports a base this home does not name, and never echoes a token.
+forge_intake_denied() {
+  local base=$1 config
+  printf 'error: %s is not a configured forge host for this home\n' "$base" >&2
+  if config=$(forge_config_file); then
+    printf 'error: add a "%s <token>" line to %s\n' "$base" "$config" >&2
+  else
+    printf 'error: add a "%s <token>" line to this home'"'"'s config/pr-forge-hosts\n' "$base" >&2
+  fi
+  exit 1
+}
+
 if [ "$#" -eq 2 ] && [ "$1" = --forge-token ]; then
   base=$(http_forge_base "${2-}") || {
     printf 'error: %s is not an instance-hosted forge pull request URL\n' "${2-}" >&2
@@ -75,13 +90,18 @@ if [ "$#" -eq 2 ] && [ "$1" = --forge-token ]; then
     printf '%s\n' "$token"
     exit 0
   fi
-  printf 'error: %s is not a configured forge host for this home\n' "$base" >&2
-  if config=$(forge_config_file); then
-    printf 'error: add a "%s <token>" line to %s\n' "$base" "$config" >&2
-  else
-    printf 'error: add a "%s <token>" line to this home'"'"'s config/pr-forge-hosts\n' "$base" >&2
-  fi
-  exit 1
+  forge_intake_denied "$base"
+fi
+
+# Membership only: a caller that must match on scheme+authority and never
+# receive the token asks this mode, so the list keeps one parser.
+if [ "$#" -eq 2 ] && [ "$1" = --forge-host ]; then
+  case "${2-}" in
+    http://?*|https://?*) ;;
+    *) printf 'error: %s is not a forge base URL\n' "${2-}" >&2; exit 1 ;;
+  esac
+  forge_token_lookup "${2-}" >/dev/null && exit 0
+  forge_intake_denied "${2-}"
 fi
 
 if [ "$#" -eq 6 ] && [ "$1" = --validated ]; then

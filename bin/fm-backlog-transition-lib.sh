@@ -838,10 +838,31 @@ fm_backlog_close_marker_path() {  # <state-dir> <id>
   printf '%s/%s.backlog-close\n' "$1" "$2"
 }
 
+# The one implementation of this home's forge-host whitelist lives in
+# bin/fm-pr-poll.sh, which is byte-static because a copy of it is armed as the
+# merge poll. Its `--forge-host` intake answers whether this home names an exact
+# scheme+authority, so the recorded PR artifact's http acceptance reuses that
+# parser instead of reading config/pr-forge-hosts a second way, and never
+# receives the token that belongs to the arm path alone.
+fm_backlog_pr_poll_script() {
+  local lib_path=${BASH_SOURCE[0]:-} dir
+  [ -n "$lib_path" ] || return 1
+  dir=$(cd "$(dirname "$lib_path")" 2>/dev/null && pwd) || return 1
+  printf '%s/fm-pr-poll.sh\n' "$dir"
+}
+
+fm_backlog_forge_host_configured() {  # <scheme>://<host>[:<port>]
+  local base=$1 poll
+  [ -n "${FM_HOME:-}" ] || return 1
+  poll=$(fm_backlog_pr_poll_script) || return 1
+  [ -f "$poll" ] || return 1
+  FM_HOME="$FM_HOME" bash "$poll" --forge-host "$base" >/dev/null 2>&1
+}
+
 fm_backlog_close_marker_validate() {  # <marker-path> <authorized-data-dir> <expected-id> <state-dir>
   local marker=$1 authorized_data data_resolved expected_id=$3 state=$4
   local id='' data='' marker_spawn_gen='' cleanup_incomplete=0 mode=close line raw_bytes arg_value
-  local url_tail url_authority url_path url_host url_port host_rest host_label host_valid
+  local arg_scheme url_tail url_authority url_path url_host url_port host_rest host_label host_valid
   local percent_tail percent_valid
   local id_count=0 data_count=0 spawn_gen_count=0 cleanup_incomplete_count=0 mode_count=0
   local args=()
@@ -940,14 +961,19 @@ fm_backlog_close_marker_validate() {  # <marker-path> <authorized-data-dir> <exp
         --note) [ "${args[1]}" = "local%20main" ] ;;
         --pr)
           arg_value=${args[1]}
-          [ "${#arg_value}" -le 2048 ] \
-            && case "$arg_value" in https://*) true ;; *) false ;; esac \
+          case "$arg_value" in
+            https://*) arg_scheme=https ;;
+            http://*) arg_scheme=http ;;
+            *) arg_scheme= ;;
+          esac
+          [ -n "$arg_scheme" ] \
+            && [ "${#arg_value}" -le 2048 ] \
             && case "$arg_value" in
               *[[:space:]]*|*[!A-Za-z0-9:/?\&=._#%+~@-]*) false ;;
               *) true ;;
             esac \
             && {
-              url_tail=${arg_value#https://}
+              url_tail=${arg_value#"$arg_scheme://"}
               url_authority=${url_tail%%/*}
               url_path=${url_tail#*/}
               url_host=$url_authority
@@ -989,7 +1015,8 @@ fm_backlog_close_marker_validate() {  # <marker-path> <authorized-data-dir> <exp
                   done
                   [ "$percent_valid" = 1 ]
                 }
-            }
+            } \
+            && { [ "$arg_scheme" = https ] || fm_backlog_forge_host_configured "http://$url_authority"; }
           ;;
         --report)
           arg_value=${args[1]}
