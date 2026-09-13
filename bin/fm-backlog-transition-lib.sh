@@ -73,6 +73,15 @@ FM_BACKLOG_ROW_HOLD_KIND=
 # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
 FM_BACKLOG_CLOSE_REPLAY_RESULT=
 
+# The one recognizer for a pull-request link (bin/fm-pr-lib.sh) owns the stored
+# PR identity, so the close validator reuses it rather than re-deriving the
+# shape a second way.
+_FM_BACKLOG_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if ! command -v fm_pr_url_parse >/dev/null 2>&1; then
+  # shellcheck source=bin/fm-pr-lib.sh
+  . "$_FM_BACKLOG_LIB_DIR/fm-pr-lib.sh"
+fi
+
 # Emit each byte of a value as a decimal number, locale-independently.
 # Deliberately perl rather than od: the spawn and teardown lifecycle runs under a
 # curated PATH (tests/fm-teardown.test.sh make_path_without_lsof pins that set)
@@ -805,8 +814,9 @@ fm_backlog_dispatch_rollback() {
 fm_backlog_close_transition() {
   local meta=$1 marker=$2 data=$3 id=$4 state=$5
   shift 5
+  fm_backlog_recordable_args "$id" "$@" || return 1
   [ -z "$meta" ] || fm_backlog_record_remove "$meta" "task record" "$state" || return 1
-  fm_backlog_done "$data" "$id" "$@" || return 1
+  fm_backlog_done "$data" "$id" "${FM_BACKLOG_RECORDED_ARGS[@]+"${FM_BACKLOG_RECORDED_ARGS[@]}"}" || return 1
   fm_backlog_record_remove "$marker" "pending-close record" "$state"
 }
 
@@ -815,8 +825,9 @@ fm_backlog_close_transition() {
 fm_backlog_retain_transition() {
   local meta=$1 marker=$2 data=$3 id=$4 state=$5
   shift 5
+  fm_backlog_recordable_args "$id" "$@" || return 1
   [ -z "$meta" ] || fm_backlog_record_remove "$meta" "task record" "$state" || return 1
-  fm_backlog_retain "$data" "$id" "$@" || return 1
+  fm_backlog_retain "$data" "$id" "${FM_BACKLOG_RECORDED_ARGS[@]+"${FM_BACKLOG_RECORDED_ARGS[@]}"}" || return 1
   fm_backlog_record_remove "$marker" "pending-close record" "$state"
 }
 
@@ -868,6 +879,62 @@ fm_backlog_forge_host_configured() {  # <scheme>://<host>[:<port>]
   FM_HOME="$FM_HOME" bash "$poll" --forge-host "$base" && return 0
   FM_BACKLOG_TRANSITION_ERROR="$base is not a configured forge host for this home; add a \"$base <token>\" line to ${FM_HOME}/config/pr-forge-hosts"
   return 1
+}
+
+# tasks-axi records a structured pull link only for a canonical GitHub/Forgejo
+# pull URL: https, no port. An internal http forge and a GitLab merge request
+# are real pull requests it refuses on --pr, so a recorded one of those is
+# handed to the close as a note that keeps the URL and where it came from.
+# A recorded link that is not a recognizable pull request at all cannot be
+# recorded and is refused before any mutation.
+FM_BACKLOG_RECORDED_ARGS=()
+fm_backlog_pr_url_canonical() {  # <url>
+  local url=$1
+  fm_pr_url_parse "$url" || return 1
+  case "$FM_PR_PROVIDER" in
+    github) return 0 ;;
+    gitea)
+      case "$FM_PR_HOST" in
+        *:*) return 1 ;;
+      esac
+      case "$url" in
+        https://*) return 0 ;;
+        *) return 1 ;;
+      esac
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+fm_backlog_pr_url_recordable() {  # <url>; nonzero when it is not a pull request link
+  local url=$1
+  fm_pr_url_parse "$url" || {
+    FM_BACKLOG_TRANSITION_ERROR="the recorded pull request $url is not a recognizable pull request link"
+    return 1
+  }
+}
+
+fm_backlog_recordable_args() {  # <id> [flag value...] -> FM_BACKLOG_RECORDED_ARGS
+  local id=$1 flag value
+  shift
+  FM_BACKLOG_RECORDED_ARGS=()
+  while [ "$#" -gt 0 ]; do
+    flag=$1
+    value=${2-}
+    if [ "$#" -ge 2 ]; then shift 2; else shift; fi
+    case "$flag" in
+      --pr)
+        if fm_backlog_pr_url_canonical "$value"; then
+          FM_BACKLOG_RECORDED_ARGS+=(--pr "$value")
+        elif fm_backlog_pr_url_recordable "$value"; then
+          FM_BACKLOG_RECORDED_ARGS+=(--note "PR $value (from state/$id.meta pr=)")
+        else
+          return 1
+        fi
+        ;;
+      *) FM_BACKLOG_RECORDED_ARGS+=("$flag" "$value") ;;
+    esac
+  done
 }
 
 fm_backlog_close_marker_validate() {  # <marker-path> <authorized-data-dir> <expected-id> <state-dir>
@@ -1028,7 +1095,8 @@ fm_backlog_close_marker_validate() {  # <marker-path> <authorized-data-dir> <exp
                   [ "$percent_valid" = 1 ]
                 }
             } \
-            && { [ "$arg_scheme" = https ] || fm_backlog_forge_host_configured "http://$url_authority"; }
+            && { [ "$arg_scheme" = https ] || fm_backlog_forge_host_configured "http://$url_authority"; } \
+            && fm_backlog_pr_url_recordable "$arg_value"
           ;;
         --report)
           arg_value=${args[1]}

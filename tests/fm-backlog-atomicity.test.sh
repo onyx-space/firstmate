@@ -2891,15 +2891,18 @@ test_dispatch_and_completion_are_structural() {
   pass "dispatch and completion transition structurally with evidence"
 }
 
-# The recorded PR artifact accepts a plain http:// URL only when this home's own
-# config/pr-forge-hosts names that exact scheme+authority, which is the same
-# list, read by the same parser, that lets bin/fm-pr-check.sh arm a watch on an
-# instance-hosted forge. https is unchanged: it needs no entry, and an internal
-# host that is not listed stays refused.
+# The recorded PR artifact is validated in one place. An http:// URL is
+# admitted only when this home's own config/pr-forge-hosts names that exact
+# scheme+authority - the same list, read by the same parser, that lets
+# bin/fm-pr-check.sh arm a watch on an instance-hosted forge. A recorded link
+# that is not a canonical GitHub/Forgejo pull URL is handed to the close as a
+# note naming its source, because tasks-axi refuses any other URL on --pr; a
+# recorded link that is not a recognizable pull request at all is refused at
+# the pending-close write, before teardown's destructive phase.
 #
-# These cases drive the pending-close write itself - the exact step teardown
-# takes before its backlog close - so they pin this home's acceptance rule
-# without depending on what the configured backlog adapter accepts.
+# The record-layer cases drive the pending-close write itself - the exact step
+# teardown takes before its backlog close - and the teardown cases drive the
+# real script end to end.
 close_marker_write() {  # <case-dir> <id> <pr-url>
   local case_dir=$1 id=$2 url=$3
   (
@@ -2972,32 +2975,78 @@ test_pending_close_accepts_https_without_a_forge_entry() {
   pass "https pending-close artifacts need no forge entry"
 }
 
-test_teardown_clears_the_artifact_gate_for_a_listed_http_forge_pr() {
-  local case_dir home id out rc=0
-  id=atomic-teardown-http-forge-gate-b16
-  case_dir=$(make_home teardown-http-forge-gate "$id")
+test_pending_close_refuses_a_link_that_is_not_a_pull_request() {
+  local case_dir home marker out rc=0
+  case_dir=$(make_home pending-close-unrecognizable-pr)
+  home=$(home_of "$case_dir")
+  marker="$home/state/probe.backlog-close"
+
+  out=$(close_marker_write "$case_dir" probe "https://example.com/not-a-pull-request") || rc=$?
+  [ "$rc" -ne 0 ] || fail "the pending close accepted a URL that is not a pull request link"
+  assert_contains "$out" "not a recognizable pull request link" \
+    "the refusal did not name why the artifact could not be recorded"
+  assert_absent "$marker" "the refusal published a pending close"
+  pass "the pending close refuses a recorded link that is not a pull request"
+}
+
+test_teardown_closes_a_listed_http_forge_pr() {
+  local case_dir home id out show links rc=0 pr
+  id=atomic-teardown-http-forge-close
+  pr=http://10.0.99.5:3000/admin/Glitter/pulls/19
+  case_dir=$(make_home teardown-http-forge-close "$id")
   home=$(home_of "$case_dir")
   add_item "$case_dir" "$id"
-  start_item "$case_dir" "$id"
-  write_task_meta "$case_dir" "$id" ship no-mistakes "spawn_gen=spawn-teardown-http-forge"
-  printf 'pr=%s\n' "http://10.0.99.5:3000/admin/Glitter/pulls/19" >> "$home/state/$id.meta"
+  out=$(run_ship_spawn "$case_dir" "$id") || fail "the http forge fixture spawn failed: $out"
+  printf 'pr=%s\n' "$pr" >> "$home/state/$id.meta"
 
-  # Unlisted, the artifact gate refuses before any destructive step.
+  # Unlisted, the host is refused at the pending-close write, before teardown's
+  # destructive phase.
   out=$(run_teardown "$case_dir" "$id") || rc=$?
-  [ "$rc" -ne 0 ] || fail "teardown accepted an unlisted http forge host"
-  assert_contains "$out" "could not be recorded" \
-    "teardown did not report the artifact gate as the stopping point"
+  [ "$rc" -ne 0 ] || fail "teardown accepted an http forge host this home does not list"
   assert_contains "$out" "not a configured forge host for this home" \
-    "teardown refused without naming the reason the artifact host was rejected"
-  assert_present "$home/state/$id.meta" "the refusal discarded the task record"
+    "teardown refused the unlisted host without naming it"
+  assert_present "$home/state/$id.meta" "the unlisted refusal discarded the task record"
+  [ "$(row_state "$case_dir" "$id")" = in_flight ] \
+    || fail "the unlisted refusal moved the backlog row"
 
-  # Listed, the gate is cleared; what the backlog adapter does next is outside
-  # this fix and deliberately not asserted.
   printf '%s forge-token\n' "http://10.0.99.5:3000" > "$home/config/pr-forge-hosts"
-  out=$(run_teardown "$case_dir" "$id") || true
-  assert_not_contains "$out" "invalid pending-close arguments" \
-    "teardown still refused a listed http forge artifact at the gate"
-  pass "teardown clears the artifact gate for a listed http forge PR"
+  out=$(run_teardown "$case_dir" "$id") \
+    || fail "teardown did not close a listed http forge PR: $out"
+  [ "$(row_state "$case_dir" "$id")" = done ] \
+    || fail "teardown left the listed http forge item outside Done"
+  assert_grep "$pr" "$(backlog_of "$case_dir")" \
+    "the completed record did not carry the real http forge PR URL"
+  show=$(tasks-axi show "$id" --file "$(backlog_of "$case_dir")" 2>/dev/null)
+  assert_contains "$show" "$pr" \
+    "the completed task did not keep the http forge PR URL"
+  links=$(printf '%s\n' "$show" | sed -n 's/^  links: *//p' | head -1)
+  assert_not_contains "$links" "$pr" \
+    "the non-canonical URL was stored as a structured PR link"
+  pass "teardown closes a listed http forge PR through a note that keeps the URL"
+}
+
+test_teardown_refuses_an_unrecordable_pr_before_any_cleanup() {
+  local case_dir home id out worktree rc=0
+  id=atomic-teardown-unrecordable-pr
+  case_dir=$(make_home teardown-unrecordable-pr "$id")
+  home=$(home_of "$case_dir")
+  add_item "$case_dir" "$id"
+  out=$(run_ship_spawn "$case_dir" "$id") || fail "the unrecordable-PR fixture spawn failed: $out"
+  printf 'pr=%s\n' "https://example.com/not-a-pull-request" >> "$home/state/$id.meta"
+  worktree=$(sed -n 's/^worktree=//p' "$home/state/$id.meta" | tail -1)
+
+  out=$(run_teardown "$case_dir" "$id") || rc=$?
+  [ "$rc" -ne 0 ] || fail "teardown accepted a PR artifact it cannot record"
+  assert_contains "$out" "could not be recorded" \
+    "teardown did not stop at the pending-close record"
+  assert_contains "$out" "not a recognizable pull request link" \
+    "teardown refused without naming why the artifact could not be recorded"
+  assert_present "$home/state/$id.meta" "the refusal discarded the task record"
+  assert_absent "$home/state/$id.backlog-close" "the refusal published a pending close"
+  [ -d "$worktree" ] || fail "the refusal discarded the worktree"
+  [ "$(row_state "$case_dir" "$id")" = in_flight ] \
+    || fail "the refusal moved the backlog row"
+  pass "an unrecordable PR artifact is refused before any cleanup"
 }
 
 test_refused_teardown_leaves_the_item_live() {
@@ -3199,7 +3248,9 @@ test_dispatch_and_completion_are_structural
 test_pending_close_accepts_a_listed_http_forge_pr
 test_pending_close_refuses_an_unlisted_http_forge_pr
 test_pending_close_accepts_https_without_a_forge_entry
-test_teardown_clears_the_artifact_gate_for_a_listed_http_forge_pr
+test_pending_close_refuses_a_link_that_is_not_a_pull_request
+test_teardown_closes_a_listed_http_forge_pr
+test_teardown_refuses_an_unrecordable_pr_before_any_cleanup
 test_refused_teardown_leaves_the_item_live
 test_environment_selected_adapter_is_not_forced_to_markdown
 test_manual_backend_home_dispatches_and_completes_without_touching_the_backlog
