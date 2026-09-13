@@ -1213,6 +1213,8 @@ status_retire_presentation_task() {  # <state> <task-id>
   if [ ! -e "$state/$task.status" ] && [ ! -L "$state/$task.status" ] \
     && [ ! -e "$state/.$task.open-decisions-cursor" ] \
     && [ ! -L "$state/.$task.open-decisions-cursor" ] \
+    && [ ! -e "$state/.$task.span-scan-cursor" ] \
+    && [ ! -L "$state/.$task.span-scan-cursor" ] \
     && [ ! -e "$signal_marker" ] && [ ! -L "$signal_marker" ] \
     && [ ! -e "$heartbeat_marker" ] && [ ! -L "$heartbeat_marker" ] \
     && [ ! -e "$daemon_marker" ] && [ ! -L "$daemon_marker" ]; then
@@ -1778,6 +1780,7 @@ _fm_span_scan_reset() {
 _fm_span_scan_load() {  # <cursor> <ident> <start> <size>
   local cursor=$1 want_ident=$2 want_start=$3 want_size=$4 rec
   local v_version='' v_ident='' v_start='' v_size='' v_line='' v_nd=''
+  local l_open='' l_origins='' l_events=''
   _fm_span_scan_reset
   [ -f "$cursor" ] && [ -r "$cursor" ] && [ ! -L "$cursor" ] || return 1
   while IFS= read -r rec || [ -n "$rec" ]; do
@@ -1788,9 +1791,9 @@ _fm_span_scan_load() {  # <cursor> <ident> <start> <size>
       size=*) v_size=${rec#size=} ;;
       line=*) v_line=${rec#line=} ;;
       nd=*) v_nd=${rec#nd=} ;;
-      o$'\t'*) FM_SPAN_SCAN_OPEN="${FM_SPAN_SCAN_OPEN}${rec#o$'\t'}"$'\n' ;;
-      p$'\t'*) FM_SPAN_SCAN_ORIGINS="${FM_SPAN_SCAN_ORIGINS}${rec#p$'\t'}"$'\n' ;;
-      e$'\t'*) FM_SPAN_SCAN_EVENTS="${FM_SPAN_SCAN_EVENTS}${rec#e$'\t'}"$'\n' ;;
+      o$'\t'*) l_open="${l_open}${rec#o$'\t'}"$'\n' ;;
+      p$'\t'*) l_origins="${l_origins}${rec#p$'\t'}"$'\n' ;;
+      e$'\t'*) l_events="${l_events}${rec#e$'\t'}"$'\n' ;;
       '') ;;
       *) return 1 ;;
     esac
@@ -1803,6 +1806,9 @@ _fm_span_scan_load() {  # <cursor> <ident> <start> <size>
   case "$v_nd" in 0|1) ;; *) return 1 ;; esac
   [ "$v_size" -le "$want_size" ] || return 1
   [ "$v_line" -le "$v_size" ] || return 1
+  FM_SPAN_SCAN_OPEN=$l_open
+  FM_SPAN_SCAN_ORIGINS=$l_origins
+  FM_SPAN_SCAN_EVENTS=$l_events
   FM_SPAN_SCAN_SIZE=$v_size
   FM_SPAN_SCAN_LINE=$v_line
   FM_SPAN_SCAN_ND=$v_nd

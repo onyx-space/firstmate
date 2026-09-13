@@ -330,4 +330,30 @@ assert_equivalent "$resume_log" 0 "a cursor positioned past the log's own lines 
 if [ -e "$cursor" ]; then fail "a completed scan left a stale-position cursor behind"; fi
 pass "resumption: a cursor positioned past the log's lines restarts instead of answering empty"
 
+# A rejected cursor must contribute NOTHING to the answer, including the records
+# it already holds. This cursor was built for span start 0 and carries a decision
+# event and origin for [key=alpha], but it is classified against a tail span that
+# starts after alpha's declaration. Rejecting it must discard those records: the
+# answer has to equal the whole-file fold - which never sees the cursor - and so
+# report no record at all, not surface alpha's stale event as this span's own.
+leak_dir="$STATE/cursor-leak"
+mkdir -p "$leak_dir" || fail "could not create $leak_dir"
+leak_log="$leak_dir/status.status"
+leak_cursor="$leak_dir/.status.span-scan-cursor"
+{
+  printf 'needs-decision: [key=alpha] question one\n'
+  i=0
+  while [ "$i" -lt 30 ]; do printf 'working: filler line %s\n' "$i"; i=$((i + 1)); done
+} > "$leak_log" || fail "could not build the cursor-leak fixture"
+printf 'version=%s\n' "$FM_CLASSIFY_SPAN_SCAN_VERSION" > "$leak_cursor"
+printf 'ident=%s\n' "$(_fm_open_decisions_file_ident "$leak_log")" >> "$leak_cursor"
+printf 'start=999\nsize=999\nline=1\nnd=0\n' >> "$leak_cursor"
+printf 'o\talpha\tneeds-decision\tquestion one\n' >> "$leak_cursor"
+printf 'p\talpha\t1\n' >> "$leak_cursor"
+printf 'e\tD\talpha\t1\tneeds-decision\tneeds-decision: [key=alpha] question one\n' >> "$leak_cursor"
+assert_equivalent "$leak_log" "$(line_offset "$leak_log" 2)" \
+  "a rejected cursor contributed none of its own records to the answered span"
+if [ -e "$leak_cursor" ]; then fail "the classification left a rejected cursor behind"; fi
+pass "resumption: a rejected cursor's records never leak into the answered span"
+
 printf 'ok - fm-classify-span-scan\n'

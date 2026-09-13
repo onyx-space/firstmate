@@ -263,6 +263,23 @@ test_retired_task_id_starts_new_status_unread() {
   pass "a reused task id starts its replacement status log unread at byte zero"
 }
 
+test_retire_removes_a_leftover_span_scan_cursor() {
+  local dir state
+  dir=$(make_case retire-span-scan-cursor)
+  state="$dir/state"
+  : > "$state/.ghost.span-scan-cursor"
+
+  FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1/bin/fm-wake-lib.sh"
+    . "$1/bin/fm-classify-lib.sh"
+    status_retire_presentation_task "$STATE" ghost || exit 1
+  ' _ "$ROOT" || fail "retiring a task whose only artifact was a span-scan cursor failed"
+  if [ -e "$state/.ghost.span-scan-cursor" ]; then
+    fail "teardown left the span-scan cursor behind"
+  fi
+  pass "teardown removes a leftover span-scan cursor"
+}
+
 test_weak_identity_still_presents_and_advances() {
   local dir state out second reader
   dir=$(make_case weak-identity); state="$dir/state"
@@ -382,6 +399,7 @@ test_pending_reply_resolution_surfaces_once
 test_unread_output_over_cap_remains_recoverable
 test_snapshot_does_not_ack_a_later_append
 test_retired_task_id_starts_new_status_unread
+test_retire_removes_a_leftover_span_scan_cursor
 test_weak_identity_still_presents_and_advances
 test_snapshot_failure_is_visible
 test_open_decisions_fold_is_unchanged
