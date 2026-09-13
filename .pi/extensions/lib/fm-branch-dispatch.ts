@@ -257,7 +257,8 @@ export function scopeForUnreadWake(state: string, heartbeat: boolean): UnreadWak
       const payload = fields[4] ?? "";
       if (/^needs-decision:/.test(payload)) {
         // Main-owned exactly like a check-kind row above: a needs-decision
-        // status append surfaced through the actionable signal path is
+        // status append surfaced through the actionable signal path, or a
+        // bounded-scan deferral whose unfolded tail may still hold one, is
         // excluded from what the branch may claim without vetoing the scan
         // (docs/pi-supervision-branch.md "Autonomy").
         needsDecisionKeys.push(key);
