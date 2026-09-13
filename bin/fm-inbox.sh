@@ -162,7 +162,7 @@ FM_INBOX_SOURCE_DEFAULT=text
 
 # The record's own source field, or nothing when a legacy record predates it.
 note_source() {  # <note-file>
-  sed -n 's/^source=//p' "$1" | head -n 1
+  sed -n '/^--$/q; s/^source=//p' "$1" | head -n 1
 }
 
 # The ONE move into handled/. `drain --ack` and `drain --ack-notifications` both

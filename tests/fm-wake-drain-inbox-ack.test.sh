@@ -157,8 +157,39 @@ injected=value' 'body' >"$dir/bad-source.out" 2>"$err"; then
   pass "a source that could inject a record header line is refused and queues nothing"
 }
 
+test_legacy_record_is_not_classified_by_its_body() {
+  local dir state id ackerr
+  dir=$(make_case legacy-record)
+  state="$dir/state"
+  id=$(queue_note_now "$state" - 'captain wrote this out of band') \
+    || fail "queueing the captain's note failed"
+
+  # A record queued before the source field existed carries only id/at in its
+  # header; the body after the separator is the captain's text and must never
+  # decide the record's class.
+  {
+    printf 'id=%s\n' "$id"
+    printf 'at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf -- '--\n'
+    printf 'source=relay\n'
+    printf 'this line is the captain speaking, not a notification\n'
+  } > "$state/inbox/$id.note"
+
+  ackerr=$(drain_then_ack "$state" legacy)
+
+  [ -f "$state/inbox/$id.note" ] \
+    || fail "a header-less legacy record was archived from a body line"
+  [ ! -e "$state/inbox/handled/$id.note" ] \
+    || fail "a header-less legacy record reached handled/ from a body line"
+  if grep -F 'archived' "$ackerr" >/dev/null; then
+    fail "the acknowledgement archived a legacy record from its body: $(cat "$ackerr")"
+  fi
+  pass "a legacy record without a header source is not classified by its body"
+}
+
 test_captain_note_survives_its_acknowledged_wake_row
 test_notification_note_is_archived_with_its_wake_row
 test_mixed_batch_archives_only_the_notification
 test_explicit_ack_still_archives_every_source
 test_a_source_that_could_break_the_record_header_is_refused
+test_legacy_record_is_not_classified_by_its_body
