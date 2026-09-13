@@ -2989,6 +2989,30 @@ test_pending_close_refuses_a_link_that_is_not_a_pull_request() {
   pass "the pending close refuses a recorded link that is not a pull request"
 }
 
+# The strict recognizer bin/fm-pr-lib.sh owns is the only shape check left in
+# the --pr arm, so a URL the deleted inline walk would have admitted is still
+# refused rather than newly accepted.
+test_pending_close_refuses_a_shape_only_the_inline_walk_admitted() {
+  local case_dir home marker out rc url
+  case_dir=$(make_home pending-close-strict-parser-only)
+  home=$(home_of "$case_dir")
+  marker="$home/state/probe.backlog-close"
+
+  for url in \
+    "https://Gitea.Internal/owner/repo/pulls/7" \
+    "https://gitea.internal/owner/repo/pulls/%37" \
+    "https://gitea.internal/owner/repo/pull/7"
+  do
+    rc=0
+    out=$(close_marker_write "$case_dir" probe "$url") || rc=$?
+    [ "$rc" -ne 0 ] || fail "the pending close admitted $url, which is not a recognizable pull request link"
+    assert_contains "$out" "not a recognizable pull request link" \
+      "the refusal of $url did not name the unrecognizable link"
+    assert_absent "$marker" "the refusal of $url published a pending close"
+  done
+  pass "the pending close refuses URL shapes only the inline walk admitted"
+}
+
 test_teardown_closes_a_listed_http_forge_pr() {
   local case_dir home id out show links rc=0 pr
   id=atomic-teardown-http-forge-close
@@ -3249,6 +3273,7 @@ test_pending_close_accepts_a_listed_http_forge_pr
 test_pending_close_refuses_an_unlisted_http_forge_pr
 test_pending_close_accepts_https_without_a_forge_entry
 test_pending_close_refuses_a_link_that_is_not_a_pull_request
+test_pending_close_refuses_a_shape_only_the_inline_walk_admitted
 test_teardown_closes_a_listed_http_forge_pr
 test_teardown_refuses_an_unrecordable_pr_before_any_cleanup
 test_refused_teardown_leaves_the_item_live
