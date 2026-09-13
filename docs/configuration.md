@@ -552,6 +552,8 @@ A budget that is not a whole number from 1 to 120 is still refused outright.
 `<base-url>` is the scheme and authority of the instance, for example `http://gitea.internal:3000`, and `<token>` is a token that can read the repositories whose pull requests this home follows.
 Blank lines, and lines whose first character is `#`, are ignored.
 A host that is not listed is refused, so an internal forge is opted into explicitly rather than by any URL that happens to look like one.
+The same list is the only thing that lets an `http://` artifact URL into a backlog completion record ([`bin/fm-backlog-transition-lib.sh`](../bin/fm-backlog-transition-lib.sh)), so one entry opts a forge in for both watching and completion.
+An artifact recorded from an internal forge host reaches the task body as a note naming its source (`state/<id>.meta`) rather than as a structured PR link: the structured link is reserved for a canonical `https://` GitHub/Forgejo pull URL, the only shape `tasks-axi` accepts on `--pr`. Listing the host admits the artifact into the record; it does not turn the URL into a structured link.
 
 An instance-hosted forge (Gitea and its descendants) is watched but never merged by firstmate.
 A pull request URL is `<base-url>/<owner>/<repository>/pulls/<number>`, and `bin/fm-pr-check.sh` is the only path that arms a watch on one.

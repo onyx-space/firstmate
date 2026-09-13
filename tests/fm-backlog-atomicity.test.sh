@@ -2891,6 +2891,188 @@ test_dispatch_and_completion_are_structural() {
   pass "dispatch and completion transition structurally with evidence"
 }
 
+# The recorded PR artifact is validated in one place. An http:// URL is
+# admitted only when this home's own config/pr-forge-hosts names that exact
+# scheme+authority - the same list, read by the same parser, that lets
+# bin/fm-pr-check.sh arm a watch on an instance-hosted forge. A recorded link
+# that is not a canonical GitHub/Forgejo pull URL is handed to the close as a
+# note naming its source, because tasks-axi refuses any other URL on --pr; a
+# recorded link that is not a recognizable pull request at all is refused at
+# the pending-close write, before teardown's destructive phase.
+#
+# The record-layer cases drive the pending-close write itself - the exact step
+# teardown takes before its backlog close - and the teardown cases drive the
+# real script end to end.
+close_marker_write() {  # <case-dir> <id> <pr-url>
+  local case_dir=$1 id=$2 url=$3
+  (
+    set -u
+    # shellcheck source=bin/fm-tasks-axi-lib.sh
+    . "$ROOT/bin/fm-tasks-axi-lib.sh"
+    # shellcheck source=bin/fm-backlog-transition-lib.sh
+    . "$ROOT/bin/fm-backlog-transition-lib.sh"
+    FM_HOME="$(home_of "$case_dir")"
+    fm_backlog_close_marker_write "$(home_of "$case_dir")/state" "$id" \
+      "$(home_of "$case_dir")/data" spawn-1 --pr "$url" \
+      || { printf '%s\n' "${FM_BACKLOG_TRANSITION_ERROR:-pending close failed}"; exit 1; }
+  ) 2>&1
+}
+
+test_pending_close_accepts_a_listed_http_forge_pr() {
+  local case_dir home marker out pr
+  pr=http://10.0.99.5:3000/admin/Glitter/pulls/19
+  case_dir=$(make_home pending-close-http-forge)
+  home=$(home_of "$case_dir")
+  marker="$home/state/probe.backlog-close"
+  printf '%s forge-token\n' "http://10.0.99.5:3000" > "$home/config/pr-forge-hosts"
+
+  out=$(close_marker_write "$case_dir" probe "$pr") \
+    || fail "a listed http forge PR was refused as a pending close: $out"
+  assert_present "$marker" "the pending close was not published"
+  assert_grep "arg=$pr" "$marker" \
+    "the pending close did not record the listed http forge PR"
+  pass "the pending close accepts an http forge PR this home lists"
+}
+
+test_pending_close_refuses_an_unlisted_http_forge_pr() {
+  local case_dir home marker out pr rc=0
+  pr=http://10.0.99.5:3000/admin/Glitter/pulls/19
+  case_dir=$(make_home pending-close-http-forge-unlisted)
+  home=$(home_of "$case_dir")
+  marker="$home/state/probe.backlog-close"
+
+  out=$(close_marker_write "$case_dir" probe "$pr") || rc=$?
+  [ "$rc" -ne 0 ] || fail "the pending close accepted an http forge host this home does not list"
+  assert_not_contains "$out" "invalid pending-close arguments" \
+    "the whitelist refusal fell back to the generic parse-error label"
+  assert_contains "$out" "$home/config/pr-forge-hosts" \
+    "the refusal did not point at the config file that would accept the artifact"
+  assert_contains "$out" "not a configured forge host for this home" \
+    "the refusal did not say why the artifact host was rejected"
+  assert_absent "$marker" "the refusal published a pending close"
+
+  # The list, and not a hardcoded host, is the judge: naming the base now lets
+  # the same artifact through.
+  printf '%s forge-token\n' "http://10.0.99.5:3000" > "$home/config/pr-forge-hosts"
+  out=$(close_marker_write "$case_dir" probe "$pr") \
+    || fail "the pending close still refused after the host was listed: $out"
+  assert_grep "arg=$pr" "$marker" \
+    "the listed retry did not record the http forge PR"
+  pass "the pending close judges an http forge PR by this home's list, not a fixed host"
+}
+
+test_pending_close_accepts_https_without_a_forge_entry() {
+  local case_dir home marker out pr
+  pr=https://gitea.internal:3000/admin/Glitter/pulls/19
+  case_dir=$(make_home pending-close-https-unlisted-host)
+  home=$(home_of "$case_dir")
+  marker="$home/state/probe.backlog-close"
+
+  out=$(close_marker_write "$case_dir" probe "$pr") \
+    || fail "an https artifact needed a forge entry it never did before: $out"
+  assert_grep "arg=$pr" "$marker" \
+    "the pending close did not record the https artifact"
+  pass "https pending-close artifacts need no forge entry"
+}
+
+test_pending_close_refuses_a_link_that_is_not_a_pull_request() {
+  local case_dir home marker out rc=0
+  case_dir=$(make_home pending-close-unrecognizable-pr)
+  home=$(home_of "$case_dir")
+  marker="$home/state/probe.backlog-close"
+
+  out=$(close_marker_write "$case_dir" probe "https://example.com/not-a-pull-request") || rc=$?
+  [ "$rc" -ne 0 ] || fail "the pending close accepted a URL that is not a pull request link"
+  assert_contains "$out" "not a recognizable pull request link" \
+    "the refusal did not name why the artifact could not be recorded"
+  assert_absent "$marker" "the refusal published a pending close"
+  pass "the pending close refuses a recorded link that is not a pull request"
+}
+
+# The strict recognizer bin/fm-pr-lib.sh owns is the only shape check left in
+# the --pr arm, so a URL the deleted inline walk would have admitted is still
+# refused rather than newly accepted.
+test_pending_close_refuses_a_shape_only_the_inline_walk_admitted() {
+  local case_dir home marker out rc url
+  case_dir=$(make_home pending-close-strict-parser-only)
+  home=$(home_of "$case_dir")
+  marker="$home/state/probe.backlog-close"
+
+  for url in \
+    "https://Gitea.Internal/owner/repo/pulls/7" \
+    "https://gitea.internal/owner/repo/pulls/%37" \
+    "https://gitea.internal/owner/repo/pull/7"
+  do
+    rc=0
+    out=$(close_marker_write "$case_dir" probe "$url") || rc=$?
+    [ "$rc" -ne 0 ] || fail "the pending close admitted $url, which is not a recognizable pull request link"
+    assert_contains "$out" "not a recognizable pull request link" \
+      "the refusal of $url did not name the unrecognizable link"
+    assert_absent "$marker" "the refusal of $url published a pending close"
+  done
+  pass "the pending close refuses URL shapes only the inline walk admitted"
+}
+
+test_teardown_closes_a_listed_http_forge_pr() {
+  local case_dir home id out show links rc=0 pr
+  id=atomic-teardown-http-forge-close
+  pr=http://10.0.99.5:3000/admin/Glitter/pulls/19
+  case_dir=$(make_home teardown-http-forge-close "$id")
+  home=$(home_of "$case_dir")
+  add_item "$case_dir" "$id"
+  out=$(run_ship_spawn "$case_dir" "$id") || fail "the http forge fixture spawn failed: $out"
+  printf 'pr=%s\n' "$pr" >> "$home/state/$id.meta"
+
+  # Unlisted, the host is refused at the pending-close write, before teardown's
+  # destructive phase.
+  out=$(run_teardown "$case_dir" "$id") || rc=$?
+  [ "$rc" -ne 0 ] || fail "teardown accepted an http forge host this home does not list"
+  assert_contains "$out" "not a configured forge host for this home" \
+    "teardown refused the unlisted host without naming it"
+  assert_present "$home/state/$id.meta" "the unlisted refusal discarded the task record"
+  [ "$(row_state "$case_dir" "$id")" = in_flight ] \
+    || fail "the unlisted refusal moved the backlog row"
+
+  printf '%s forge-token\n' "http://10.0.99.5:3000" > "$home/config/pr-forge-hosts"
+  out=$(run_teardown "$case_dir" "$id") \
+    || fail "teardown did not close a listed http forge PR: $out"
+  [ "$(row_state "$case_dir" "$id")" = "done" ] \
+    || fail "teardown left the listed http forge item outside Done"
+  assert_grep "$pr" "$(backlog_of "$case_dir")" \
+    "the completed record did not carry the real http forge PR URL"
+  show=$(tasks-axi show "$id" --file "$(backlog_of "$case_dir")" 2>/dev/null)
+  assert_contains "$show" "$pr" \
+    "the completed task did not keep the http forge PR URL"
+  links=$(printf '%s\n' "$show" | sed -n 's/^  links: *//p' | head -1)
+  assert_not_contains "$links" "$pr" \
+    "the non-canonical URL was stored as a structured PR link"
+  pass "teardown closes a listed http forge PR through a note that keeps the URL"
+}
+
+test_teardown_refuses_an_unrecordable_pr_before_any_cleanup() {
+  local case_dir home id out worktree rc=0
+  id=atomic-teardown-unrecordable-pr
+  case_dir=$(make_home teardown-unrecordable-pr "$id")
+  home=$(home_of "$case_dir")
+  add_item "$case_dir" "$id"
+  out=$(run_ship_spawn "$case_dir" "$id") || fail "the unrecordable-PR fixture spawn failed: $out"
+  printf 'pr=%s\n' "https://example.com/not-a-pull-request" >> "$home/state/$id.meta"
+  worktree=$(sed -n 's/^worktree=//p' "$home/state/$id.meta" | tail -1)
+
+  out=$(run_teardown "$case_dir" "$id") || rc=$?
+  [ "$rc" -ne 0 ] || fail "teardown accepted a PR artifact it cannot record"
+  assert_contains "$out" "could not be recorded" \
+    "teardown did not stop at the pending-close record"
+  assert_contains "$out" "not a recognizable pull request link" \
+    "teardown refused without naming why the artifact could not be recorded"
+  assert_present "$home/state/$id.meta" "the refusal discarded the task record"
+  assert_absent "$home/state/$id.backlog-close" "the refusal published a pending close"
+  [ -d "$worktree" ] || fail "the refusal discarded the worktree"
+  [ "$(row_state "$case_dir" "$id")" = in_flight ] \
+    || fail "the refusal moved the backlog row"
+  pass "an unrecordable PR artifact is refused before any cleanup"
+}
+
 test_refused_teardown_leaves_the_item_live() {
   local case_dir home id out rc=0
   id=fm-structural-refusal-b15
@@ -3087,6 +3269,13 @@ test_spawn_refuses_an_unsafe_tasks_config_before_exempting_a_missing_backlog
 test_spawn_refuses_a_data_directory_symlinked_outside_the_home
 test_configured_adapter_refuses_a_data_directory_outside_the_home
 test_dispatch_and_completion_are_structural
+test_pending_close_accepts_a_listed_http_forge_pr
+test_pending_close_refuses_an_unlisted_http_forge_pr
+test_pending_close_accepts_https_without_a_forge_entry
+test_pending_close_refuses_a_link_that_is_not_a_pull_request
+test_pending_close_refuses_a_shape_only_the_inline_walk_admitted
+test_teardown_closes_a_listed_http_forge_pr
+test_teardown_refuses_an_unrecordable_pr_before_any_cleanup
 test_refused_teardown_leaves_the_item_live
 test_environment_selected_adapter_is_not_forced_to_markdown
 test_manual_backend_home_dispatches_and_completes_without_touching_the_backlog

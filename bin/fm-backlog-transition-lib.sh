@@ -73,6 +73,15 @@ FM_BACKLOG_ROW_HOLD_KIND=
 # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
 FM_BACKLOG_CLOSE_REPLAY_RESULT=
 
+# The one recognizer for a pull-request link (bin/fm-pr-lib.sh) owns the stored
+# PR identity, so the close validator reuses it rather than re-deriving the
+# shape a second way.
+_FM_BACKLOG_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if ! command -v fm_pr_url_parse >/dev/null 2>&1; then
+  # shellcheck source=bin/fm-pr-lib.sh
+  . "$_FM_BACKLOG_LIB_DIR/fm-pr-lib.sh"
+fi
+
 # Emit each byte of a value as a decimal number, locale-independently.
 # Deliberately perl rather than od: the spawn and teardown lifecycle runs under a
 # curated PATH (tests/fm-teardown.test.sh make_path_without_lsof pins that set)
@@ -523,16 +532,67 @@ fm_backlog_row_artifact_supported() {
   esac
 }
 
+# Add one finished-work deliverable line to <id>'s body, or leave the body
+# alone when that exact line is already there. One implementation, so the
+# retention transition and a captain answer record the identical line.
+fm_backlog_deliverable_line_record() {  # <data-dir> <id> <deliverable>
+  local authorized_data=$1 id=$2 deliverable=$3 data out command_status body line new_body tmp
+  [ -n "$deliverable" ] || return 0
+  if ! data=$(fm_backlog_data_absolute "$authorized_data"); then
+    FM_BACKLOG_TRANSITION_ERROR="data directory cannot be resolved: $authorized_data"
+    return 1
+  fi
+  out=$(fm_backlog_row_show "$data" "$id" --full)
+  command_status=$?
+  if [ "$command_status" -ne 0 ]; then
+    FM_BACKLOG_TRANSITION_ERROR=$(printf '%s\n' "$out" | sed -n '1p')
+    [ -n "$FM_BACKLOG_TRANSITION_ERROR" ] \
+      || FM_BACKLOG_TRANSITION_ERROR="tasks-axi show $id failed with no output"
+    return "$command_status"
+  fi
+  body=$(printf '%s\n' "$out" | sed -n 's/^  body: //p' | head -1 \
+    | LC_ALL=C perl -MJSON::PP -e '
+      local $/;
+      my $shown = <STDIN>;
+      $shown =~ s/\s+\z//;
+      exit 0 if $shown eq "" || $shown eq "-";
+      my $value = $shown =~ /\A"/ ? decode_json($shown) : $shown;
+      print $value unless $value eq "-";
+    ') || {
+    FM_BACKLOG_TRANSITION_ERROR="could not decode the task body of $id"
+    return 1
+  }
+  line="Deliverable of the finished work: $deliverable"
+  case $'\n'"$body"$'\n' in
+    *$'\n'"$line"$'\n'*) return 0 ;;
+  esac
+  new_body=$line
+  [ -z "$body" ] || new_body=$(printf '%s\n\n%s' "$body" "$line")
+  tmp=$(umask 077; mktemp "${TMPDIR:-/tmp}/fm-backlog-retain-body.XXXXXX") || {
+    FM_BACKLOG_TRANSITION_ERROR="cannot stage the deliverable for $id"
+    return 1
+  }
+  if ! printf '%s\n' "$new_body" > "$tmp"; then
+    rm -f -- "$tmp"
+    FM_BACKLOG_TRANSITION_ERROR="cannot stage the deliverable for $id"
+    return 1
+  fi
+  if ! fm_backlog_mutate "$authorized_data" update "$id" --body-file "$tmp"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+  rm -f -- "$tmp"
+}
+
 # Keep a captain-held row open across the removal of the work record that
-# discovered it: record the finished work's deliverable as one line at the end
-# of the task body (a line already present is left alone), preserve supported
-# artifacts on the row, and return it to Queued, the conventional post-cleanup
-# shape for an open captain call.
+# discovered it: record the finished work's deliverable as one body line,
+# preserve supported artifacts on the row, and return it to Queued, the
+# conventional post-cleanup shape for an open captain call.
 # bin/fm-fleet-snapshot.sh classifies that retained hold from its structured
 # fields; only bin/fm-captain-hold.sh answer resolves the call.
 fm_backlog_retain() {  # <data-dir> <id> [flag...]
-  local data authorized_data=$1 id=$2 out command_status previous_arg=''
-  local arg deliverable='' line body new_body tmp
+  local data authorized_data=$1 id=$2 previous_arg=''
+  local arg deliverable=''
   local -a row_args=()
   if ! data=$(fm_backlog_data_absolute "$1"); then
     FM_BACKLOG_TRANSITION_ERROR="data directory cannot be resolved: $1"
@@ -557,48 +617,7 @@ fm_backlog_retain() {  # <data-dir> <id> [flag...]
     previous_arg=$arg
   done
   if [ -n "$deliverable" ]; then
-    out=$(fm_backlog_row_show "$data" "$id" --full)
-    command_status=$?
-    if [ "$command_status" -ne 0 ]; then
-      FM_BACKLOG_TRANSITION_ERROR=$(printf '%s\n' "$out" | sed -n '1p')
-      [ -n "$FM_BACKLOG_TRANSITION_ERROR" ] \
-        || FM_BACKLOG_TRANSITION_ERROR="tasks-axi show $id failed with no output"
-      return "$command_status"
-    fi
-    body=$(printf '%s\n' "$out" | sed -n 's/^  body: //p' | head -1 \
-      | LC_ALL=C perl -MJSON::PP -e '
-        local $/;
-        my $shown = <STDIN>;
-        $shown =~ s/\s+\z//;
-        exit 0 if $shown eq "" || $shown eq "-";
-        my $value = $shown =~ /\A"/ ? decode_json($shown) : $shown;
-        print $value unless $value eq "-";
-      ') || {
-      FM_BACKLOG_TRANSITION_ERROR="could not decode the task body of $id"
-      return 1
-    }
-    line="Deliverable of the finished work: $deliverable"
-    case $'\n'"$body"$'\n' in
-      *$'\n'"$line"$'\n'*) ;;
-      *)
-        new_body=$line
-        [ -z "$body" ] || new_body=$(printf '%s\n\n%s' "$body" "$line")
-        tmp=$(umask 077; mktemp "${TMPDIR:-/tmp}/fm-backlog-retain-body.XXXXXX") || {
-          FM_BACKLOG_TRANSITION_ERROR="cannot stage the deliverable for $id"
-          return 1
-        }
-        if ! printf '%s\n' "$new_body" > "$tmp"; then
-          rm -f -- "$tmp"
-          FM_BACKLOG_TRANSITION_ERROR="cannot stage the deliverable for $id"
-          return 1
-        fi
-        if ! fm_backlog_mutate "$authorized_data" update "$id" --body-file "$tmp"; then
-          rm -f -- "$tmp"
-          return 1
-        fi
-        rm -f -- "$tmp"
-        ;;
-    esac
+    fm_backlog_deliverable_line_record "$authorized_data" "$id" "$deliverable" || return $?
   fi
   if [ "${#row_args[@]}" -gt 0 ]; then
     fm_backlog_mutate "$authorized_data" update "$id" "${row_args[@]}" || return 1
@@ -805,8 +824,9 @@ fm_backlog_dispatch_rollback() {
 fm_backlog_close_transition() {
   local meta=$1 marker=$2 data=$3 id=$4 state=$5
   shift 5
+  fm_backlog_recordable_args "$id" "$@" || return 1
   [ -z "$meta" ] || fm_backlog_record_remove "$meta" "task record" "$state" || return 1
-  fm_backlog_done "$data" "$id" "$@" || return 1
+  fm_backlog_done "$data" "$id" "${FM_BACKLOG_RECORDED_ARGS[@]+"${FM_BACKLOG_RECORDED_ARGS[@]}"}" || return 1
   fm_backlog_record_remove "$marker" "pending-close record" "$state"
 }
 
@@ -815,8 +835,9 @@ fm_backlog_close_transition() {
 fm_backlog_retain_transition() {
   local meta=$1 marker=$2 data=$3 id=$4 state=$5
   shift 5
+  fm_backlog_recordable_args "$id" "$@" || return 1
   [ -z "$meta" ] || fm_backlog_record_remove "$meta" "task record" "$state" || return 1
-  fm_backlog_retain "$data" "$id" "$@" || return 1
+  fm_backlog_retain "$data" "$id" "${FM_BACKLOG_RECORDED_ARGS[@]+"${FM_BACKLOG_RECORDED_ARGS[@]}"}" || return 1
   fm_backlog_record_remove "$marker" "pending-close record" "$state"
 }
 
@@ -838,11 +859,98 @@ fm_backlog_close_marker_path() {  # <state-dir> <id>
   printf '%s/%s.backlog-close\n' "$1" "$2"
 }
 
+# The one implementation of this home's forge-host whitelist lives in
+# bin/fm-pr-poll.sh, which is byte-static because a copy of it is armed as the
+# merge poll. Its `--forge-host` intake answers whether this home names an exact
+# scheme+authority, so the recorded PR artifact's http acceptance reuses that
+# parser instead of reading config/pr-forge-hosts a second way, and never
+# receives the token that belongs to the arm path alone.
+fm_backlog_pr_poll_script() {
+  local lib_path=${BASH_SOURCE[0]:-} dir
+  [ -n "$lib_path" ] || return 1
+  dir=$(cd "$(dirname "$lib_path")" 2>/dev/null && pwd) || return 1
+  printf '%s/fm-pr-poll.sh\n' "$dir"
+}
+
+fm_backlog_forge_host_configured() {  # <scheme>://<host>[:<port>]
+  local base=$1 poll
+  [ -n "${FM_HOME:-}" ] || {
+    FM_BACKLOG_TRANSITION_ERROR="$base cannot be matched against this home's config/pr-forge-hosts because FM_HOME is not set"
+    return 1
+  }
+  poll=$(fm_backlog_pr_poll_script) || {
+    FM_BACKLOG_TRANSITION_ERROR="the forge-host whitelist parser at bin/fm-pr-poll.sh could not be located"
+    return 1
+  }
+  [ -f "$poll" ] || {
+    FM_BACKLOG_TRANSITION_ERROR="the forge-host whitelist parser is missing at $poll"
+    return 1
+  }
+  FM_HOME="$FM_HOME" bash "$poll" --forge-host "$base" && return 0
+  FM_BACKLOG_TRANSITION_ERROR="$base is not a configured forge host for this home; add a \"$base <token>\" line to ${FM_HOME}/config/pr-forge-hosts"
+  return 1
+}
+
+# The one normalization every consumer of a recorded artifact goes through:
+# tasks-axi stores a structured pull link only for a canonical GitHub/Forgejo
+# pull URL (https, no port), so any other pull request it would refuse on --pr
+# (an internal http forge, or a GitLab merge request) becomes the note
+# `PR <url> (from state/<id>.meta pr=)`, which keeps the real URL and the field
+# it came from. A recorded link that is not a recognizable pull request cannot
+# be recorded at all and is refused before any mutation.
+FM_BACKLOG_RECORDED_ARGS=()
+fm_backlog_pr_url_canonical() {  # <url>
+  local url=$1
+  fm_pr_url_parse "$url" || return 1
+  case "$FM_PR_PROVIDER" in
+    github) return 0 ;;
+    gitea)
+      case "$FM_PR_HOST" in
+        *:*) return 1 ;;
+      esac
+      case "$url" in
+        https://*) return 0 ;;
+        *) return 1 ;;
+      esac
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+fm_backlog_pr_url_recordable() {  # <url>; nonzero when it is not a pull request link
+  local url=$1
+  fm_pr_url_parse "$url" || {
+    FM_BACKLOG_TRANSITION_ERROR="the recorded pull request $url is not a recognizable pull request link"
+    return 1
+  }
+}
+
+fm_backlog_recordable_args() {  # <id> [flag value...] -> FM_BACKLOG_RECORDED_ARGS
+  local id=$1 flag value
+  shift
+  FM_BACKLOG_RECORDED_ARGS=()
+  while [ "$#" -gt 0 ]; do
+    flag=$1
+    value=${2-}
+    if [ "$#" -ge 2 ]; then shift 2; else shift; fi
+    case "$flag" in
+      --pr)
+        if fm_backlog_pr_url_canonical "$value"; then
+          FM_BACKLOG_RECORDED_ARGS+=(--pr "$value")
+        elif fm_backlog_pr_url_recordable "$value"; then
+          FM_BACKLOG_RECORDED_ARGS+=(--note "PR $value (from state/$id.meta pr=)")
+        else
+          return 1
+        fi
+        ;;
+      *) FM_BACKLOG_RECORDED_ARGS+=("$flag" "$value") ;;
+    esac
+  done
+}
+
 fm_backlog_close_marker_validate() {  # <marker-path> <authorized-data-dir> <expected-id> <state-dir>
   local marker=$1 authorized_data data_resolved expected_id=$3 state=$4
   local id='' data='' marker_spawn_gen='' cleanup_incomplete=0 mode=close line raw_bytes arg_value
-  local url_tail url_authority url_path url_host url_port host_rest host_label host_valid
-  local percent_tail percent_valid
   local id_count=0 data_count=0 spawn_gen_count=0 cleanup_incomplete_count=0 mode_count=0
   local args=()
   FM_BACKLOG_CLOSE_VALIDATED_ID=
@@ -851,6 +959,7 @@ fm_backlog_close_marker_validate() {  # <marker-path> <authorized-data-dir> <exp
   FM_BACKLOG_CLOSE_VALIDATED_CLEANUP_INCOMPLETE=0
   FM_BACKLOG_CLOSE_VALIDATED_MODE=close
   FM_BACKLOG_CLOSE_VALIDATED_ARGS=()
+  FM_BACKLOG_TRANSITION_ERROR=
   fm_backlog_record_present "$marker" "pending-close record" "$state" || return 1
   raw_bytes=$(fm_backlog_bytes_of_file "$marker" 2>/dev/null) || {
     FM_BACKLOG_TRANSITION_ERROR="unreadable pending-close record $marker"
@@ -937,59 +1046,16 @@ fm_backlog_close_marker_validate() {  # <marker-path> <authorized-data-dir> <exp
     0) ;;
     2)
       case "${args[0]}" in
-        --note) [ "${args[1]}" = "local%20main" ] ;;
+        --note) [ "${args[1]}" = "local%20main" ] && args[1]="local main" ;;
         --pr)
           arg_value=${args[1]}
           [ "${#arg_value}" -le 2048 ] \
-            && case "$arg_value" in https://*) true ;; *) false ;; esac \
+            && fm_backlog_pr_url_recordable "$arg_value" \
             && case "$arg_value" in
-              *[[:space:]]*|*[!A-Za-z0-9:/?\&=._#%+~@-]*) false ;;
-              *) true ;;
-            esac \
-            && {
-              url_tail=${arg_value#https://}
-              url_authority=${url_tail%%/*}
-              url_path=${url_tail#*/}
-              url_host=$url_authority
-              url_port=
-              case "$url_authority" in
-                *:*) url_host=${url_authority%%:*}; url_port=${url_authority#*:} ;;
-              esac
-              [ "$url_path" != "$url_tail" ] \
-                && case "$url_host" in
-                  ''|[-.]*|*[-.]|*..*|*[!A-Za-z0-9.-]*) false ;;
-                  *[A-Za-z0-9]*) true ;;
-                  *) false ;;
-                esac \
-                && {
-                  host_rest=$url_host
-                  host_valid=1
-                  while :; do
-                    host_label=${host_rest%%.*}
-                    case "$host_label" in ''|-*|*-) host_valid=0; break ;; esac
-                    [ "$host_rest" = "$host_label" ] && break
-                    host_rest=${host_rest#*.}
-                  done
-                  [ "$host_valid" = 1 ]
-                } \
-                && case "$url_authority" in
-                  *:*) case "$url_port" in ''|*[!0-9]*|??????*) false ;; *) true ;; esac ;;
-                  *) true ;;
-                esac \
-                && case "$url_path" in *[A-Za-z0-9]*) true ;; *) false ;; esac \
-                && {
-                  percent_tail=$url_path
-                  percent_valid=1
-                  while case "$percent_tail" in *%*) true ;; *) false ;; esac; do
-                    percent_tail=${percent_tail#*%}
-                    case "$percent_tail" in
-                      [0-9A-Fa-f][0-9A-Fa-f]*) percent_tail=${percent_tail#??} ;;
-                      *) percent_valid=0; break ;;
-                    esac
-                  done
-                  [ "$percent_valid" = 1 ]
-                }
-            }
+              https://*) true ;;
+              http://*) fm_backlog_forge_host_configured "http://$FM_PR_HOST" ;;
+              *) false ;;
+            esac
           ;;
         --report)
           arg_value=${args[1]}
@@ -998,7 +1064,11 @@ fm_backlog_close_marker_validate() {  # <marker-path> <authorized-data-dir> <exp
             && case "$arg_value" in .|..|-*|/*|../*|*/../*|*/..) false ;; *) true ;; esac
           ;;
         *) false ;;
-      esac || { FM_BACKLOG_TRANSITION_ERROR="invalid pending-close arguments in $marker"; return 1; }
+      esac || {
+        [ -n "$FM_BACKLOG_TRANSITION_ERROR" ] \
+          || FM_BACKLOG_TRANSITION_ERROR="invalid pending-close arguments in $marker"
+        return 1
+      }
       ;;
     *) FM_BACKLOG_TRANSITION_ERROR="invalid pending-close arguments in $marker"; return 1 ;;
   esac
@@ -1111,9 +1181,6 @@ fm_backlog_close_marker_replay() {  # <state-dir> <marker-path> <authorized-data
   mode=$FM_BACKLOG_CLOSE_VALIDATED_MODE
   [ "$mode" = close ] || mode_flags=(--retain)
   args=("${FM_BACKLOG_CLOSE_VALIDATED_ARGS[@]+"${FM_BACKLOG_CLOSE_VALIDATED_ARGS[@]}"}")
-  if [ "${args[0]-}" = --note ]; then
-    args[1]="local main"
-  fi
   meta="$state/$id.meta"
   if [ -e "$meta" ] || [ -L "$meta" ]; then
     if ! fm_backlog_record_present "$meta" "task record" "$state"; then

@@ -4107,6 +4107,22 @@ seed_captured_procevent_result() {  # <dir>
     sleep 0.1
     i=$((i + 1))
   done
+  [ -s "$dir/state/.wake-queue" ] || return 1
+  # The detached runner publishes the result BEFORE it exits and releases its
+  # claim, so a populated wake queue does not mean the runner is done. Retiring
+  # into that exit reads the still-present claim and then cannot prove the
+  # runner's identity as it tears down - "cannot confirm runner identity" - a
+  # race in this fixture, not the behavior under test. Wait for the runner's own
+  # exit and claim release to converge first, exactly as reconcile would.
+  i=0
+  while [ "$i" -lt 100 ]; do
+    [ ! -e "$dir/state/procevent/delivery-src.runner" ] \
+      && [ ! -e "$dir/claims/delivery-src.claim" ] && break
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ ! -e "$dir/state/procevent/delivery-src.runner" ] \
+    && [ ! -e "$dir/claims/delivery-src.claim" ] || return 1
   pe_case "$dir" retire delivery-src >/dev/null || return 1
   [ -s "$dir/state/.wake-queue" ]
 }
