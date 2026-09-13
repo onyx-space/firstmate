@@ -3036,7 +3036,7 @@ test_teardown_closes_a_listed_http_forge_pr() {
   printf '%s forge-token\n' "http://10.0.99.5:3000" > "$home/config/pr-forge-hosts"
   out=$(run_teardown "$case_dir" "$id") \
     || fail "teardown did not close a listed http forge PR: $out"
-  [ "$(row_state "$case_dir" "$id")" = done ] \
+  [ "$(row_state "$case_dir" "$id")" = "done" ] \
     || fail "teardown left the listed http forge item outside Done"
   assert_grep "$pr" "$(backlog_of "$case_dir")" \
     "the completed record did not carry the real http forge PR URL"
