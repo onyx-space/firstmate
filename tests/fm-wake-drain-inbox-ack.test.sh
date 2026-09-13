@@ -187,9 +187,34 @@ test_legacy_record_is_not_classified_by_its_body() {
   pass "a legacy record without a header source is not classified by its body"
 }
 
+# The relay producer queues notifications with `fm-inbox.sh note <text>` and no
+# `--source`. Until that producer is updated (another lane's work), every note it
+# queues must keep counting as the captain's and must never be auto-archived.
+test_producer_argv_shape_stays_captain_authored() {
+  local dir state id ackerr
+  dir=$(make_case producer-argv)
+  state="$dir/state"
+
+  id=$(FM_STATE_OVERRIDE="$state" "$INBOX" note 'relay: a watched PR merged' \
+    | sed -n 's/^queued //p')
+  [ -n "$id" ] || fail "the producer's argv shape did not print a note id"
+
+  ackerr=$(drain_then_ack "$state" producer)
+
+  [ -f "$state/inbox/$id.note" ] \
+    || fail "a note queued with no --source was archived with its wake row"
+  [ ! -e "$state/inbox/handled/$id.note" ] \
+    || fail "a note queued with no --source reached handled/ with its wake row"
+  if grep -F 'archived' "$ackerr" >/dev/null; then
+    fail "the acknowledgement archived a note queued with no --source: $(cat "$ackerr")"
+  fi
+  pass "a note queued through the producer's argv shape counts as captain-authored"
+}
+
 test_captain_note_survives_its_acknowledged_wake_row
 test_notification_note_is_archived_with_its_wake_row
 test_mixed_batch_archives_only_the_notification
 test_explicit_ack_still_archives_every_source
 test_a_source_that_could_break_the_record_header_is_refused
 test_legacy_record_is_not_classified_by_its_body
+test_producer_argv_shape_stays_captain_authored

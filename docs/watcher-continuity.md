@@ -104,8 +104,9 @@ An acknowledgement archives a notification-class note together with the row it c
 A captain-authored note is never archived that way and stays in `state/inbox/` until an explicit `fm-inbox.sh drain --ack <id>`, because closing the row a note announced is not the captain's answer to it.
 Every automatic archival is named on the acknowledgement's own output with a count and the archived ids, so it can never look like a note going missing, and an archival that cannot be written fails the acknowledgement before any row is consumed so the row and its note stay together for the next attempt.
 `bin/fm-inbox.sh` owns the source values in its header and `--help` and owns which sources are notification-class in `fm_inbox_source_is_notification`; an unrecognized source counts as the captain's, because archiving the captain's words by mistake is the failure this split exists to prevent.
+A relay producer MUST pass `--source relay` when it queues a notification: a note queued without `--source` is captain-authored by default and is never archived automatically. Updating `projects/glitter-relay`'s producer to pass that flag is another lane's work.
 Any surface that counts unconfirmed notes - the fleet board included - counts the notes still present in `state/inbox/`, so that count only falls when a note is archived for real.
-`tests/fm-wake-drain-inbox-ack.test.sh` drives the real pair: a captain-authored note survives its acknowledged row, a notification note follows it into `handled/`, a mixed batch does both at once, an explicit `--ack` still archives either source, and widening the notification class to every source turns the captain-authored case red.
+`tests/fm-wake-drain-inbox-ack.test.sh` drives the real pair: a captain-authored note survives its acknowledged row, a note queued through the producer's argv shape with no `--source` does too, a notification note follows it into `handled/`, a mixed batch does both at once, an explicit `--ack` still archives either source, and widening the notification class to every source turns the captain-authored case red.
 
 ## Arm-layer cycle contract
 
