@@ -902,7 +902,7 @@ apply_pending_retained_artifact() {  # <task-id>
     || { report_retained_artifact_failure "$id" "$marker"; return 1; }
   [ "$FM_BACKLOG_CLOSE_VALIDATED_MODE" = retain ] || return 0
   args=("${FM_BACKLOG_CLOSE_VALIDATED_ARGS[@]+"${FM_BACKLOG_CLOSE_VALIDATED_ARGS[@]}"}")
-  fm_backlog_recordable_args "$id" "${args[@]}" \
+  fm_backlog_recordable_args "$id" "${args[@]+"${args[@]}"}" \
     || { report_retained_artifact_failure "$id" "$marker"; return 1; }
   args=("${FM_BACKLOG_RECORDED_ARGS[@]+"${FM_BACKLOG_RECORDED_ARGS[@]}"}")
   case "${args[0]-}" in

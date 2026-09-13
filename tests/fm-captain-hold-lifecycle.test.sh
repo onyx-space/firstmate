@@ -2935,6 +2935,86 @@ SH
   pass "an answer before cleanup replay keeps a retained http forge PR"
 }
 
+# The retained marker serializes a `local main` completion as `local%20main`;
+# the validation boundary publishes the decoded value, so the captain's answer
+# records the line a retention replay would, not the serialized spelling.
+test_answer_before_cleanup_replay_decodes_a_retained_local_main_note() {
+  local home id wt rc show
+  home=$(make_home answer-before-cleanup-local-main)
+  id=sample-retained-local-main
+  wt="$home/projects/$id"
+  mkdir -p "$home/data/$id" "$wt" "$home/projects/sample"
+  tasks_in "$home" add "$id" "Land the approved local-only change" --kind ship \
+    --repo sample --start >/dev/null || fail "could not create the local-only fixture"
+  fm_write_meta "$home/state/$id.meta" \
+    "window=firstmate:fm-$id" "worktree=$wt" "project=$home/projects/sample" \
+    "harness=codex" "kind=ship" "mode=local-only" "spawn_gen=fixture-$id"
+  printf 'done: local merge ready\n' > "$home/state/$id.status"
+  run_captain "$home" hold "$id" --reason "captain must decide after interrupted cleanup" \
+    >/dev/null || fail "could not hold the local-only fixture"
+  cat > "$home/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+  chmod +x "$home/fakebin/treehouse"
+
+  set +e
+  PATH="$home/fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONFIG_OVERRIDE="$home/config" "$TEARDOWN" "$id" --force \
+    > "$home/teardown.out" 2> "$home/teardown.err"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "cleanup succeeded despite the failed worktree return"
+  assert_present "$home/state/$id.backlog-close" \
+    "the interrupted cleanup lost its retained-artifact record"
+
+  printf 'Proceed with the local landing.\n' > "$home/answer.txt"
+  run_captain "$home" answer "$id" --decision-file "$home/answer.txt" >/dev/null \
+    || fail "the captain could not answer before cleanup replay"
+  show=$(tasks_in "$home" show "$id" --full) || fail "the answered row disappeared"
+  assert_contains "$show" "state: done" "the answer did not close the local-only call"
+  assert_contains "$show" "Deliverable of the finished work: local main" \
+    "the answered record did not decode the retained local-main note"
+  assert_not_contains "$show" "local%20main" \
+    "the answered record kept the serialized local-main spelling"
+  pass "an answer before cleanup replay decodes a retained local-main note"
+}
+
+# A retained record can carry no completion args; handing them to the shared
+# normalization must not abort the answer on stock macOS bash, whose `set -u`
+# refuses an unguarded empty-array expansion.
+test_answer_with_an_empty_retained_record_survives_bash32() {
+  local home id err rc show
+  [ -x /bin/bash ] || { pass "empty retained record under /bin/bash skipped without /bin/bash"; return 0; }
+  home=$(make_home answer-empty-retained-record)
+  id=sample-empty-retained-record
+  tasks_in "$home" add "$id" "Decide the empty retained record" --kind ship \
+    --repo sample --start >/dev/null || fail "could not create the empty retained record fixture"
+  run_captain "$home" hold "$id" --reason "captain must decide with no recorded artifact" \
+    >/dev/null || fail "could not hold the empty retained record fixture"
+  printf 'id=%s\ndata=%s\nspawn_gen=fixture-%s\nmode=retain\n' \
+    "$id" "$home/data" "$id" > "$home/state/$id.backlog-close"
+
+  printf 'Proceed with no recorded artifact.\n' > "$home/answer.txt"
+  err="$home/answer.err"
+  set +e
+  PATH="$home/fakebin:$PATH" REAL_TASKS_AXI="$TASKS_AXI_BIN" \
+    FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONFIG_OVERRIDE="$home/config" /bin/bash "$ROOT/bin/fm-captain-hold.sh" \
+    answer "$id" --decision-file "$home/answer.txt" > "$home/answer.out" 2> "$err"
+  rc=$?
+  set -e
+  grep -q 'unbound variable' "$err" \
+    && fail "an empty retained record crashed the answer under /bin/bash: $(cat "$err")"
+  [ "$rc" -eq 0 ] \
+    || fail "an empty retained record wedged the answer under /bin/bash (exit $rc): $(cat "$err" "$home/answer.out")"
+  show=$(tasks_in "$home" show "$id" --full) || fail "the answered row disappeared"
+  assert_contains "$show" "state: done" \
+    "the empty retained record did not close under /bin/bash"
+  pass "an empty retained record closes the captain answer under /bin/bash"
+}
+
 test_unusable_pending_close_record_names_its_reason() {
   local home id wt rc err marker
   home=$(make_home unusable-pending-close-reason)
@@ -3853,6 +3933,8 @@ test_retained_row_artifacts_survive_captain_answers
 test_interrupted_cleanup_keeps_the_captain_call_recoverable
 test_answer_before_cleanup_replay_preserves_the_retained_report
 test_answer_before_cleanup_replay_keeps_a_retained_http_forge_pr
+test_answer_before_cleanup_replay_decodes_a_retained_local_main_note
+test_answer_with_an_empty_retained_record_survives_bash32
 test_unusable_pending_close_record_names_its_reason
 test_relocated_report_does_not_wedge_an_answer_before_replay
 test_teardown_retains_captain_calls_in_a_relocated_backlog
