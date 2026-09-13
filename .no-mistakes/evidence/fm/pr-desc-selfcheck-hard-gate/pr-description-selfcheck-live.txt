@@ -1,0 +1,60 @@
+# Target commit: 060541d64a8e7cac8af21d2310d5d6bdc256ebdc
+# Live-generated from bin/fm-brief.sh (FM_HOME isolated) and bin/fm-promote.sh delivery payload
+
+===== SHIP BRIEF ($HOME/data/brief-prdesc-no-mistakes/brief.md) =====
+# PR description
+Before you write or edit a pull request description, read the `pr-description` skill (`~/.agents/skills/pr-description/SKILL.md`); it is the single owner of that contract.
+Do not use `ce-translate` for a PR description.
+Before you report the PR ready, self-check the live title and body against that skill's rule for this PR's kind:
+- Captain's own repo (GitHub `onyx-space/*`, internal Gitea `admin/*` and `AI.Buddy/*`) - the Chinese-first contract applies; fix any "no" before you report:
+  - Title: Chinese after the conventional-commit prefix (`feat(scope): <中文>`)?
+  - Body: Chinese visible first, above the fold?
+  - Body: the English body folded inside `<details><summary>English</summary>`?
+- Third-party upstream repo - the Chinese-first contract does not apply; follow that upstream's own conventions, usually English, and never rewrite a third-party upstream PR title into Chinese.
+
+# Definition of done
+
+===== SHIP BRIEF ($HOME/data/brief-prdesc-direct-PR/brief.md) =====
+# PR description
+Before you write or edit a pull request description, read the `pr-description` skill (`~/.agents/skills/pr-description/SKILL.md`); it is the single owner of that contract.
+Do not use `ce-translate` for a PR description.
+Before you report the PR ready, self-check the live title and body against that skill's rule for this PR's kind:
+- Captain's own repo (GitHub `onyx-space/*`, internal Gitea `admin/*` and `AI.Buddy/*`) - the Chinese-first contract applies; fix any "no" before you report:
+  - Title: Chinese after the conventional-commit prefix (`feat(scope): <中文>`)?
+  - Body: Chinese visible first, above the fold?
+  - Body: the English body folded inside `<details><summary>English</summary>`?
+- Third-party upstream repo - the Chinese-first contract does not apply; follow that upstream's own conventions, usually English, and never rewrite a third-party upstream PR title into Chinese.
+
+# Definition of done
+
+===== LOCAL-ONLY SHIP BRIEF =====
+(none) the PR description block is absent from the local-only brief, which opens no PR
+
+===== PROMOTED-SCOUT DELIVERY PAYLOAD (no-mistakes) =====
+# PR description
+Before you write or edit a pull request description, read the `pr-description` skill (`~/.agents/skills/pr-description/SKILL.md`); it is the single owner of that contract.
+Do not use `ce-translate` for a PR description.
+Before you report the PR ready, self-check the live title and body against that skill's rule for this PR's kind:
+- Captain's own repo (GitHub `onyx-space/*`, internal Gitea `admin/*` and `AI.Buddy/*`) - the Chinese-first contract applies; fix any "no" before you report:
+  - Title: Chinese after the conventional-commit prefix (`feat(scope): <中文>`)?
+  - Body: Chinese visible first, above the fold?
+  - Body: the English body folded inside `<details><summary>English</summary>`?
+- Third-party upstream repo - the Chinese-first contract does not apply; follow that upstream's own conventions, usually English, and never rewrite a third-party upstream PR title into Chinese.
+
+# Definition of done
+
+===== PROMOTED-SCOUT DELIVERY PAYLOAD (direct-PR) =====
+# PR description
+Before you write or edit a pull request description, read the `pr-description` skill (`~/.agents/skills/pr-description/SKILL.md`); it is the single owner of that contract.
+Do not use `ce-translate` for a PR description.
+Before you report the PR ready, self-check the live title and body against that skill's rule for this PR's kind:
+- Captain's own repo (GitHub `onyx-space/*`, internal Gitea `admin/*` and `AI.Buddy/*`) - the Chinese-first contract applies; fix any "no" before you report:
+  - Title: Chinese after the conventional-commit prefix (`feat(scope): <中文>`)?
+  - Body: Chinese visible first, above the fold?
+  - Body: the English body folded inside `<details><summary>English</summary>`?
+- Third-party upstream repo - the Chinese-first contract does not apply; follow that upstream's own conventions, usually English, and never rewrite a third-party upstream PR title into Chinese.
+
+# Definition of done
+
+===== PROMOTED-SCOUT DELIVERY PAYLOAD (local-only) =====
+(none) promoted local-only worker receives no PR description block

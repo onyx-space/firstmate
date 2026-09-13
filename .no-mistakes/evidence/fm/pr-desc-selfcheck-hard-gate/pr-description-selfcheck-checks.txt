@@ -1,0 +1,21 @@
+PR self-check live verification (target 060541d, base 47b5518)
+date: 2026-09-13T00:29:57Z
+
+--- own-repo self-check + third-party branch reach SHIP briefs ---
+no-mistakes  pointer=1 self-check-gate=1 title-q=1 above-fold-q=1 fold-q=1 own-repo=1 upstream-branch=1 never-retitle-upstream=1
+direct-PR    pointer=1 self-check-gate=1 title-q=1 above-fold-q=1 fold-q=1 own-repo=1 upstream-branch=1 never-retitle-upstream=1
+
+--- local-only ship brief must NOT carry the block (opens no PR) ---
+PR-description block count: 0
+
+--- promoted-scout delivery payload carries the same block ---
+no-mistakes  block=1 self-check-gate=1 upstream-branch=1
+direct-PR    block=1 self-check-gate=1 upstream-branch=1
+local-only   block=0 self-check-gate=0 upstream-branch=0
+
+--- one-owner guard: the skill stays the owner of format/commands ---
+no-mistakes  gh-pr-edit=0 format-heading=0
+direct-PR    gh-pr-edit=0 format-heading=0
+
+--- regression: BASE brief had the pointer but no self-check ---
+base  pointer=1 self-check-gate=0 upstream-branch=0
