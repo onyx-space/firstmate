@@ -532,16 +532,67 @@ fm_backlog_row_artifact_supported() {
   esac
 }
 
+# Add one finished-work deliverable line to <id>'s body, or leave the body
+# alone when that exact line is already there. One implementation, so the
+# retention transition and a captain answer record the identical line.
+fm_backlog_deliverable_line_record() {  # <data-dir> <id> <deliverable>
+  local authorized_data=$1 id=$2 deliverable=$3 data out command_status body line new_body tmp
+  [ -n "$deliverable" ] || return 0
+  if ! data=$(fm_backlog_data_absolute "$authorized_data"); then
+    FM_BACKLOG_TRANSITION_ERROR="data directory cannot be resolved: $authorized_data"
+    return 1
+  fi
+  out=$(fm_backlog_row_show "$data" "$id" --full)
+  command_status=$?
+  if [ "$command_status" -ne 0 ]; then
+    FM_BACKLOG_TRANSITION_ERROR=$(printf '%s\n' "$out" | sed -n '1p')
+    [ -n "$FM_BACKLOG_TRANSITION_ERROR" ] \
+      || FM_BACKLOG_TRANSITION_ERROR="tasks-axi show $id failed with no output"
+    return "$command_status"
+  fi
+  body=$(printf '%s\n' "$out" | sed -n 's/^  body: //p' | head -1 \
+    | LC_ALL=C perl -MJSON::PP -e '
+      local $/;
+      my $shown = <STDIN>;
+      $shown =~ s/\s+\z//;
+      exit 0 if $shown eq "" || $shown eq "-";
+      my $value = $shown =~ /\A"/ ? decode_json($shown) : $shown;
+      print $value unless $value eq "-";
+    ') || {
+    FM_BACKLOG_TRANSITION_ERROR="could not decode the task body of $id"
+    return 1
+  }
+  line="Deliverable of the finished work: $deliverable"
+  case $'\n'"$body"$'\n' in
+    *$'\n'"$line"$'\n'*) return 0 ;;
+  esac
+  new_body=$line
+  [ -z "$body" ] || new_body=$(printf '%s\n\n%s' "$body" "$line")
+  tmp=$(umask 077; mktemp "${TMPDIR:-/tmp}/fm-backlog-retain-body.XXXXXX") || {
+    FM_BACKLOG_TRANSITION_ERROR="cannot stage the deliverable for $id"
+    return 1
+  }
+  if ! printf '%s\n' "$new_body" > "$tmp"; then
+    rm -f -- "$tmp"
+    FM_BACKLOG_TRANSITION_ERROR="cannot stage the deliverable for $id"
+    return 1
+  fi
+  if ! fm_backlog_mutate "$authorized_data" update "$id" --body-file "$tmp"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+  rm -f -- "$tmp"
+}
+
 # Keep a captain-held row open across the removal of the work record that
-# discovered it: record the finished work's deliverable as one line at the end
-# of the task body (a line already present is left alone), preserve supported
-# artifacts on the row, and return it to Queued, the conventional post-cleanup
-# shape for an open captain call.
+# discovered it: record the finished work's deliverable as one body line,
+# preserve supported artifacts on the row, and return it to Queued, the
+# conventional post-cleanup shape for an open captain call.
 # bin/fm-fleet-snapshot.sh classifies that retained hold from its structured
 # fields; only bin/fm-captain-hold.sh answer resolves the call.
 fm_backlog_retain() {  # <data-dir> <id> [flag...]
-  local data authorized_data=$1 id=$2 out command_status previous_arg=''
-  local arg deliverable='' line body new_body tmp
+  local data authorized_data=$1 id=$2 previous_arg=''
+  local arg deliverable=''
   local -a row_args=()
   if ! data=$(fm_backlog_data_absolute "$1"); then
     FM_BACKLOG_TRANSITION_ERROR="data directory cannot be resolved: $1"
@@ -566,48 +617,7 @@ fm_backlog_retain() {  # <data-dir> <id> [flag...]
     previous_arg=$arg
   done
   if [ -n "$deliverable" ]; then
-    out=$(fm_backlog_row_show "$data" "$id" --full)
-    command_status=$?
-    if [ "$command_status" -ne 0 ]; then
-      FM_BACKLOG_TRANSITION_ERROR=$(printf '%s\n' "$out" | sed -n '1p')
-      [ -n "$FM_BACKLOG_TRANSITION_ERROR" ] \
-        || FM_BACKLOG_TRANSITION_ERROR="tasks-axi show $id failed with no output"
-      return "$command_status"
-    fi
-    body=$(printf '%s\n' "$out" | sed -n 's/^  body: //p' | head -1 \
-      | LC_ALL=C perl -MJSON::PP -e '
-        local $/;
-        my $shown = <STDIN>;
-        $shown =~ s/\s+\z//;
-        exit 0 if $shown eq "" || $shown eq "-";
-        my $value = $shown =~ /\A"/ ? decode_json($shown) : $shown;
-        print $value unless $value eq "-";
-      ') || {
-      FM_BACKLOG_TRANSITION_ERROR="could not decode the task body of $id"
-      return 1
-    }
-    line="Deliverable of the finished work: $deliverable"
-    case $'\n'"$body"$'\n' in
-      *$'\n'"$line"$'\n'*) ;;
-      *)
-        new_body=$line
-        [ -z "$body" ] || new_body=$(printf '%s\n\n%s' "$body" "$line")
-        tmp=$(umask 077; mktemp "${TMPDIR:-/tmp}/fm-backlog-retain-body.XXXXXX") || {
-          FM_BACKLOG_TRANSITION_ERROR="cannot stage the deliverable for $id"
-          return 1
-        }
-        if ! printf '%s\n' "$new_body" > "$tmp"; then
-          rm -f -- "$tmp"
-          FM_BACKLOG_TRANSITION_ERROR="cannot stage the deliverable for $id"
-          return 1
-        fi
-        if ! fm_backlog_mutate "$authorized_data" update "$id" --body-file "$tmp"; then
-          rm -f -- "$tmp"
-          return 1
-        fi
-        rm -f -- "$tmp"
-        ;;
-    esac
+    fm_backlog_deliverable_line_record "$authorized_data" "$id" "$deliverable" || return $?
   fi
   if [ "${#row_args[@]}" -gt 0 ]; then
     fm_backlog_mutate "$authorized_data" update "$id" "${row_args[@]}" || return 1
@@ -881,12 +891,13 @@ fm_backlog_forge_host_configured() {  # <scheme>://<host>[:<port>]
   return 1
 }
 
-# tasks-axi records a structured pull link only for a canonical GitHub/Forgejo
-# pull URL: https, no port. An internal http forge and a GitLab merge request
-# are real pull requests it refuses on --pr, so a recorded one of those is
-# handed to the close as a note that keeps the URL and where it came from.
-# A recorded link that is not a recognizable pull request at all cannot be
-# recorded and is refused before any mutation.
+# The one normalization every consumer of a recorded artifact goes through:
+# tasks-axi stores a structured pull link only for a canonical GitHub/Forgejo
+# pull URL (https, no port), so any other pull request it would refuse on --pr
+# (an internal http forge, or a GitLab merge request) becomes the note
+# `PR <url> (from state/<id>.meta pr=)`, which keeps the real URL and the field
+# it came from. A recorded link that is not a recognizable pull request cannot
+# be recorded at all and is refused before any mutation.
 FM_BACKLOG_RECORDED_ARGS=()
 fm_backlog_pr_url_canonical() {  # <url>
   local url=$1

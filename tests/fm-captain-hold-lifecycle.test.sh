@@ -2886,6 +2886,55 @@ SH
   pass "an answer before cleanup replay preserves the retained report"
 }
 
+# The surviving retention record's non-canonical artifact reaches the backlog
+# through the one normalization every consumer of a recorded artifact uses, so
+# the captain's answer records the URL in the body instead of handing tasks-axi
+# a --pr value it refuses.
+test_answer_before_cleanup_replay_keeps_a_retained_http_forge_pr() {
+  local home id wt rc show pr
+  home=$(make_home answer-before-cleanup-http-forge-pr)
+  id=sample-retained-http-forge-pr
+  pr=http://10.0.99.5:3000/admin/Glitter/pulls/19
+  wt="$home/projects/$id"
+  mkdir -p "$home/data/$id" "$wt" "$home/projects/sample"
+  tasks_in "$home" add "$id" "Ship the internal forge pull request" --kind ship \
+    --repo sample --start >/dev/null || fail "could not create the http forge fixture"
+  fm_write_meta "$home/state/$id.meta" \
+    "window=firstmate:fm-$id" "worktree=$wt" "project=$home/projects/sample" \
+    "harness=codex" "kind=ship" "mode=no-mistakes" "pr=$pr" "spawn_gen=fixture-$id"
+  printf 'done: PR %s merged\n' "$pr" > "$home/state/$id.status"
+  printf '%s forge-token\n' "http://10.0.99.5:3000" > "$home/config/pr-forge-hosts"
+  run_captain "$home" hold "$id" --reason "captain must decide after interrupted cleanup" \
+    >/dev/null || fail "could not hold the http forge fixture"
+  cat > "$home/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+  chmod +x "$home/fakebin/treehouse"
+
+  set +e
+  PATH="$home/fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONFIG_OVERRIDE="$home/config" "$TEARDOWN" "$id" --force \
+    > "$home/teardown.out" 2> "$home/teardown.err"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "cleanup succeeded despite the failed worktree return"
+  assert_present "$home/state/$id.backlog-close" \
+    "the interrupted cleanup lost its retained-artifact record"
+
+  printf 'Proceed with the internal forge delivery.\n' > "$home/answer.txt"
+  run_captain "$home" answer "$id" --decision-file "$home/answer.txt" >/dev/null \
+    || fail "the captain could not answer before cleanup replay"
+  show=$(tasks_in "$home" show "$id" --full) || fail "the answered row disappeared"
+  assert_contains "$show" "state: done" "the answer did not close the http forge call"
+  assert_contains "$show" "held: no" "the answered http forge call stayed held"
+  assert_contains "$show" "$pr" "the answered record dropped the internal forge PR URL"
+  grep -Fq "$pr" "$home/data/backlog.md" \
+    || fail "the completed backlog record dropped the internal forge PR URL"
+  pass "an answer before cleanup replay keeps a retained http forge PR"
+}
+
 test_unusable_pending_close_record_names_its_reason() {
   local home id wt rc err marker
   home=$(make_home unusable-pending-close-reason)
@@ -3803,6 +3852,7 @@ test_teardown_never_closes_a_captain_held_task
 test_retained_row_artifacts_survive_captain_answers
 test_interrupted_cleanup_keeps_the_captain_call_recoverable
 test_answer_before_cleanup_replay_preserves_the_retained_report
+test_answer_before_cleanup_replay_keeps_a_retained_http_forge_pr
 test_unusable_pending_close_record_names_its_reason
 test_relocated_report_does_not_wedge_an_answer_before_replay
 test_teardown_retains_captain_calls_in_a_relocated_backlog
