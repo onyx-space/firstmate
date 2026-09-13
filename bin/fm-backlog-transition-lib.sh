@@ -853,10 +853,21 @@ fm_backlog_pr_poll_script() {
 
 fm_backlog_forge_host_configured() {  # <scheme>://<host>[:<port>]
   local base=$1 poll
-  [ -n "${FM_HOME:-}" ] || return 1
-  poll=$(fm_backlog_pr_poll_script) || return 1
-  [ -f "$poll" ] || return 1
-  FM_HOME="$FM_HOME" bash "$poll" --forge-host "$base" >/dev/null 2>&1
+  [ -n "${FM_HOME:-}" ] || {
+    FM_BACKLOG_TRANSITION_ERROR="$base cannot be matched against this home's config/pr-forge-hosts because FM_HOME is not set"
+    return 1
+  }
+  poll=$(fm_backlog_pr_poll_script) || {
+    FM_BACKLOG_TRANSITION_ERROR="the forge-host whitelist parser at bin/fm-pr-poll.sh could not be located"
+    return 1
+  }
+  [ -f "$poll" ] || {
+    FM_BACKLOG_TRANSITION_ERROR="the forge-host whitelist parser is missing at $poll"
+    return 1
+  }
+  FM_HOME="$FM_HOME" bash "$poll" --forge-host "$base" && return 0
+  FM_BACKLOG_TRANSITION_ERROR="$base is not a configured forge host for this home; add a \"$base <token>\" line to ${FM_HOME}/config/pr-forge-hosts"
+  return 1
 }
 
 fm_backlog_close_marker_validate() {  # <marker-path> <authorized-data-dir> <expected-id> <state-dir>
@@ -872,6 +883,7 @@ fm_backlog_close_marker_validate() {  # <marker-path> <authorized-data-dir> <exp
   FM_BACKLOG_CLOSE_VALIDATED_CLEANUP_INCOMPLETE=0
   FM_BACKLOG_CLOSE_VALIDATED_MODE=close
   FM_BACKLOG_CLOSE_VALIDATED_ARGS=()
+  FM_BACKLOG_TRANSITION_ERROR=
   fm_backlog_record_present "$marker" "pending-close record" "$state" || return 1
   raw_bytes=$(fm_backlog_bytes_of_file "$marker" 2>/dev/null) || {
     FM_BACKLOG_TRANSITION_ERROR="unreadable pending-close record $marker"
@@ -1025,7 +1037,11 @@ fm_backlog_close_marker_validate() {  # <marker-path> <authorized-data-dir> <exp
             && case "$arg_value" in .|..|-*|/*|../*|*/../*|*/..) false ;; *) true ;; esac
           ;;
         *) false ;;
-      esac || { FM_BACKLOG_TRANSITION_ERROR="invalid pending-close arguments in $marker"; return 1; }
+      esac || {
+        [ -n "$FM_BACKLOG_TRANSITION_ERROR" ] \
+          || FM_BACKLOG_TRANSITION_ERROR="invalid pending-close arguments in $marker"
+        return 1
+      }
       ;;
     *) FM_BACKLOG_TRANSITION_ERROR="invalid pending-close arguments in $marker"; return 1 ;;
   esac

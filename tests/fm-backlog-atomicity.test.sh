@@ -2940,8 +2940,12 @@ test_pending_close_refuses_an_unlisted_http_forge_pr() {
 
   out=$(close_marker_write "$case_dir" probe "$pr") || rc=$?
   [ "$rc" -ne 0 ] || fail "the pending close accepted an http forge host this home does not list"
-  assert_contains "$out" "invalid pending-close arguments" \
-    "the refusal did not name the unacceptable artifact"
+  assert_not_contains "$out" "invalid pending-close arguments" \
+    "the whitelist refusal fell back to the generic parse-error label"
+  assert_contains "$out" "$home/config/pr-forge-hosts" \
+    "the refusal did not point at the config file that would accept the artifact"
+  assert_contains "$out" "not a configured forge host for this home" \
+    "the refusal did not say why the artifact host was rejected"
   assert_absent "$marker" "the refusal published a pending close"
 
   # The list, and not a hardcoded host, is the judge: naming the base now lets
@@ -2981,8 +2985,10 @@ test_teardown_clears_the_artifact_gate_for_a_listed_http_forge_pr() {
   # Unlisted, the artifact gate refuses before any destructive step.
   out=$(run_teardown "$case_dir" "$id") || rc=$?
   [ "$rc" -ne 0 ] || fail "teardown accepted an unlisted http forge host"
-  assert_contains "$out" "invalid pending-close arguments" \
-    "teardown did not refuse the unlisted http forge artifact at the gate"
+  assert_contains "$out" "could not be recorded" \
+    "teardown did not report the artifact gate as the stopping point"
+  assert_contains "$out" "not a configured forge host for this home" \
+    "teardown refused without naming the reason the artifact host was rejected"
   assert_present "$home/state/$id.meta" "the refusal discarded the task record"
 
   # Listed, the gate is cleared; what the backlog adapter does next is outside
