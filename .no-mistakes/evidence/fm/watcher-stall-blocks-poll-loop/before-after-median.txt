@@ -1,0 +1,15 @@
+# Same algorithm (bin/fm-watch-cycle-stats.sh, target) over two real arm-owned cycle ledgers
+# Each ledger: 5 real watcher cycles, each classifying a fresh 2600-line status log with a needs-decision at the tail.
+
+## BEFORE (base commit 383c8e4, unbounded whole-span fold)
+watcher cycles: median 21s · mean 21s · max 21s · cycles 5 of 5 · threshold 150s
+
+## BEFORE, with the default-ish threshold forced to 15s (to show the ALERT line fires)
+watcher cycles: median 21s · mean 21s · max 21s · cycles 5 of 5 · threshold 15s
+watcher cycles: ALERT median 21s >= threshold 15s over 5 cycles - ordinary cycles already run long enough to blind supervision for their duration
+
+## AFTER (target commit b1f7a69, bounded resumable scan)
+watcher cycles: median 4s · mean 4s · max 4s · cycles 5 of 5 · threshold 150s
+
+## AFTER, same 15s threshold (no ALERT)
+watcher cycles: median 4s · mean 4s · max 4s · cycles 5 of 5 · threshold 15s

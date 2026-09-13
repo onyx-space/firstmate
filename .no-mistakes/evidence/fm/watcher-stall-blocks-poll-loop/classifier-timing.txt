@@ -1,0 +1,17 @@
+# The stall this change removes: time to classify a fresh (unseen) status span
+# whose tail carries `needs-decision: [key=tail] pick the release target`.
+# Command shape (state dir + log built by perl; the function is the exact one the
+# watcher poll loop calls):
+#   FM_STATE_OVERRIDE=<state> FM_CLASSIFY_SCAN_BUDGET_SECS=2 \
+#     bash -c '. <repo>/bin/fm-classify-lib.sh; time status_span_first_actionable_record <log> 0'
+#
+# 2600-line log (the reported elmo case shape):
+#   BEFORE (base 383c8e4, unbounded whole-span fold): real 0m18.293s  rc=0
+#   AFTER  (target b1f7a69, bounded resumable scan):  real 0m1.468s   rc=4 (deferred)
+#
+# 30000-line log:
+#   BEFORE (base): real 3m35.946s  rc=0
+#   AFTER  (target): real 0m1.947s  rc=4 (deferred)
+#
+# rc=4 is "span readable but the bounded round stopped short; progress persisted,
+# resume next call" - never rc=2 (unreadable) and never a partial answer.

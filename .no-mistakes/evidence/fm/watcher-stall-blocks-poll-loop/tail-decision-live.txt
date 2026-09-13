@@ -1,0 +1,26 @@
+=== round 1 (fresh log, over-budget; expect deferral + needs-decision row) ===
+watcher rc=0
+--- watch.out ---
+scan budget exceeded for task; resuming next poll
+signal: /tmp/fm-tail-live/tmproot/tail-home/state/task.status
+--- .wake-queue ---
+1789340995	1	signal	task.status	needs-decision: /tmp/fm-tail-live/tmproot/tail-home/state/task.status
+1789340995	2	signal	task.status	needs-decision: /tmp/fm-tail-live/tmproot/tail-home/state/task.status
+--- cursor ---
+size=346941
+line=413
+nd=0
+ndp=0
+first folded line=413
+=== ack the deferred wake ===
+ack seq=2 gen=30590.1789340995.D2Ca3y
+acked
+=== round 2 (unchanged log; expect resume + advance) ===
+watcher rc=0
+--- watch.out ---
+scan budget exceeded for task; resuming next poll
+signal: /tmp/fm-tail-live/tmproot/tail-home/state/task.status
+--- .wake-queue after round 2 ---
+1789341027	3	signal	task.status	needs-decision: /tmp/fm-tail-live/tmproot/tail-home/state/task.status
+1789341027	4	signal	task.status	needs-decision: /tmp/fm-tail-live/tmproot/tail-home/state/task.status
+second folded line=481
