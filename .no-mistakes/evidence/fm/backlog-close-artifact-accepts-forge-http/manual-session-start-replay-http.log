@@ -1,0 +1,15 @@
+surviving pending-close record:
+id=demo-replay-http
+data=/private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-backlog-atomicity.LuC1Wv/manual-replay-http/home/data
+spawn_gen=spawn-replay-http
+arg=--pr
+arg=http://10.0.99.5:3000/admin/Glitter/pulls/19
+
+session start (bin/fm-bootstrap.sh) exit=0
+BOOTSTRAP_INFO: closed the backlog item for demo-replay-http that an interrupted cleanup left open
+row state after replay: done
+marker still present: no
+  state: done
+  links: none
+  body: "PR http://10.0.99.5:3000/admin/Glitter/pulls/19 (from state/demo-replay-http.meta pr=)"
+OK: the surviving pending close replays and lands with the internal http URL preserved

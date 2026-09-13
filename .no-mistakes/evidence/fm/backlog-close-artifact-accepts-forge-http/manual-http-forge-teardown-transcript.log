@@ -1,0 +1,39 @@
+== 1) state/demo-http-forge.meta records the internal http forge PR ==
+pr=http://10.0.99.5:3000/admin/Glitter/pulls/19
+
+== 2) config/pr-forge-hosts is empty: the host is NOT listed ==
+(no entries)
+
+== 3) bin/fm-teardown.sh demo-http-forge --force  (unlisted host) ==
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 7s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e /Users/onyx/.no-mistakes/worktrees/9573b29b9316/01M2DJK5NBR5F6ZFR6P6Y6BVNP/.pi/extensions/fm-primary-turnend-guard.ts -e /Users/onyx/.no-mistakes/worktrees/9573b29b9316/01M2DJK5NBR5F6ZFR6P6Y6BVNP/.pi/extensions/fm-primary-pi-watch.ts if the extensions are not loaded.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: http://10.0.99.5:3000 is not a configured forge host for this home
+error: add a "http://10.0.99.5:3000 <token>" line to /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-backlog-atomicity.3C6HjC/manual-http-forge/home/config/pr-forge-hosts
+error: the pending backlog close for demo-http-forge could not be recorded (http://10.0.99.5:3000 is not a configured forge host for this home; add a "http://10.0.99.5:3000 <token>" line to /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-backlog-atomicity.3C6HjC/manual-http-forge/home/config/pr-forge-hosts); retaining every durable task record
+exit=1
+meta retained: yes  row state: in_flight
+
+== 4) list the host, then rerun bin/fm-teardown.sh demo-http-forge --force ==
+http://10.0.99.5:3000 forge-token
+WARNING: watcher still down (same stale episode; last beat: 8s ago, grace 300s) - full banner already printed this episode.
+/private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-backlog-atomicity.3C6HjC/manual-http-forge/project: already current
+teardown demo-http-forge complete (window firstmate:fm-demo-http-forge, worktree /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-backlog-atomicity.3C6HjC/manual-http-forge/wt)
+Backlog: demo-http-forge is closed in /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-backlog-atomicity.3C6HjC/manual-http-forge/home/data/backlog.md. Run tasks-axi ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due.
+exit=0
+
+== 5) observable result: backlog row and completed record ==
+row state: done
+  state: done
+  held: no
+  links: none
+  body: "PR http://10.0.99.5:3000/admin/Glitter/pulls/19 (from state/demo-http-forge.meta pr=)"
+--- URL present in completed backlog record: ---
+http://10.0.99.5:3000/admin/Glitter/pulls/19
+--- URL NOT stored as a structured link: ---
+links: [none]
+OK: URL carried by note/body, not a structured --pr link

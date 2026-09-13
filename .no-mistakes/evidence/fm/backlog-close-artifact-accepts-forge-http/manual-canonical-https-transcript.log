@@ -1,0 +1,6 @@
+teardown exit=0
+Backlog: demo-canonical-pr is closed in /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-backlog-atomicity.rmivSZ/manual-canonical/home/data/backlog.md. Run tasks-axi ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due.
+row state: done
+  state: done
+  links: "pr:https://github.com/onyx-space/pi/pull/42"
+OK: canonical https still stored as a structured link

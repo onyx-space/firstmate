@@ -1,0 +1,16 @@
+ok - spawn refuses an unsafe tasks-axi config before any exemption is derived from it
+ok - spawn refuses a data directory symlinked outside the home
+ok - a configured adapter refuses a data directory outside the home
+ok - dispatch and completion transition structurally with evidence
+ok - the pending close accepts an http forge PR this home lists
+ok - the pending close judges an http forge PR by this home's list, not a fixed host
+ok - https pending-close artifacts need no forge entry
+ok - the pending close refuses a recorded link that is not a pull request
+ok - the pending close refuses URL shapes only the inline walk admitted
+ok - teardown closes a listed http forge PR through a note that keeps the URL
+ok - an unrecordable PR artifact is refused before any cleanup
+ok - refused teardown leaves the backlog item in flight
+ok - environment-selected adapters bypass the legacy markdown file override
+ok - a manual-backlog home dispatches and completes without a hard failure
+ok - a secondmate home keeps its own books paired through dispatch and completion
+ok - dispatching a persistent secondmate needs no backlog item

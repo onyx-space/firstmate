@@ -1,0 +1,5 @@
+PASS  admin-gitea close landed (row done, URL recorded)  links=none
+PASS  ai-buddy   close landed (row done, URL recorded)  links=none
+PASS  httpx-ported close landed (row done, URL recorded)  links=none
+PASS  gitlab-mr  close landed (row done, URL recorded)  links=none
+PASS  github     close landed (row done, URL recorded)  links="pr:https://github.com/onyx-space/pi/pull/42"

@@ -1,0 +1,14 @@
+listed whitelist entry: http://10.0.99.5:3000 forge-token
+
+ACCEPT  http://10.0.99.5:3000/admin/Glitter/pulls/19                  
+REFUSE  http://10.0.99.5:3001/admin/Glitter/pulls/19                   -> http://10.0.99.5:3001 is not a configured forge host for this home
+REFUSE  http://10.0.99.5/admin/Glitter/pulls/19                        -> http://10.0.99.5 is not a configured forge host for this home
+REFUSE  http://other.host:3000/admin/Glitter/pulls/19                  -> http://other.host:3000 is not a configured forge host for this home
+ACCEPT  https://10.0.99.5:3000/admin/Glitter/pulls/19                 
+ACCEPT  https://gitea.internal:3000/admin/Glitter/pulls/19            
+ACCEPT  https://gitlab.example.com/a/b/-/merge_requests/7             
+ACCEPT  https://github.com/onyx-space/pi/pull/42                      
+REFUSE  https://Gitea.Internal/owner/repo/pulls/7                      -> the recorded pull request https://Gitea.Internal/owner/repo/pulls/7 is not a recognizable pull request link
+REFUSE  https://gitea.internal/owner/repo/pulls/%37                    -> the recorded pull request https://gitea.internal/owner/repo/pulls/%37 is not a recognizable pull request link
+REFUSE  https://gitea.internal/owner/repo/pull/7                       -> the recorded pull request https://gitea.internal/owner/repo/pull/7 is not a recognizable pull request link
+REFUSE  https://example.com/not-a-pull-request                         -> the recorded pull request https://example.com/not-a-pull-request is not a recognizable pull request link
