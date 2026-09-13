@@ -1564,7 +1564,10 @@ signal_files_actionable() {  # <status-file> ...
       # Could not classify this log. Surface it rather than absorbing it, and
       # record NO classified endpoint for it below, so its content is classified
       # again once it is readable. The wake signature still advances, which is
-      # what bounds this to one report per distinct file state.
+      # what bounds this to one report per distinct file state. A bounded scan
+      # round that stopped short is the same verdict with its own reason, and
+      # that reason is the only way an operator sees why supervision is slow.
+      [ -z "$FM_CLASSIFY_SPAN_SCAN_NOTICE" ] || triage_log "$FM_CLASSIFY_SPAN_SCAN_NOTICE"
       found=0
       continue
     fi

@@ -1262,6 +1262,7 @@ EOF
   fi
   if [ "$rc" -eq 0 ]; then
     rm -f -- "$state/$task.status" "$state/.$task.open-decisions-cursor" \
+      "$state/.$task.span-scan-cursor" \
       "$signal_marker" "$heartbeat_marker" "$daemon_marker" || rc=1
   fi
   fm_lock_release "$lock" || rc=1
@@ -1677,27 +1678,367 @@ _fm_status_open_decision_origins() {  # <status-file>
   printf '%s' "$origins"
 }
 
-status_span_first_actionable_record() {  # <status-file> <start-offset> [record-var] [needs-decision-var]
-  local f=$1 start=${2:-0} output_var=${3-} needs_var=${4-} size ident cur_ident scratch chunk_file full_file prefix_file result
-  local line verb key origins='' folded=0 rc=1 failed=0 prefix_lines=0 line_number=0 live_line='' events='' _line _key _fm_span_needs_decision=0
-  [ -e "$f" ] || { [ -L "$f" ] && return 2; return 1; }
-  [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 2
-  ident=$(_fm_open_decisions_file_ident "$f") || return 2
-  size=$(_fm_status_file_size "$f") || return 2
-  size=${size//[[:space:]]/}
-  case "$size" in ''|*[!0-9]*) return 2 ;; esac
-  case "$start" in ''|*[!0-9]*) start=0 ;; esac
-  [ "$start" -le "$size" ] || start=0
-  if [ "$start" -ge "$size" ]; then
-    result="${size}"$'\t'"${ident}"
-    if [ -n "$output_var" ]; then
-      printf -v "$output_var" '%s' "$result"
-      [ -z "$needs_var" ] || printf -v "$needs_var" '%s' 0
-    else
-      printf '%s' "$result"
-    fi
-    return 1
+# --- bounded, resumable span scan ------------------------------------------
+#
+# status_span_first_actionable_record decides which events in a status log's
+# appended span are actionable. That decision needs the span's decision-origin
+# map: the position at which each key's currently-open declaration sits, so a
+# superseded declaration is not reported as though it were still the live one.
+# The original implementation built that map by folding the WHOLE status log -
+# every line it had ever held - through the pure-bash fold on every
+# classification, so its cost grew with a task's total lifetime and one
+# long-lived log could hold the caller for minutes. On the watcher that caller
+# is the poll loop, so supervision went blind and the liveness beacon froze
+# until the fold finished.
+#
+# Two things remove that, and neither changes a verdict:
+#
+#  1. The map is rebuilt from the SPAN alone. A key whose live declaration sits
+#     before the span holds an origin position outside the span, and a span
+#     line's own position can equal that position only when the declaration is
+#     itself in the span, so folding the prefix could never change a verdict -
+#     it was pure cost proportional to everything the task had ever written.
+#  2. The span scan runs in bounded rounds. A round folds for at most
+#     FM_CLASSIFY_SCAN_BUDGET_SECS and then persists everything it folded - the
+#     open set, the origin map, the events collected so far, and the line it
+#     reached - in a per-task cursor beside the status log, and reports "not yet
+#     classified". Every caller already answers that verdict by surfacing the
+#     wake and classifying the log again later, which is the same handling an
+#     unreadable log gets, so a round that stops short delays a verdict instead
+#     of losing one. The next call resumes at the persisted line, so the answer
+#     is what one unbounded pass would have produced and no input is skipped.
+#
+# Positions are the span's own line numbers, one numbering for both the origin
+# map and the candidate lines it is compared against. That is exactly what the
+# whole-file fold compared whenever a span began on a line boundary - the case a
+# recorded classified position produces - and it is self-consistent when a span
+# instead begins mid-line, where the whole-file fold compared a span position
+# against an absolute one and so reported no live declaration at all. The
+# bounded scan therefore never reports less than the fold did; see
+# tests/fm-classify-span-scan.test.sh, which pins both directions.
+#
+# A run of rounds is visible rather than silent: the round that stops short
+# writes one diagnostic line and leaves FM_CLASSIFY_SPAN_SCAN_NOTICE set for the
+# caller's own log.
+#
+# FM_CLASSIFY_SPAN_SCAN_FAULT_SKIP_INPUT is TEST-ONLY fault injection: set to 1,
+# a round that hits the budget treats the lines it never folded as already done,
+# which is exactly the "skip part of the input" bug this design must not have.
+# It exists so the equivalence test can prove its assertion detects that bug
+# instead of passing vacuously. Never set it in ordinary operation.
+#
+# FM_CLASSIFY_SPAN_SCAN_REFERENCE=whole-file selects the unfixed whole-file fold.
+# It is the equivalence reference the regression test compares against, and is
+# never set in ordinary operation.
+FM_CLASSIFY_SPAN_SCAN_VERSION=1
+FM_CLASSIFY_SCAN_BUDGET_SECS_DEFAULT=2
+
+_fm_span_scan_cursor_path() {  # <status-file>
+  local dir base
+  dir=$(dirname -- "$1")
+  base=$(basename -- "$1")
+  printf '%s/.%s.span-scan-cursor' "$dir" "${base%.status}"
+}
+
+_fm_span_scan_emit() {  # <record> <needs-flag> <output-var> <needs-var>
+  local result=$1 needs=$2 output_var=${3-} needs_var=${4-}
+  if [ -n "$output_var" ]; then
+    printf -v "$output_var" '%s' "$result"
+    [ -z "$needs_var" ] || printf -v "$needs_var" '%s' "$needs"
+  else
+    printf '%s' "$result"
   fi
+}
+
+# Report one round that stopped short. The caller's own log is the durable home
+# for this line; the library only guarantees it is emitted, never swallowed.
+_fm_span_scan_stopped() {  # <task>
+  FM_CLASSIFY_SPAN_SCAN_NOTICE="scan budget exceeded for ${1}; resuming next poll"
+  printf '%s\n' "$FM_CLASSIFY_SPAN_SCAN_NOTICE" >&2
+}
+
+# Clear the round state: nothing folded, no open set, no origin map, no events.
+# Every path that cannot trust a persisted cursor lands here, so a caller never
+# answers from part of the input.
+_fm_span_scan_reset() {
+  FM_SPAN_SCAN_OPEN=''
+  FM_SPAN_SCAN_ORIGINS=''
+  FM_SPAN_SCAN_EVENTS=''
+  FM_SPAN_SCAN_LINE=0
+  FM_SPAN_SCAN_ND=0
+  FM_SPAN_SCAN_SIZE=0
+}
+
+# Load a persisted round state into the FM_SPAN_SCAN_* round state the helpers
+# above and below read. Returns 1 when the cursor is absent, malformed, written
+# by another scan version, or built for a different file identity, span start,
+# or a span that is not a prefix of the one being classified now - every one of
+# which the caller answers with a safe restart from line 0, never a partial
+# answer.
+_fm_span_scan_load() {  # <cursor> <ident> <start> <size>
+  local cursor=$1 want_ident=$2 want_start=$3 want_size=$4 rec
+  local v_version='' v_ident='' v_start='' v_size='' v_line='' v_nd=''
+  _fm_span_scan_reset
+  [ -f "$cursor" ] && [ -r "$cursor" ] && [ ! -L "$cursor" ] || return 1
+  while IFS= read -r rec || [ -n "$rec" ]; do
+    case "$rec" in
+      version=*) v_version=${rec#version=} ;;
+      ident=*) v_ident=${rec#ident=} ;;
+      start=*) v_start=${rec#start=} ;;
+      size=*) v_size=${rec#size=} ;;
+      line=*) v_line=${rec#line=} ;;
+      nd=*) v_nd=${rec#nd=} ;;
+      o$'\t'*) FM_SPAN_SCAN_OPEN="${FM_SPAN_SCAN_OPEN}${rec#o$'\t'}"$'\n' ;;
+      p$'\t'*) FM_SPAN_SCAN_ORIGINS="${FM_SPAN_SCAN_ORIGINS}${rec#p$'\t'}"$'\n' ;;
+      e$'\t'*) FM_SPAN_SCAN_EVENTS="${FM_SPAN_SCAN_EVENTS}${rec#e$'\t'}"$'\n' ;;
+      '') ;;
+      *) return 1 ;;
+    esac
+  done < "$cursor"
+  [ "$v_version" = "$FM_CLASSIFY_SPAN_SCAN_VERSION" ] || return 1
+  [ -n "$v_ident" ] && [ "$v_ident" = "$want_ident" ] || return 1
+  [ "$v_start" = "$want_start" ] || return 1
+  case "$v_size" in ''|*[!0-9]*) return 1 ;; esac
+  case "$v_line" in ''|*[!0-9]*) return 1 ;; esac
+  case "$v_nd" in 0|1) ;; *) return 1 ;; esac
+  [ "$v_size" -le "$want_size" ] || return 1
+  [ "$v_line" -le "$v_size" ] || return 1
+  FM_SPAN_SCAN_SIZE=$v_size
+  FM_SPAN_SCAN_LINE=$v_line
+  FM_SPAN_SCAN_ND=$v_nd
+  return 0
+}
+
+_fm_span_scan_save() {  # <cursor> <ident> <start> <size>
+  local cursor=$1 ident=$2 start=$3 size=$4 tmp rec
+  tmp="${cursor}.tmp.$$"
+  {
+    printf 'version=%s\n' "$FM_CLASSIFY_SPAN_SCAN_VERSION"
+    printf 'ident=%s\n' "$ident"
+    printf 'start=%s\n' "$start"
+    printf 'size=%s\n' "$size"
+    printf 'line=%s\n' "$FM_SPAN_SCAN_LINE"
+    printf 'nd=%s\n' "$FM_SPAN_SCAN_ND"
+    while IFS= read -r rec; do
+      [ -n "$rec" ] || continue
+      printf 'o\t%s\n' "$rec"
+    done <<EOF
+$FM_SPAN_SCAN_OPEN
+EOF
+    while IFS= read -r rec; do
+      [ -n "$rec" ] || continue
+      printf 'p\t%s\n' "$rec"
+    done <<EOF
+$FM_SPAN_SCAN_ORIGINS
+EOF
+    while IFS= read -r rec; do
+      [ -n "$rec" ] || continue
+      printf 'e\t%s\n' "$rec"
+    done <<EOF
+$FM_SPAN_SCAN_EVENTS
+EOF
+  } > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
+  mv -f -- "$tmp" "$cursor" 2>/dev/null || { rm -f "$tmp"; return 1; }
+  return 0
+}
+
+# The position recorded for <key> in the round's origin map, assigned to
+# <output-var> (empty when the key has no live declaration). Assigning rather
+# than printing keeps the finalize pass off a command substitution per surviving
+# candidate, which on a long event list is the difference between one fork and
+# hundreds.
+_fm_span_origin_line_into() {  # <output-var> <key>
+  local want=$2 rec key pos
+  while IFS= read -r rec; do
+    [ -n "$rec" ] || continue
+    key=${rec%%$'\t'*}
+    [ "$key" = "$want" ] || continue
+    pos=${rec#*$'\t'}
+    printf -v "$1" '%s' "$pos"
+    return 0
+  done <<EOF
+$FM_SPAN_SCAN_ORIGINS
+EOF
+  printf -v "$1" '%s' ''
+  return 1
+}
+
+_fm_span_origin_set() {  # <key> <position>
+  local want=$1 pos=$2 rec key out=''
+  while IFS= read -r rec; do
+    [ -n "$rec" ] || continue
+    key=${rec%%$'\t'*}
+    [ "$key" = "$want" ] && continue
+    out="${out}${rec}"$'\n'
+  done <<EOF
+$FM_SPAN_SCAN_ORIGINS
+EOF
+  FM_SPAN_SCAN_ORIGINS="${out}${want}"$'\t'"${pos}"$'\n'
+}
+
+_fm_span_origin_drop() {  # <key>
+  local want=$1 rec key out=''
+  while IFS= read -r rec; do
+    [ -n "$rec" ] || continue
+    key=${rec%%$'\t'*}
+    [ "$key" = "$want" ] && continue
+    out="${out}${rec}"$'\n'
+  done <<EOF
+$FM_SPAN_SCAN_ORIGINS
+EOF
+  FM_SPAN_SCAN_ORIGINS=$out
+}
+
+# Fold one status line into the round state and project the origin map from it.
+# The open/close rule is not restated here: _fm_decision_fold_line owns it, and
+# the record the fold appended is what decides whether the key's live
+# declaration has just moved to this line - byte for byte the same test
+# _fm_status_open_decision_origins applies over the whole log.
+_fm_span_scan_fold_line() {  # <line> <position> <resolve-verb> <held-verb> <verb>
+  local line=$1 pos=$2 resolve=$3 held=$4 verb=$5 key note after
+  after=$(_fm_decision_fold_line "$FM_SPAN_SCAN_OPEN" "$line" "$resolve" "$held")
+  FM_SPAN_SCAN_OPEN=$after
+  key=$(_fm_decision_key "$line") || return 0
+  note=$(status_line_note "$line")
+  case "$verb" in
+    needs-decision|blocked)
+      case "$after" in
+        "$key"$'\t'"$verb"$'\t'"$note"|*$'\n'"$key"$'\t'"$verb"$'\t'"$note")
+          _fm_span_origin_set "$key" "$pos"
+          ;;
+      esac
+      ;;
+    "$resolve"|"$held")
+      _fm_open_set_has "$after" "$key" || _fm_span_origin_drop "$key"
+      ;;
+  esac
+  return 0
+}
+
+# Event records carry the decision key and position of a candidate declaration,
+# or an empty key for an event that is always reported. Text is last, so it may
+# itself contain tabs.
+_fm_span_event_plain() {  # <text>
+  FM_SPAN_SCAN_EVENTS="${FM_SPAN_SCAN_EVENTS}P"$'\t\t0\t\t'"$1"$'\n'
+}
+
+_fm_span_event_decision() {  # <key> <verb> <position> <text>
+  FM_SPAN_SCAN_EVENTS="${FM_SPAN_SCAN_EVENTS}D"$'\t'"$1"$'\t'"$3"$'\t'"$2"$'\t'"$4"$'\n'
+}
+
+# Fold one bounded round. Returns 0 when the span is fully folded and the round
+# state is final, 1 when the round hit its budget and the state is partial, and
+# 2 when the remaining span could not be read at all - which stays a deferral,
+# never an answer built from part of the input.
+_fm_span_scan_round() {  # <chunk-file> <rest-file>
+  local chunk=$1 rest=$2 line key verb after
+  local resolve held budget deadline i=0 stopped=0
+  resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
+  held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
+  budget=${FM_CLASSIFY_SCAN_BUDGET_SECS:-$FM_CLASSIFY_SCAN_BUDGET_SECS_DEFAULT}
+  case "$budget" in ''|*[!0-9]*) budget=$FM_CLASSIFY_SCAN_BUDGET_SECS_DEFAULT ;; esac
+  [ "$budget" -ge 1 ] || budget=1
+  [ "$budget" -le 30 ] || budget=30
+  deadline=$(( SECONDS + budget ))
+  tail -n +"$(( FM_SPAN_SCAN_LINE + 1 ))" "$chunk" > "$rest" 2>/dev/null || return 2
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ "$i" -gt 0 ] && [ "$SECONDS" -ge "$deadline" ]; then
+      stopped=1
+      break
+    fi
+    i=$(( i + 1 ))
+    verb=$(status_line_verb "$line")
+    # Only a transition verb can move the open set, so only those lines pay for a
+    # fold; every other line leaves _fm_decision_fold_line's result untouched.
+    case "$verb" in
+      needs-decision|blocked|"$resolve"|"$held")
+        _fm_span_scan_fold_line "$line" "$(( FM_SPAN_SCAN_LINE + i ))" "$resolve" "$held" "$verb"
+        ;;
+    esac
+    if status_is_captain_held "$line"; then
+      # A transfer closes the status-log decision and remains non-actionable to
+      # stale classification. The side-band marker lets signal routing surface
+      # the captain-owned hold without changing that established stale verdict.
+      FM_SPAN_SCAN_ND=1
+      continue
+    fi
+    status_is_captain_relevant "$line" || continue
+    case "$verb" in
+      needs-decision|blocked)
+        key=$(_fm_decision_key "$line") || {
+          _fm_span_event_plain "$line"
+          [ "$verb" = needs-decision ] && FM_SPAN_SCAN_ND=1
+          continue
+        }
+        if ! _fm_decision_key_transition_allowed "$key" "$(status_line_note "$line")"; then
+          _fm_span_event_plain "reconciliation-required: ${line}"
+          [ "$verb" = needs-decision ] && FM_SPAN_SCAN_ND=1
+          continue
+        fi
+        _fm_span_event_decision "$key" "$verb" "$(( FM_SPAN_SCAN_LINE + i ))" "$line"
+        ;;
+      *)
+        _fm_span_event_plain "$line"
+        ;;
+    esac
+  done < "$rest"
+  FM_SPAN_SCAN_LINE=$(( FM_SPAN_SCAN_LINE + i ))
+  rm -f "$rest"
+  # A persisted position always had at least one line still to fold, so a resume
+  # that reads none means the log was rewritten under the same identity: the
+  # state is stale, and the caller must restart rather than report a partial
+  # prefix as the answer.
+  if [ "$i" -eq 0 ] && [ "$stopped" -eq 0 ] && [ "$FM_SPAN_SCAN_LINE" -gt 0 ]; then
+    return 3
+  fi
+  [ "$stopped" -eq 0 ] || return 1
+  return 0
+}
+
+# Build the record from a completed round state: a decision event is reported
+# only while it is still its key's live declaration, plain events always, both
+# in the order the log carried them.
+_fm_span_scan_finalize() {  # <size> <ident> <output-var> <needs-var>
+  local size=$1 ident=$2 output_var=${3-} needs_var=${4-}
+  local rec tag rest key pos verb text live out='' emitted=0 needs=$FM_SPAN_SCAN_ND result
+  while IFS= read -r rec || [ -n "$rec" ]; do
+    [ -n "$rec" ] || continue
+    tag=${rec%%$'\t'*}
+    rest=${rec#*$'\t'}
+    key=${rest%%$'\t'*}; rest=${rest#*$'\t'}
+    pos=${rest%%$'\t'*}; rest=${rest#*$'\t'}
+    verb=${rest%%$'\t'*}; text=${rest#*$'\t'}
+    if [ "$tag" = D ]; then
+      _fm_span_origin_line_into live "$key" || continue
+      [ "$live" = "$pos" ] || continue
+      case "$verb" in
+        needs-decision) needs=1 ;;
+        blocked) _fm_is_pending_reply_escalation "$key" "$(status_line_note "$text")" && needs=1 ;;
+      esac
+    fi
+    [ -n "$out" ] && out="${out} ; "
+    out="${out}${text}"
+    emitted=1
+  done <<EOF
+$FM_SPAN_SCAN_EVENTS
+EOF
+  if [ "$emitted" -eq 1 ]; then result="${size}"$'\t'"${ident}"$'\t'"${out}"; else result="${size}"$'\t'"${ident}"; fi
+  _fm_span_scan_emit "$result" "$needs" "$output_var" "$needs_var"
+  [ "$emitted" -eq 1 ] && return 0
+  return 1
+}
+
+
+# The pre-change whole-file fold, kept as the equivalence reference the
+# regression test compares the bounded span scan against
+# (FM_CLASSIFY_SPAN_SCAN_REFERENCE=whole-file). It re-reads the entire status log
+# on every classification, which is exactly the unbounded cost the bounded scan
+# above replaces, so it is never selected in ordinary operation.
+_fm_span_scan_whole_file() {  # <status-file> <start> <size> <ident> <output-var> <needs-var>
+  local f=$1 start=$2 size=$3 ident=$4 output_var=${5-} needs_var=${6-}
+  local scratch chunk_file full_file prefix_file result
+  local line verb key origins='' folded=0 rc=1 failed=0 prefix_lines=0 line_number=0 live_line='' events=''
+  local _line _key _fm_span_needs_decision=0 cur_ident
   scratch=$(_fm_status_span_scratch "$f") || return 2
   chunk_file="${scratch}.span"; full_file="${scratch}.full"; prefix_file="${scratch}.prefix"
   _fm_status_read_span "$f" "$start" "$((size - start))" > "$chunk_file" 2>/dev/null \
@@ -1770,13 +2111,72 @@ EOF
   rm -f "$chunk_file" "$full_file" "$prefix_file"
   [ "$failed" -eq 0 ] || return 2
   if [ "$rc" -eq 0 ]; then result="${size}"$'\t'"${ident}"$'\t'"${events}"; else result="${size}"$'\t'"${ident}"; fi
-  if [ -n "$output_var" ]; then
-    printf -v "$output_var" '%s' "$result"
-    [ -z "$needs_var" ] || printf -v "$needs_var" '%s' "$_fm_span_needs_decision"
-  else
-    printf '%s' "$result"
-  fi
+  _fm_span_scan_emit "$result" "$_fm_span_needs_decision" "$output_var" "$needs_var"
   return "$rc"
+}
+
+status_span_first_actionable_record() {  # <status-file> <start-offset> [record-var] [needs-decision-var]
+  local f=$1 start=${2:-0} output_var=${3-} needs_var=${4-} size ident result
+  local cursor chunk_file rest_file scratch cur_ident scan_rc
+  FM_CLASSIFY_SPAN_SCAN_NOTICE=''
+  [ -e "$f" ] || { [ -L "$f" ] && return 2; return 1; }
+  [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 2
+  ident=$(_fm_open_decisions_file_ident "$f") || return 2
+  size=$(_fm_status_file_size "$f") || return 2
+  size=${size//[[:space:]]/}
+  case "$size" in ''|*[!0-9]*) return 2 ;; esac
+  case "$start" in ''|*[!0-9]*) start=0 ;; esac
+  [ "$start" -le "$size" ] || start=0
+  if [ "$start" -ge "$size" ]; then
+    _fm_span_scan_emit "${size}"$'\t'"${ident}" 0 "$output_var" "$needs_var"
+    return 1
+  fi
+  if [ "${FM_CLASSIFY_SPAN_SCAN_REFERENCE:-}" = whole-file ]; then
+    _fm_span_scan_whole_file "$f" "$start" "$size" "$ident" "$output_var" "$needs_var"
+    return $?
+  fi
+  scratch=$(_fm_status_span_scratch "$f") || return 2
+  chunk_file="${scratch}.span"; rest_file="${scratch}.rest"
+  cursor=$(_fm_span_scan_cursor_path "$f")
+  # A cursor the loader rejects leaves the round state at line 0, which is a
+  # safe rescan rather than a partial answer.
+  _fm_span_scan_load "$cursor" "$ident" "$start" "$size" || true
+  _fm_status_read_span "$f" "$start" "$((size - start))" > "$chunk_file" 2>/dev/null \
+    || { rm -f "$chunk_file" "$rest_file"; return 2; }
+  cur_ident=$(_fm_open_decisions_file_ident "$f") || {
+    rm -f "$chunk_file" "$rest_file"; return 2;
+  }
+  [ "$cur_ident" = "$ident" ] || { rm -f "$chunk_file" "$rest_file"; return 2; }
+  _fm_span_scan_round "$chunk_file" "$rest_file"
+  scan_rc=$?
+  if [ "$scan_rc" -eq 3 ]; then
+    # Stale state from a rewritten log: restart the span from line 0.
+    _fm_span_scan_reset
+    _fm_span_scan_round "$chunk_file" "$rest_file"
+    scan_rc=$?
+  fi
+  rm -f "$chunk_file" "$rest_file"
+  if [ "$scan_rc" -eq 2 ]; then
+    # The remaining span could not be read. That is a classification failure,
+    # never an answer built from part of the input.
+    return 2
+  fi
+  if [ "$scan_rc" -ne 0 ] && [ "${FM_CLASSIFY_SPAN_SCAN_FAULT_SKIP_INPUT:-}" != 1 ]; then
+    # A round that stopped short is a deferral, never an answer: persist what it
+    # folded so the next call resumes exactly there, say so in one line, and
+    # report the "could not classify this round" verdict callers already handle
+    # by surfacing the wake and classifying the log again later.
+    if _fm_span_scan_save "$cursor" "$ident" "$start" "$size"; then
+      _fm_span_scan_stopped "$(basename "$f" .status)"
+    else
+      rm -f "$cursor"
+      FM_CLASSIFY_SPAN_SCAN_NOTICE="scan progress for $(basename "$f" .status) could not be persisted; the log will be re-classified"
+      printf '%s\n' "$FM_CLASSIFY_SPAN_SCAN_NOTICE" >&2
+    fi
+    return 2
+  fi
+  rm -f "$cursor"
+  _fm_span_scan_finalize "$size" "$ident" "$output_var" "$needs_var"
 }
 
 status_span_first_actionable() {  # <status-file> <start-offset>
