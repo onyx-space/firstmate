@@ -19,12 +19,21 @@
 #           fleet work and must not become fleet work.
 #
 # Usage:
-#   fm-inbox.sh note <text>...          | fm-inbox.sh note -   (body from stdin)
+#   fm-inbox.sh note [--source <value>] <text>...
+#                                       | fm-inbox.sh note -   (body from stdin)
 #   fm-inbox.sh say  [<file.wav>]       (default: audio on stdin)
 #   fm-inbox.sh status
 #   fm-inbox.sh ask  <question>...
 #   fm-inbox.sh list
-#   fm-inbox.sh drain [--ack <id>...]
+#   fm-inbox.sh drain [--ack <id>... | --ack-notifications <id>...]
+#
+# Every record names its writer in a `source` field: `text` (the default) is the
+# captain writing out of band, `voice` is the captain's own dictation through
+# `say`, and `relay` is a notification one of firstmate's own integrations queued.
+# The source decides WHEN the record is archived, never whether it is presented;
+# docs/watcher-continuity.md owns that contract. A source value is limited to
+# [A-Za-z0-9._-] so it can never break the record's header, and no record ever
+# carries a credential.
 #
 # Configuration. A region, a model id and an AWS profile name somebody's account
 # and somebody's choices, so this file carries no default for any of them. Each is
@@ -149,6 +158,34 @@ aws_call() {
 
 # ---------------------------------------------------------------- note
 
+FM_INBOX_SOURCE_DEFAULT=text
+
+# The record's own source field, or nothing when a legacy record predates it.
+note_source() {  # <note-file>
+  sed -n 's/^source=//p' "$1" | head -n 1
+}
+
+# The ONE move into handled/. `drain --ack` and `drain --ack-notifications` both
+# use it so the archival destination and mechanics cannot drift apart.
+ack_now() {  # <id>
+  mv "$INBOX/$1.note" "$INBOX/handled/$1.note"
+}
+
+# Sources whose records are notifications a firstmate integration queued rather
+# than the captain's own words. Only these are archived as a side effect of their
+# wake row being acknowledged; every other source, including a legacy record with
+# no source at all, is a captain note that stays until an explicit `drain --ack`.
+# A new notification integration adds its source here; an unknown source is
+# deliberately treated as the captain's, because archiving the captain's words by
+# mistake is the failure this split exists to prevent.
+# docs/watcher-continuity.md owns the timing contract this predicate feeds.
+fm_inbox_source_is_notification() {  # <source>
+  case "$1" in
+    relay) return 0 ;;
+  esac
+  return 1
+}
+
 # Append exactly one wake so firstmate picks the note up at its next drain.
 # Failure to wake is NOT allowed to lose the note: the record is already on
 # disk, so we report the wake failure and still exit non-zero loudly.
@@ -196,15 +233,29 @@ queue_note() {
 }
 
 cmd_note() {
-  local body
+  local source="$FM_INBOX_SOURCE_DEFAULT" body
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --source)
+        shift
+        [ "$#" -gt 0 ] || die "usage: fm-inbox.sh note [--source <value>] <text>..."
+        source=$1
+        shift
+        ;;
+      *) break ;;
+    esac
+  done
+  case "$source" in
+    ''|*[!A-Za-z0-9._-]*) die "invalid source '$source': a source value must be non-empty and only [A-Za-z0-9._-]" ;;
+  esac
   if [ "$#" -eq 0 ]; then
-    die "usage: fm-inbox.sh note <text>...   (or: note - to read stdin)"
+    die "usage: fm-inbox.sh note [--source <value>] <text>...   (or: note - to read stdin)"
   elif [ "$1" = "-" ]; then
     body=$(cat)
   else
     body="$*"
   fi
-  queue_note text "$body"
+  queue_note "$source" "$body"
 }
 
 # ---------------------------------------------------------------- say
@@ -358,21 +409,47 @@ cmd_list() {
 }
 
 cmd_drain() {
-  if [ "${1:-}" = "--ack" ]; then
-    shift
-    [ "$#" -gt 0 ] || die "usage: fm-inbox.sh drain --ack <id>..."
-    mkdir -p "$INBOX/handled"
-    local id
-    for id in "$@"; do
-      if [ -f "$INBOX/$id.note" ]; then
-        mv "$INBOX/$id.note" "$INBOX/handled/$id.note"
-        printf 'acked %s\n' "$id"
-      else
-        printf 'already-acked %s\n' "$id"
-      fi
-    done
-    return 0
-  fi
+  case "${1:-}" in
+    --ack)
+      shift
+      [ "$#" -gt 0 ] || die "usage: fm-inbox.sh drain --ack <id>..."
+      mkdir -p "$INBOX/handled"
+      local id
+      for id in "$@"; do
+        if [ -f "$INBOX/$id.note" ]; then
+          ack_now "$id"
+          printf 'acked %s\n' "$id"
+        else
+          printf 'already-acked %s\n' "$id"
+        fi
+      done
+      return 0
+      ;;
+    --ack-notifications)
+      # The seam bin/fm-wake-drain.sh calls with the ids whose wake rows its
+      # --ack-through just consumed: this subcommand, not the drain, decides
+      # which of those notes are archived now and which stay for an explicit
+      # --ack. See docs/watcher-continuity.md for the source-dependent contract.
+      shift
+      [ "$#" -gt 0 ] || die "usage: fm-inbox.sh drain --ack-notifications <id>..."
+      mkdir -p "$INBOX/handled"
+      local nid
+      for nid in "$@"; do
+        case "$nid" in
+          ''|*[!A-Za-z0-9._-]*) printf 'skipped %s\n' "$nid"; continue ;;
+        esac
+        if [ ! -f "$INBOX/$nid.note" ]; then
+          printf 'already-acked %s\n' "$nid"
+        elif fm_inbox_source_is_notification "$(note_source "$INBOX/$nid.note")"; then
+          ack_now "$nid"
+          printf 'archived %s\n' "$nid"
+        else
+          printf 'left %s\n' "$nid"
+        fi
+      done
+      return 0
+      ;;
+  esac
   cmd_list
   printf '\nAck with: fm-inbox.sh drain --ack <id>...\n'
 }
