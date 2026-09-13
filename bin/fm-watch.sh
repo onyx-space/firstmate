@@ -1568,6 +1568,8 @@ signal_files_actionable() {  # <status-file> ...
       # round that stopped short is the same verdict with its own reason, and
       # that reason is the only way an operator sees why supervision is slow.
       [ -z "$FM_CLASSIFY_SPAN_SCAN_NOTICE" ] || triage_log "$FM_CLASSIFY_SPAN_SCAN_NOTICE"
+      [ "$needs_decision" -eq 1 ] \
+        && FM_SIGNAL_NEEDS_DECISION_FILES="${FM_SIGNAL_NEEDS_DECISION_FILES} ${f}"
       found=0
       continue
     fi

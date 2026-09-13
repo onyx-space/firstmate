@@ -1562,6 +1562,34 @@ test_needs_decision_reconciliation_required_still_marked() {
   pass "a reconciliation-required needs-decision row's queued payload is still marked needs-decision:"
 }
 
+# A needs-decision line in a span whose fold runs past the scan budget must still
+# route as decision-owned. The classifier defers the rest of the round but
+# publishes the marker its folded prefix already computed, so the queued row is
+# marked for branch exclusion instead of being queued as an ordinary signal.
+test_over_budget_needs_decision_signal_payload_marked() {
+  local dir state fakebin out status_file pid i
+  dir=$(make_case over-budget-needs-decision-payload); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"
+  status_file="$state/task.status"
+  {
+    printf 'needs-decision: [key=route] pick the release target\n'
+    i=0
+    while [ "$i" -lt 4000 ]; do
+      printf 'working: routine progress line %s\n' "$i"
+      printf 'needs-decision: [key=dec-%s] pick a path %s\n' "$i" "$i"
+      i=$((i + 1))
+    done
+  } > "$status_file"
+  export FM_CLASSIFY_SCAN_BUDGET_SECS=1
+  watch_bg "$state" "$fakebin" "$out"
+  pid=$!
+  unset FM_CLASSIFY_SCAN_BUDGET_SECS
+  wait_for_exit "$pid" 300 || fail "watcher did not exit for an over-budget needs-decision signal"
+  grep -F "$(printf 'signal\ttask.status\tneeds-decision:')" "$state/.wake-queue" >/dev/null \
+    || fail "an over-budget needs-decision span lost decision-owned routing: $(cat "$state/.wake-queue")"
+  pass "an over-budget needs-decision span still queues a decision-owned signal row"
+}
+
 # A captain-held declaration is itself actionable. Positive evidence that the
 # crew is still working must not absorb the signal before its main-only marker
 # can be delivered.
@@ -4818,6 +4846,7 @@ test_self_announced_close_does_not_rewake_but_next_note_does
 test_actionable_signal_surfaced
 test_needs_decision_signal_payload_marked_for_branch_exclusion
 test_needs_decision_reconciliation_required_still_marked
+test_over_budget_needs_decision_signal_payload_marked
 test_captain_held_signal_payload_marked_for_branch_exclusion
 test_pending_reply_escalation_signal_payload_marked_for_branch_exclusion
 test_ordinary_blocked_signal_payload_remains_branch_eligible

@@ -11,14 +11,14 @@
 # liveness beacon - for minutes. These tests drive the REAL function over
 # crafted status logs and assert:
 #
-#   equivalence - the bounded multi-round scan returns byte-for-byte what the
-#     unfixed whole-file fold returns, over an input covering every fold shape
-#     this path consumes (plain events, decision opens and closes, superseded
-#     declarations, reserved keys refused their own close, duplicate lines,
-#     blank lines, a final line with no trailing newline) and over a
+#   equivalence - the bounded multi-round scan returns byte-for-byte what this
+#     test's own whole-file reference fold returns, over an input covering every
+#     fold shape this path consumes (plain events, decision opens and closes,
+#     superseded declarations, reserved keys refused their own close, duplicate
+#     lines, blank lines, a final line with no trailing newline) and over a
 #     deterministic pseudo-random log;
-#   teeth - with FM_CLASSIFY_SPAN_SCAN_FAULT_SKIP_INPUT set, the same
-#     equivalence assertion goes red, so it cannot pass vacuously;
+#   teeth - a scanner that folds only part of the span returns a different answer
+#     than the honest one, so the equivalence assertion cannot pass vacuously;
 #   bounded rounds - an over-budget span is folded in more than one round, each
 #     round finishes within its budget, and the beacon the caller touches between
 #     rounds keeps advancing instead of freezing for the whole scan;
@@ -26,11 +26,13 @@
 #     resumes from its cursor and still reaches the full answer, and a cursor
 #     that cannot be trusted restarts safely rather than answering from part of
 #     the input;
+#   isolation - two callers classifying the same log from different start offsets
+#     keep separate folded positions and neither restarts;
 #   completion hygiene - a finished scan leaves no cursor behind.
 #
-# The whole-file fold stays reachable only as FM_CLASSIFY_SPAN_SCAN_REFERENCE=
-# whole-file, which is the reference these tests compare against. Its cost is
-# what the bounded scan exists to remove, so the equivalence cases stay small on
+# The oracle is this test's own reference_whole_file_scan, a copy of the
+# pre-change whole-file fold; it re-reads the entire log, which is the unbounded
+# cost the bounded scan exists to remove, so the equivalence cases stay small on
 # purpose.
 set -u
 
@@ -156,12 +158,104 @@ bounded_scan_all() {  # <log> <start> <max-rounds> -> "<rc>|<record>|<needs>"
   printf '%s|%s|%s' "$rc" "$FM_TEST_RECORD" "$FM_TEST_NEEDS"
 }
 
+# The pre-change whole-file fold, owned by this test. It re-reads and re-folds
+# the ENTIRE status log on every classification - the unbounded cost the bounded
+# scan exists to remove - so it is the oracle the bounded scan must match
+# byte-for-byte. It never runs in production.
+reference_whole_file_scan() {  # <status-file> <start> <size> <ident> <output-var> <needs-var>
+  local f=$1 start=$2 size=$3 ident=$4 output_var=${5-} needs_var=${6-}
+  local scratch chunk_file full_file prefix_file result
+  local line verb key origins='' folded=0 rc=1 failed=0 prefix_lines=0 line_number=0 live_line='' events=''
+  local _line _key _fm_span_needs_decision=0 cur_ident
+  scratch=$(_fm_status_span_scratch "$f") || return 2
+  chunk_file="${scratch}.span"; full_file="${scratch}.full"; prefix_file="${scratch}.prefix"
+  _fm_status_read_span "$f" "$start" "$((size - start))" > "$chunk_file" 2>/dev/null \
+    || { rm -f "$chunk_file" "$full_file" "$prefix_file"; return 2; }
+  cur_ident=$(_fm_open_decisions_file_ident "$f") || {
+    rm -f "$chunk_file" "$full_file" "$prefix_file"; return 2;
+  }
+  [ "$cur_ident" = "$ident" ] || { rm -f "$chunk_file" "$full_file" "$prefix_file"; return 2; }
+  while IFS= read -r line || [ -n "$line" ]; do
+    line_number=$((line_number + 1))
+    case "$line" in *[![:space:]]*) ;; *) continue ;; esac
+    if status_is_captain_held "$line"; then
+      _fm_span_needs_decision=1
+      continue
+    fi
+    status_is_captain_relevant "$line" || continue
+    verb=$(status_line_verb "$line")
+    case "$verb" in
+      needs-decision|blocked)
+        key=$(_fm_decision_key "$line") || {
+          [ -n "$events" ] && events="${events} ; "
+          events="${events}${line}"
+          [ "$verb" = needs-decision ] && _fm_span_needs_decision=1
+          rc=0
+          continue
+        }
+        _fm_decision_key_transition_allowed "$key" "$(status_line_note "$line")" || {
+          [ -n "$events" ] && events="${events} ; "
+          events="${events}reconciliation-required: ${line}"
+          [ "$verb" = needs-decision ] && _fm_span_needs_decision=1
+          rc=0
+          continue
+        }
+        if [ "$folded" -eq 0 ]; then
+          _fm_status_read_span "$f" 0 "$size" > "$full_file" 2>/dev/null \
+            || { failed=1; break; }
+          if [ "$start" -gt 0 ]; then
+            _fm_status_read_span "$full_file" 0 "$start" > "$prefix_file" 2>/dev/null \
+              || { failed=1; break; }
+            while IFS= read -r _line || [ -n "$_line" ]; do prefix_lines=$((prefix_lines + 1)); done < "$prefix_file"
+          fi
+          origins=$(_fm_status_open_decision_origins "$full_file") || { failed=1; break; }
+          folded=1
+        fi
+        live_line=$(while IFS=$(printf '\t') read -r _key _line; do
+          [ "$_key" = "$key" ] && { printf '%s' "$_line"; break; }
+        done <<EOF
+$origins
+EOF
+)
+        [ -n "$live_line" ] && [ "$((prefix_lines + line_number))" -eq "$live_line" ] || continue
+        [ -n "$events" ] && events="${events} ; "
+        events="${events}${line}"
+        if [ "$verb" = needs-decision ] || { [ "$verb" = blocked ] &&
+          _fm_is_pending_reply_escalation "$key" "$(status_line_note "$line")"; }; then
+          _fm_span_needs_decision=1
+        fi
+        rc=0
+        ;;
+      *)
+        [ -n "$events" ] && events="${events} ; "
+        events="${events}${line}"
+        rc=0
+        ;;
+    esac
+  done < "$chunk_file"
+  rm -f "$chunk_file" "$full_file" "$prefix_file"
+  [ "$failed" -eq 0 ] || return 2
+  if [ "$rc" -eq 0 ]; then result="${size}"$'\t'"${ident}"$'\t'"${events}"; else result="${size}"$'\t'"${ident}"; fi
+  _fm_span_scan_emit "$result" "$_fm_span_needs_decision" "$output_var" "$needs_var"
+  return "$rc"
+}
+
 reference_scan() {  # <log> <start> -> "<rc>|<record>|<needs>"
-  local log=$1 start=$2 rc
+  local log=$1 start=$2 rc size ident
   FM_TEST_REF_RECORD=''
   FM_TEST_REF_NEEDS=0
-  FM_CLASSIFY_SPAN_SCAN_REFERENCE=whole-file \
-    status_span_first_actionable_record "$log" "$start" FM_TEST_REF_RECORD FM_TEST_REF_NEEDS
+  size=$(_fm_status_file_size "$log" 2>/dev/null) || { printf '2||'; return 0; }
+  size=${size//[[:space:]]/}
+  case "$size" in ''|*[!0-9]*) printf '2||'; return 0 ;; esac
+  ident=$(_fm_open_decisions_file_ident "$log" 2>/dev/null) || { printf '2||'; return 0; }
+  case "$start" in ''|*[!0-9]*) start=0 ;; esac
+  [ "$start" -le "$size" ] || start=0
+  if [ "$start" -ge "$size" ]; then
+    FM_TEST_REF_RECORD="${size}"$'\t'"${ident}"
+    printf '1|%s|0' "$FM_TEST_REF_RECORD"
+    return 0
+  fi
+  reference_whole_file_scan "$log" "$start" "$size" "$ident" FM_TEST_REF_RECORD FM_TEST_REF_NEEDS
   rc=$?
   printf '%s|%s|%s' "$rc" "$FM_TEST_REF_RECORD" "$FM_TEST_REF_NEEDS"
 }
@@ -217,22 +311,33 @@ assert_equivalent "$random_dir/status.status" "$(line_offset "$random_dir/status
   "random log from a mid-span offset"
 pass "equivalence: bounded span scan equals the whole-file fold on pseudo-random traffic"
 
-# --- teeth: the skip-input fault must make the assertion red ---------------
+# --- teeth: a scan that skips its input must make the assertion red ---------
 
+# The honest multi-round scan folds the whole span. A scanner that stops at its
+# budget and reports the prefix it folded as the whole answer skips the rest of
+# the span; this test builds that answer from the test side - the reference fold
+# over a truncated log - and asserts it differs from the honest one, so the
+# equivalence assertion cannot pass vacuously.
 fault_dir="$STATE/fault"
 mkdir -p "$fault_dir" || fail "could not create $fault_dir"
 build_log "$fault_dir/status.status" 400 || fail "could not build the fault fixture"
 fault_log="$fault_dir/status.status"
-rm -f "$fault_dir/.status.span-scan-cursor"
-FM_TEST_FAULT_RECORD=''
-FM_TEST_FAULT_NEEDS=0
-FM_CLASSIFY_SPAN_SCAN_FAULT_SKIP_INPUT=1 FM_CLASSIFY_SCAN_BUDGET_SECS=1 \
-  status_span_first_actionable_record "$fault_log" 0 FM_TEST_FAULT_RECORD FM_TEST_FAULT_NEEDS 2>/dev/null
-fault_rc=$?
-rm -f "$fault_dir/.status.span-scan-cursor"
+prefix_log="$fault_dir/prefix.status"
+total_lines=$(wc -l < "$fault_log")
+head -n $(( total_lines / 4 )) "$fault_log" > "$prefix_log" || fail "could not truncate the fault fixture"
+scan_events() {  # <encoded-scan-result>
+  local s=$1 rest
+  s=${s#*|}; s=${s%|*}
+  rest=${s#*$'\t'}
+  case "$rest" in
+    *$'\t'*) printf '%s' "${rest#*$'\t'}" ;;
+    *) printf '' ;;
+  esac
+}
 honest=$(bounded_scan_all "$fault_log" 0)
-assert_not_equals "$honest" "$fault_rc|$FM_TEST_FAULT_RECORD|$FM_TEST_FAULT_NEEDS" \
-  "the skip-input fault produced the same answer as the honest scan"
+skipped=$(reference_scan "$prefix_log" 0)
+assert_not_equals "$(scan_events "$honest")" "$(scan_events "$skipped")" \
+  "a scan that skipped the unfolded tail produced the same answer as the honest scan"
 pass "teeth: the equivalence assertion detects a scan that skips its input"
 
 # --- bounded rounds and a beacon that keeps advancing ----------------------
@@ -283,7 +388,7 @@ round_ceiling_ms=$(( budget * 1000 + 6000 ))
   || fail "a round outran its budget: ${max_round_ms}ms > ${round_ceiling_ms}ms (rounds:${rounds})"
 pass "bounded rounds: ${rounds} rounds over ${scan_ms}ms, slowest round ${max_round_ms}ms of a ${budget}s budget"
 
-rm -f "$round_dir/.status.span-scan-cursor"
+rm -f "$round_dir/.status.span-scan-cursor".*
 assert_equals "$(bounded_scan_all "$round_log" 0 | sed 's/^[0-9]*|//')" \
   "$(reference_scan "$round_log" 0 | sed 's/^[0-9]*|//')" \
   "a multi-round scan of an over-budget span reaches the whole-file answer"
@@ -294,7 +399,7 @@ resume_dir="$STATE/resume"
 mkdir -p "$resume_dir" || fail "could not create $resume_dir"
 build_log "$resume_dir/status.status" 400 || fail "could not build the resume fixture"
 resume_log="$resume_dir/status.status"
-cursor="$resume_dir/.status.span-scan-cursor"
+cursor="$resume_dir/.status.span-scan-cursor.0"
 # One round in its own process, then abandon that process entirely: everything
 # the second round knows must come from the cursor on disk.
 record=$(FM_CLASSIFY_SCAN_BUDGET_SECS=1 bash -c \
@@ -311,7 +416,7 @@ pass "resumption: an abandoned round resumes from its cursor and still reaches t
 
 # An untrustworthy cursor must restart from the beginning, never answer from a
 # partial prefix: point one at a different span start and classify anyway.
-printf 'version=%s\nident=stale\nstart=999\nsize=999\nline=999\nnd=0\n' \
+printf 'version=%s\nident=stale\nstart=999\nsize=999\nline=999\nnd=0\nndp=0\n' \
   "$FM_CLASSIFY_SPAN_SCAN_VERSION" > "$cursor"
 assert_equivalent "$resume_log" 0 "a cursor built for another span restarted safely"
 if [ -e "$cursor" ]; then fail "a completed scan left a replaced cursor behind"; fi
@@ -324,36 +429,84 @@ size=$(wc -c < "$resume_log" | tr -d ' ')
 {
   printf 'version=%s\n' "$FM_CLASSIFY_SPAN_SCAN_VERSION"
   printf 'ident=%s\n' "$(_fm_open_decisions_file_ident "$resume_log")"
-  printf 'start=0\nsize=%s\nline=9999\nnd=0\n' "$size"
+  printf 'start=0\nsize=%s\nline=9999\nnd=0\nndp=0\n' "$size"
 } > "$cursor"
 assert_equivalent "$resume_log" 0 "a cursor positioned past the log's own lines restarted safely"
 if [ -e "$cursor" ]; then fail "a completed scan left a stale-position cursor behind"; fi
 pass "resumption: a cursor positioned past the log's lines restarts instead of answering empty"
 
 # A rejected cursor must contribute NOTHING to the answer, including the records
-# it already holds. This cursor was built for span start 0 and carries a decision
-# event and origin for [key=alpha], but it is classified against a tail span that
-# starts after alpha's declaration. Rejecting it must discard those records: the
+# it already holds. This cursor sits at the path for the tail span being
+# classified but claims start 0, so the loader reads it, accumulates its records,
+# and then rejects the identity mismatch. Those records must be discarded: the
 # answer has to equal the whole-file fold - which never sees the cursor - and so
 # report no record at all, not surface alpha's stale event as this span's own.
 leak_dir="$STATE/cursor-leak"
 mkdir -p "$leak_dir" || fail "could not create $leak_dir"
 leak_log="$leak_dir/status.status"
-leak_cursor="$leak_dir/.status.span-scan-cursor"
 {
   printf 'needs-decision: [key=alpha] question one\n'
   i=0
   while [ "$i" -lt 30 ]; do printf 'working: filler line %s\n' "$i"; i=$((i + 1)); done
 } > "$leak_log" || fail "could not build the cursor-leak fixture"
+leak_start=$(line_offset "$leak_log" 2)
+leak_cursor="$leak_dir/.status.span-scan-cursor.$leak_start"
 printf 'version=%s\n' "$FM_CLASSIFY_SPAN_SCAN_VERSION" > "$leak_cursor"
 printf 'ident=%s\n' "$(_fm_open_decisions_file_ident "$leak_log")" >> "$leak_cursor"
-printf 'start=999\nsize=999\nline=1\nnd=0\n' >> "$leak_cursor"
+printf 'start=0\nsize=999\nline=1\nnd=0\nndp=0\n' >> "$leak_cursor"
 printf 'o\talpha\tneeds-decision\tquestion one\n' >> "$leak_cursor"
 printf 'p\talpha\t1\n' >> "$leak_cursor"
 printf 'e\tD\talpha\t1\tneeds-decision\tneeds-decision: [key=alpha] question one\n' >> "$leak_cursor"
-assert_equivalent "$leak_log" "$(line_offset "$leak_log" 2)" \
+assert_equivalent "$leak_log" "$leak_start" \
   "a rejected cursor contributed none of its own records to the answered span"
 if [ -e "$leak_cursor" ]; then fail "the classification left a rejected cursor behind"; fi
 pass "resumption: a rejected cursor's records never leak into the answered span"
+
+# --- progress is isolated per span start ------------------------------------
+
+# Two callers classify the same log from different start offsets. A caller's
+# bounded round must persist its own folded position without rejecting,
+# overwriting, or deleting another caller's; a differing start must never
+# silently degrade into a full rescan from line 0.
+iso_dir="$STATE/isolation"
+mkdir -p "$iso_dir" || fail "could not create $iso_dir"
+build_log "$iso_dir/status.status" 400 || fail "could not build the isolation fixture"
+iso_log="$iso_dir/status.status"
+iso_start_a=0
+iso_start_b=$(line_offset "$iso_log" 2)
+a_cursor="$iso_dir/.status.span-scan-cursor.$iso_start_a"
+b_cursor="$iso_dir/.status.span-scan-cursor.$iso_start_b"
+
+FM_CLASSIFY_SCAN_BUDGET_SECS=1 \
+  status_span_first_actionable_record "$iso_log" "$iso_start_a" FM_TEST_RECORD FM_TEST_NEEDS 2>/dev/null
+[ "$?" -eq 2 ] || fail "A's first isolation round completed instead of deferring"
+[ -e "$a_cursor" ] || fail "A's round persisted no per-start progress cursor"
+a_line=$(sed -n 's/^line=//p' "$a_cursor")
+[ "${a_line:-0}" -gt 0 ] || fail "A's cursor recorded no folded lines"
+
+FM_CLASSIFY_SCAN_BUDGET_SECS=1 \
+  status_span_first_actionable_record "$iso_log" "$iso_start_b" FM_TEST_RECORD FM_TEST_NEEDS 2>/dev/null
+[ "$?" -eq 2 ] || fail "B's first isolation round completed instead of deferring"
+[ -e "$b_cursor" ] || fail "B's round persisted no per-start progress cursor"
+b_line=$(sed -n 's/^line=//p' "$b_cursor")
+[ "${b_line:-0}" -gt 0 ] || fail "B's cursor recorded no folded lines"
+[ "$(sed -n 's/^line=//p' "$a_cursor")" = "$a_line" ] \
+  || fail "B's round rejected or overwrote A's folded position"
+
+FM_CLASSIFY_SCAN_BUDGET_SECS=1 \
+  status_span_first_actionable_record "$iso_log" "$iso_start_a" FM_TEST_RECORD FM_TEST_NEEDS 2>/dev/null
+[ "$?" -eq 2 ] || fail "A's resumed isolation round completed instead of deferring"
+a_advanced=$(sed -n 's/^line=//p' "$a_cursor")
+[ "${a_advanced:-0}" -gt "$a_line" ] || fail "A restarted instead of resuming its folded position"
+[ "$(sed -n 's/^line=//p' "$b_cursor")" = "$b_line" ] \
+  || fail "A's round rejected or overwrote B's folded position"
+
+iso_a_final=$(bounded_scan_all "$iso_log" "$iso_start_a")
+iso_b_final=$(bounded_scan_all "$iso_log" "$iso_start_b")
+[ "${iso_a_final%%|*}" = 0 ] || [ "${iso_a_final%%|*}" = 1 ] \
+  || fail "A did not complete after B's round interleaved: $iso_a_final"
+[ "${iso_b_final%%|*}" = 0 ] || [ "${iso_b_final%%|*}" = 1 ] \
+  || fail "B did not complete after A's rounds interleaved: $iso_b_final"
+pass "isolation: two callers keep separate span progress without restarting"
 
 printf 'ok - fm-classify-span-scan\n'

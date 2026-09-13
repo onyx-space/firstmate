@@ -267,16 +267,19 @@ test_retire_removes_a_leftover_span_scan_cursor() {
   local dir state
   dir=$(make_case retire-span-scan-cursor)
   state="$dir/state"
-  : > "$state/.ghost.span-scan-cursor"
+  : > "$state/.ghost.span-scan-cursor.0"
+  : > "$state/.ghost.span-scan-cursor.42"
 
   FM_STATE_OVERRIDE="$state" bash -c '
     . "$1/bin/fm-wake-lib.sh"
     . "$1/bin/fm-classify-lib.sh"
     status_retire_presentation_task "$STATE" ghost || exit 1
   ' _ "$ROOT" || fail "retiring a task whose only artifact was a span-scan cursor failed"
-  if [ -e "$state/.ghost.span-scan-cursor" ]; then
-    fail "teardown left the span-scan cursor behind"
-  fi
+  for leftover in "$state/.ghost.span-scan-cursor.0" "$state/.ghost.span-scan-cursor.42"; do
+    if [ -e "$leftover" ]; then
+      fail "teardown left a span-scan cursor behind"
+    fi
+  done
   pass "teardown removes a leftover span-scan cursor"
 }
 
