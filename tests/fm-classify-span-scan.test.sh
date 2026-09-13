@@ -358,7 +358,8 @@ beat_before=$(_fm_span_scan_beat_stamp "$beat")
 while :; do
   rounds=$((rounds + 1))
   start_ms=$(now_ms)
-  status_span_first_actionable_record "$round_log" 0 FM_TEST_RECORD FM_TEST_NEEDS 2>/dev/null
+  FM_CLASSIFY_SCAN_BUDGET_SECS="$budget" \
+    status_span_first_actionable_record "$round_log" 0 FM_TEST_RECORD FM_TEST_NEEDS 2>/dev/null
   rc=$?
   took=$(( $(now_ms) - start_ms ))
   total_ms=$(( total_ms + took ))
