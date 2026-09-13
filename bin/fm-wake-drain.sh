@@ -35,6 +35,7 @@ RECOVERY_ACK_MOVED=false
 ACK_THROUGH=
 ACK_GENERATION=
 ACK_REMOVED=0
+ACK_INBOX_IDS=
 PRESENTED_MAX=0
 ACK_FINGERPRINTS=
 ACK_NOTICE_FINGERPRINTS=
@@ -191,6 +192,50 @@ presented_max_row() { # <rows-file>
   else
     printf '0\n'
   fi
+}
+
+# The note ids whose wake rows this acknowledgement is about to consume: rows
+# within the actor's own claimed set, at or below the cutoff, whose key names an
+# inbox note. Only the id is read here; whether the note is archived is
+# bin/fm-inbox.sh's decision, so an unknown source can never be archived by this
+# script guessing. The id charset is pinned to what fm-inbox.sh writes and
+# accepts, which is also what makes the unquoted expansion at the call site safe.
+inbox_ack_ids_for_rows() { # <rows-file>
+  local seqs=$1
+  [ -f "$FM_WAKE_QUEUE" ] || return 0
+  awk -F '\t' -v cutoff="$ACK_THROUGH" -v seqs="$seqs" '
+    BEGIN { while ((getline line < seqs) > 0) if (line ~ /^[0-9]+$/) owned[line] = 1 }
+    NF >= 5 && $2 ~ /^[0-9]+$/ && $2 <= cutoff && ($2 in owned) && $4 ~ /^inbox:[A-Za-z0-9._-]+$/ {
+      sub(/^inbox:/, "", $4); print $4
+    }
+  ' "$FM_WAKE_QUEUE" | LC_ALL=C sort -u
+}
+
+# Archive the notes whose wake rows this acknowledgement consumes, and report
+# every automatic archival: a note disappearing without a line saying so would
+# be indistinguishable from a lost one. bin/fm-inbox.sh owns the record, its
+# sources, and the move into handled/, and it leaves a captain-authored note for
+# the explicit `drain --ack`. A failure fails the acknowledgement BEFORE the rows
+# are consumed, so the durable row and its note stay together and the next
+# acknowledgement retries rather than stranding a note nobody will look at again.
+archive_consumed_inbox_notes() { # <id>...
+  local inbox="$SCRIPT_DIR/fm-inbox.sh" out count list rc=0
+  [ "$#" -gt 0 ] || return 0
+  if [ ! -x "$inbox" ]; then
+    printf 'wake drain: the note(s) of the rows being acknowledged could not be archived: %s is not executable\n' "$inbox" >&2
+    return 1
+  fi
+  out=$("$inbox" drain --ack-notifications "$@" 2>&1) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf 'wake drain: the note(s) of the rows being acknowledged could not be archived (%s); the rows stay queued to retry\n' "$out" >&2
+    return 1
+  fi
+  count=$(printf '%s\n' "$out" | awk '/^archived / { n++ } END { print n + 0 }')
+  [ "$count" -gt 0 ] || return 0
+  list=$(printf '%s\n' "$out" | awk '/^archived / { sub(/^archived /, ""); printf "%s%s", sep, $0; sep=", " }')
+  printf 'wake drain: archived %s notification note(s) with the wake row(s) just acknowledged: %s\n' \
+    "$count" "$list" >&2
+  return 0
 }
 
 case "${1:-}" in
@@ -705,6 +750,16 @@ if [ -n "$ACK_THROUGH" ]; then
     }
   fi
   ACK_REMOVED=$(( $(awk 'END { print NR }' "$FM_WAKE_QUEUE") - $(awk 'END { print NR }' "$DRAIN_TMP") ))
+  if [ "$ACTOR" = branch ]; then
+    ACK_INBOX_IDS=$(inbox_ack_ids_for_rows "$ELIGIBLE_ROWS_FILE")
+  else
+    ACK_INBOX_IDS=$(inbox_ack_ids_for_rows "$MAIN_ROWS_FILE")
+  fi
+  # Before the queue is rewritten and before the recovery episode is retired:
+  # archiving a consumed row's note is part of consuming the row, so it either
+  # lands with it or the acknowledgement stays retriable.
+  # shellcheck disable=SC2086 # ids are [A-Za-z0-9._-]+ per inbox_ack_ids_for_rows
+  archive_consumed_inbox_notes $ACK_INBOX_IDS || exit 1
   if [ ! -s "$DRAIN_TMP" ]; then
     fm_recovery_marker_ack "$RECOVERY_MARKER" "$ACK_GENERATION"
     RECOVERY_ACK_STATUS=$?
