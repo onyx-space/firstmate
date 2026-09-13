@@ -51,6 +51,12 @@ drain_then_ack() { # <state> <tag>
   FM_STATE_OVERRIDE="$state" "$DRAIN" --ack-through "$seq" --recovery-generation "$gen" \
     > "$dir/$tag.ack.out" 2> "$dir/$tag.ack.err" \
     || fail "$tag: the acknowledgement failed: $(cat "$dir/$tag.ack.err")"
+  # A note that survives must survive because of its source, not because the
+  # acknowledgement was a no-op: if the row is still queued the negative
+  # assertions below prove nothing.
+  if awk -F '\t' 'NF >= 5 { found = 1 } END { exit !found }' "$state/.wake-queue"; then
+    fail "$tag: the acknowledgement consumed no wake row, so the note's survival proves nothing"
+  fi
   printf '%s\n' "$dir/$tag.ack.err"
 }
 
