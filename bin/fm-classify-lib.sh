@@ -1768,7 +1768,6 @@ _fm_span_scan_reset() {
   FM_SPAN_SCAN_EVENTS=''
   FM_SPAN_SCAN_LINE=0
   FM_SPAN_SCAN_ND=0
-  FM_SPAN_SCAN_SIZE=0
 }
 
 # Load a persisted round state into the FM_SPAN_SCAN_* round state the helpers
@@ -1809,7 +1808,6 @@ _fm_span_scan_load() {  # <cursor> <ident> <start> <size>
   FM_SPAN_SCAN_OPEN=$l_open
   FM_SPAN_SCAN_ORIGINS=$l_origins
   FM_SPAN_SCAN_EVENTS=$l_events
-  FM_SPAN_SCAN_SIZE=$v_size
   FM_SPAN_SCAN_LINE=$v_line
   FM_SPAN_SCAN_ND=$v_nd
   return 0
