@@ -1,0 +1,22 @@
+# Live evidence snapshots (real bin/fm-inbox.sh + bin/fm-wake-drain.sh, isolated FM_HOME)
+
+## A: captain note (source=text) after its wake row was acknowledged
+$ ls state/inbox  -> note still pending; handled/ has neither
+1789315293-kz2sFF.note
+handled
+handled/: 
+acknowledgement stderr:
+
+## B: relay notification note after its wake row was acknowledged
+state/inbox/: handled 
+state/inbox/handled/: 1789315293-mXGjPc.note 
+acknowledgement stderr:
+wake drain: archived 1 notification note(s) with the wake row(s) just acknowledged: 1789315293-mXGjPc
+
+## C: real producer argv shape (fm-inbox.sh note <text>, no --source)
+record: id=1789315294-ogFriO at=2026-09-13T16:01:34Z source=text -- 
+state/inbox/: 1789315294-ogFriO.note handled 
+handled/: 
+
+## E: unknown source (webhook) is treated as captain-authored
+state/inbox/: 1789315295-fMuzcM.note handled 

@@ -1,0 +1,17 @@
+
+========== I: a notification note is still presented by the drain (timing, not visibility, changed) ==========
+  queued id=1789315317-sid7CC
+  drain stdout mentions the note payload: 1
+  PASS note payload presented before ack: 1
+  PASS note still queued before ack: yes
+
+========== J: adversarial - an archival helper that cannot run fails the ack and keeps row + note together ==========
+  queued id=1789315318-pTRotR (rows in queue: 1)
+  drain printed ack command: --ack-through 1 --recovery-generation 96253.1789315318.K8X1tv
+  acknowledgement exit: 1
+  acknowledgement stderr: wake drain: the note(s) of the rows being acknowledged could not be archived: /tmp/fm-ackfail-kl9Sv3/bin/fm-inbox.sh is not executable
+  PASS acknowledgement failed loudly: yes
+  PASS wake row NOT consumed: 1
+  PASS note NOT archived: yes
+
+========== done ==========

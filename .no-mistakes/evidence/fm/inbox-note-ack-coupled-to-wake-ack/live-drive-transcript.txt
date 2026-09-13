@@ -1,0 +1,66 @@
+
+========== A: captain note (no --source) survives its acknowledged wake row ==========
+  queued id=1789315293-kz2sFF
+  record header: id=1789315293-kz2sFF at=2026-09-13T16:01:33Z source=text 
+  pending before ack: 1
+  acknowledgement exit: 0 (--ack-through 1)
+  acknowledgement stderr: (no archival line)
+  PASS note still queued: yes
+  PASS note NOT in handled/: no
+  PASS pending after ack: 1
+
+========== B: notification note (--source relay) is archived with its wake row and named ==========
+  queued id=1789315293-mXGjPc
+  pending before ack: 1
+  acknowledgement exit: 0 (--ack-through 1)
+  acknowledgement stderr: wake drain: archived 1 notification note(s) with the wake row(s) just acknowledged: 1789315293-mXGjPc
+  PASS note archived to handled/: yes
+  PASS note gone from pending: no
+  PASS pending after ack (board count falls): 0
+  PASS ack line names the archived id: 1
+
+========== C: real producer argv shape (fm-inbox.sh note <text>, no --source at all) ==========
+  queued id=1789315294-ogFriO
+  record header: id=1789315294-ogFriO at=2026-09-13T16:01:34Z source=text 
+  acknowledgement exit: 0 (--ack-through 1)
+  acknowledgement stderr: (no archival line)
+  PASS producer-shaped note still pending: yes
+  PASS producer-shaped note NOT in handled/: no
+  PASS pending after ack: 1
+
+========== D: mixed batch archives only the notification note ==========
+  captain id=1789315295-RMZHqZ relay id=1789315295-4YdWqE pending=2
+  acknowledgement exit: 0 (--ack-through 2)
+  acknowledgement stderr: wake drain: archived 1 notification note(s) with the wake row(s) just acknowledged: 1789315295-4YdWqE
+  PASS relay archived: yes
+  PASS captain kept: yes
+  PASS captain not in handled/: no
+  PASS pending after ack: 1
+
+========== E: adversarial - an unknown source is treated as the captain and kept ==========
+  queued id=1789315295-fMuzcM header: webhook
+  acknowledgement exit: 0 (--ack-through 1)
+  acknowledgement stderr: (no archival line)
+  PASS unknown-source note kept: yes
+  PASS pending after ack: 1
+
+========== F: adversarial - a legacy record with no source header is not classified by its body ==========
+  acknowledgement exit: 0 (--ack-through 1)
+  acknowledgement stderr: (no archival line)
+  PASS legacy record kept: yes
+  PASS pending after ack: 1
+
+========== G: adversarial - a source that could inject a record header line is refused ==========
+  refused: fm-inbox: invalid source 'relay
+injected=1': a source value must be non-empty and only [A-Za-z0-9._-]
+  PASS no note queued: 0
+  PASS pending: 0
+
+========== H: explicit drain --ack still archives either source ==========
+  before: acked 1789315297-ttUmzC
+acked 1789315297-sF0sAB
+  PASS captain archived: yes
+  PASS relay archived: yes
+  PASS pending: 0
+
+========== done ==========

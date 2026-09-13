@@ -1,0 +1,2 @@
+ok - a captain-authored note stays in state/inbox/ when its wake row is acknowledged
+not ok - the notification note did not record its source

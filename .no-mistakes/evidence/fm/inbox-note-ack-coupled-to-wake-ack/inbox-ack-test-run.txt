@@ -1,0 +1,7 @@
+ok - a captain-authored note stays in state/inbox/ when its wake row is acknowledged
+ok - a notification note is archived with its wake row and the archival is named
+ok - one acknowledged batch archives its notification note and leaves the captain's
+ok - an explicit drain --ack still archives a note of either source
+ok - a source that could inject a record header line is refused and queues nothing
+ok - a legacy record without a header source is not classified by its body
+ok - a note queued through the producer's argv shape counts as captain-authored

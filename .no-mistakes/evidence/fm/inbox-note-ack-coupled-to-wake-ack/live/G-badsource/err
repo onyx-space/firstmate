@@ -1,0 +1,2 @@
+fm-inbox: invalid source 'relay
+injected=1': a source value must be non-empty and only [A-Za-z0-9._-]
