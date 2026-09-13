@@ -69,7 +69,7 @@ test_captain_note_survives_its_acknowledged_wake_row() {
   grep -qx 'source=text' "$state/inbox/$id.note" \
     || fail "a note queued with no --source did not record the captain's default source"
 
-  ackerr=$(drain_then_ack "$state" captain)
+  ackerr=$(drain_then_ack "$state" captain) || exit 1
 
   [ -f "$state/inbox/$id.note" ] \
     || fail "acknowledging the wake row archived the captain's own note"
@@ -90,7 +90,7 @@ test_notification_note_is_archived_with_its_wake_row() {
   grep -qx 'source=relay' "$state/inbox/$id.note" \
     || fail "the notification note did not record its source"
 
-  ackerr=$(drain_then_ack "$state" notification)
+  ackerr=$(drain_then_ack "$state" notification) || exit 1
 
   [ -f "$state/inbox/handled/$id.note" ] \
     || fail "a notification note did not follow its acknowledged wake row into handled/"
@@ -112,7 +112,7 @@ test_mixed_batch_archives_only_the_notification() {
   relay_id=$(queue_note_now "$state" relay 'relay: upstream left a review comment') \
     || fail "queueing the notification note failed"
 
-  ackerr=$(drain_then_ack "$state" mixed)
+  ackerr=$(drain_then_ack "$state" mixed) || exit 1
 
   [ -f "$state/inbox/handled/$relay_id.note" ] \
     || fail "the notification note was not archived"
@@ -181,7 +181,7 @@ test_legacy_record_is_not_classified_by_its_body() {
     printf 'this line is the captain speaking, not a notification\n'
   } > "$state/inbox/$id.note"
 
-  ackerr=$(drain_then_ack "$state" legacy)
+  ackerr=$(drain_then_ack "$state" legacy) || exit 1
 
   [ -f "$state/inbox/$id.note" ] \
     || fail "a header-less legacy record was archived from a body line"
@@ -205,7 +205,7 @@ test_producer_argv_shape_stays_captain_authored() {
     | sed -n 's/^queued //p')
   [ -n "$id" ] || fail "the producer's argv shape did not print a note id"
 
-  ackerr=$(drain_then_ack "$state" producer)
+  ackerr=$(drain_then_ack "$state" producer) || exit 1
 
   [ -f "$state/inbox/$id.note" ] \
     || fail "a note queued with no --source was archived with its wake row"
