@@ -45,7 +45,6 @@ set -u
 TMP_ROOT=$(fm_test_tmproot fm-classify-span-scan-tests)
 STATE="$TMP_ROOT/state"
 mkdir -p "$STATE" || fail "could not create the test state dir"
-CASE=0
 
 
 # Byte offset at which line <n> (1-based) begins, so a span offset can be chosen
