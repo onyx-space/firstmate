@@ -18,6 +18,7 @@ scp -q "$SRC/container-healthcheck.sh"    "$REMOTE:/usr/local/bin/container-heal
 scp -q "$SRC/deploy-outline.sh"        "$REMOTE:/opt/outline/deploy-outline.sh"
 scp -q "$SRC/h-healthcheck-notify.sh"  "$REMOTE:/usr/local/bin/h-healthcheck-notify.sh"
 scp -q "$SRC/container-mem-limits.sh"  "$REMOTE:/usr/local/bin/container-mem-limits.sh"
+scp -q "$SRC/start-vllm-ascend.sh"     "$REMOTE:/usr/local/bin/start-vllm-ascend.sh"
 scp -q "$SRC/container-healthcheck.service"       "$REMOTE:/etc/systemd/system/container-healthcheck.service"
 scp -q "$SRC/container-healthcheck.timer"         "$REMOTE:/etc/systemd/system/container-healthcheck.timer"
 scp -q "$SRC/container-healthcheck-alert.service" "$REMOTE:/etc/systemd/system/container-healthcheck-alert.service"
@@ -25,11 +26,11 @@ scp -q "$SRC/container-mem-limits.service"        "$REMOTE:/etc/systemd/system/c
 
 ssh "$REMOTE" '
 set -e
-chmod 0755 /usr/local/bin/container-healthcheck.sh /usr/local/bin/h-healthcheck-notify.sh /usr/local/bin/container-mem-limits.sh /opt/outline/deploy-outline.sh
+chmod 0755 /usr/local/bin/container-healthcheck.sh /usr/local/bin/h-healthcheck-notify.sh /usr/local/bin/container-mem-limits.sh /usr/local/bin/start-vllm-ascend.sh /opt/outline/deploy-outline.sh
 chmod 0644 /etc/systemd/system/container-healthcheck*.service /etc/systemd/system/container-healthcheck.timer /etc/systemd/system/container-mem-limits.service
 # SELinux：scp 落盘的文件标签是 admin_home_t，init_t 无权执行 → 单元 203/EXEC。
 # 必须 relabel 成 bin_t（restorecon 按 file_contexts 推导，比 chcon 可靠）。
-restorecon -v /usr/local/bin/container-healthcheck.sh /usr/local/bin/h-healthcheck-notify.sh /usr/local/bin/container-mem-limits.sh
+restorecon -v /usr/local/bin/container-healthcheck.sh /usr/local/bin/h-healthcheck-notify.sh /usr/local/bin/container-mem-limits.sh /usr/local/bin/start-vllm-ascend.sh
 # 旧路径的副本删掉：两份副本必然漂移
 rm -f /root/container_healthcheck.sh
 # 摘掉旧 cron 行（幂等；保留 crontab 里的 PATH 行——备份任务还要用）

@@ -15,7 +15,8 @@
    声明源是 `container-mem-limits.sh` 的 `MEM_LIMITS` 表（不写 `podman run --memory`：
    h 机 cgroup v1 上 `--memory-swap` 空转，且 `podman update` 不回写 config、重启即丢）。
    每小时 + 开机 + 每次 `deploy-outline.sh` 重写一次。
-   未做：`vllm-ascend` 的 restart 策略（需重建容器 = 8B 端点停机，待授权）。
+   未做→**已做**（2026-09-14 22:55，队长授权）：`vllm-ascend` 现已 `--restart=always`，
+   并补上了原先不存在的容器创建脚本 `start-vllm-ascend.sh`。
 3. **文档对齐** — 脚本/实机为准，vault 部署文档跟上（11 处差异清单见报告 §4）。
 
 ## 目录
@@ -29,6 +30,7 @@
 | `h/container-healthcheck.sh` | `/usr/local/bin/` | 检查逻辑本体（自含 PATH） |
 | `h/container-mem-limits.sh` | `/usr/local/bin/` | **内存上限唯一声明源** + 落地（memory + memsw） |
 | `h/container-mem-limits.service` | `/etc/systemd/system/` | 开机后（`After=podman-restart.service`）落一次上限 |
+| `h/start-vllm-ascend.sh` | `/usr/local/bin/` | vllm-ascend 容器创建/启动（幂等；2026-09-14 补的缺失重建路径，含 `--restart=always`） |
 | `h/deploy-outline.sh` | `/opt/outline/` | outline 四容器部署（结尾调上面的上限脚本） |
 | `verify-memory-limit.sh` | 不部署（在 h 上跑） | 内存上限语义自证：牺牲容器超限 → 内核 MEMCG OOM kill → 宿主存活 → restart 拉起 |
 | `install.sh` | 不部署（在 m 上跑） | 幂等安装器：推送 + `restorecon` + `daemon-reload` + enable + 摘旧 cron 行 |
