@@ -1590,14 +1590,13 @@ test_poll_path_escalation_close_never_folds_the_whole_log() {
     printf 'working: backlog line %s\n' "$i" >> "$state/hibit.status"
     i=$((i + 1))
   done
-  # The retry must decide from the escalation's own keyed lines. A whole-log fold
-  # that has seen nothing strands in its place here: if the retry still reaches
-  # for it, it finds no open decision and never appends the close. The verb-read
-  # log counts lines the retry actually parsed, so a returning per-line whole-log
-  # scan shows up as one read per backlog line.
+  # The retry must decide from the escalation's own keyed lines. Every whole-log
+  # shape it could reach for - the per-line escalation scan and the
+  # status_open_decisions fold behind it - parses each line through
+  # status_line_verb, so the verb-read log counts any of them as one read per
+  # backlog line instead of the few this key's own lines need.
   : > "$state/verb-calls"
   (
-    status_open_decisions() { :; }
     FM_TEST_VERB_LOG="$state/verb-calls"
     eval "$(declare -f status_line_verb | sed '1s/status_line_verb/_fm_test_status_line_verb/')"
     status_line_verb() {
