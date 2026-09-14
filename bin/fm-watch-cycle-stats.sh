@@ -3,7 +3,7 @@
 # arm-owned lifecycle ledger (state/.watch-cycle-exits.log).
 #
 # Usage:
-#   fm-watch-cycle-stats.sh [--recent <n>]
+#   fm-watch-cycle-stats.sh
 #
 # The ledger is the watcher's own record of every observed cycle, and its
 # `started_at` and `ended_at` fields are epoch seconds, so a cycle's duration is
@@ -38,24 +38,12 @@ case "$GRACE" in ''|*[!0-9]*|0) GRACE=300 ;; esac
 THRESHOLD=${FM_WATCH_CYCLE_MEDIAN_ALERT_SECS:-$(( GRACE / 2 ))}
 case "$THRESHOLD" in ''|*[!0-9]*|0) THRESHOLD=$(( GRACE / 2 )) ;; esac
 
-RECENT=''
 while [ $# -gt 0 ]; do
   case "$1" in
-    --recent)
-      RECENT=${2-}
-      case "$RECENT" in
-        ''|*[!0-9]*)
-          printf 'error: --recent needs a whole number of cycles\nhelp: fm-watch-cycle-stats.sh [--recent <n>]\n' >&2
-          exit 2
-          ;;
-      esac
-      shift 2
-      ;;
     -h|--help) sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) printf 'error: unknown argument: %s\nhelp: fm-watch-cycle-stats.sh [--recent <n>]\n' "$1" >&2; exit 2 ;;
+    *) printf 'error: unknown argument: %s\nhelp: fm-watch-cycle-stats.sh\n' "$1" >&2; exit 2 ;;
   esac
 done
-case "$RECENT" in ''|*[!0-9]*) RECENT='' ;; esac
 
 if [ ! -f "$LEDGER" ] || [ ! -r "$LEDGER" ] || [ -L "$LEDGER" ]; then
   printf 'watcher cycles: EMPTY - no readable cycle ledger at %s\n' "$LEDGER"
@@ -63,7 +51,6 @@ if [ ! -f "$LEDGER" ] || [ ! -r "$LEDGER" ] || [ -L "$LEDGER" ]; then
 fi
 
 stats=$(perl -e '
-  my $recent = shift // "";
   my (@d, $seen);
   while (my $line = <STDIN>) {
     chomp $line;
@@ -81,10 +68,6 @@ stats=$(perl -e '
     $seen++;
   }
   $seen = 0 unless defined $seen;
-  my $total = scalar @d;
-  if ($recent ne "" && $recent > 0 && $total > $recent) {
-    @d = @d[($total - $recent) .. ($total - 1)];
-  }
   my $n = scalar @d;
   if ($n == 0) { printf "EMPTY\t0\t0\t0\t0\t%s", $seen; exit 0; }
   my @sorted = sort { $a <=> $b } @d;
@@ -94,7 +77,7 @@ stats=$(perl -e '
   my $mean = int($sum / $n + 0.5);
   my $max = $sorted[-1];
   printf "OK\t%s\t%s\t%s\t%s\t%s", $median, $mean, $max, $n, $seen;
-' "$RECENT" < "$LEDGER" 2>/dev/null) || stats=''
+' < "$LEDGER" 2>/dev/null) || stats=''
 
 if [ -z "$stats" ]; then
   printf 'watcher cycles: EMPTY - no readable cycle ledger at %s\n' "$LEDGER"

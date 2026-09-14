@@ -1146,7 +1146,7 @@ fm_pending_reply_close_escalation() {  # <state-dir> <corr_id>
 
 _fm_pending_reply_close_escalation_locked() {  # <state-dir> <corr_id>
   local state=$1 corr=$2 rec escalated closed parent_status escalation key note
-  local open_line open_key open_note now close_line close_rc _task _via
+  local now close_line close_rc _task _via
   rec=$(fm_pending_reply_path "$state" "$corr")
   [ -f "$rec" ] || return 1
   [ "$(fm_pending_reply_get "$rec" phase)" = resolved ] || return 0
@@ -1160,13 +1160,14 @@ _fm_pending_reply_close_escalation_locked() {  # <state-dir> <corr_id>
   if [ -n "$escalation" ]; then
     key=$(_fm_decision_key "$escalation") || key=''
     note=$(status_line_note "$escalation")
-    while IFS= read -r open_line; do
-      [ -n "$open_line" ] || continue
-      open_key=${open_line%%$'\t'*}
-      [ "$open_key" = "$key" ] || continue
-      open_note=${open_line#*$'\t'}
-      open_note=${open_note#*$'\t'}
-      [ "$open_note" = "$note" ] || continue
+    # This runs on every watcher poll for a resolved record, so the whole-file
+    # open-decisions fold is off limits: one long parent log would hold the poll
+    # loop - and freeze the liveness beacon - for the length of that log's
+    # history. status_key_open_with_note folds only the lines carrying this key's
+    # literal token, which is the keyed decision's whole input and nothing else.
+    # The legacy unkeyed escalation has no token to filter on and is the one
+    # caller that still reads the whole stream.
+    if status_key_open_with_note "$parent_status" "$key" "$note"; then
       # This close is the home's own bookkeeping, written by the same resolve
       # or tick that already consumed the reply, so it uses the guarded
       # self-announced append (bin/fm-wake-lib.sh, sourced by this function's
@@ -1179,10 +1180,7 @@ _fm_pending_reply_close_escalation_locked() {  # <state-dir> <corr_id>
       fm_wake_status_append_self_announced "${parent_status%/*}" "$parent_status" "$close_line" \
         2>/dev/null || close_rc=$?
       [ "$close_rc" -ne 2 ] || return 1
-      break
-    done <<EOF
-$(status_open_decisions "$parent_status")
-EOF
+    fi
   fi
   now=$(fm_pending_reply_now)
   fm_pending_reply_set "$rec" escalation_closed_epoch "$now"

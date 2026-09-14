@@ -594,6 +594,46 @@ EOF
   printf '%s' "$verb"
 }
 
+# 0 when <key> is still open in <status-file> with exactly <note>, which is how a
+# caller confirms a keyed decision it published is still the live one and so safe
+# to close. Reads only the lines that can move <key>: every line that moves a
+# keyed decision states the key's literal "[key=<key>]" token, so the filtered
+# stream is that decision's whole input while the log's other decisions - and the
+# history behind them - are never folded. This is the same bound
+# status_key_closing_verb uses, and it is why this answers without the whole-file
+# fold. An empty or "default" key has no token to filter on, so it is the one
+# caller that keeps the whole-file fold.
+status_key_open_with_note() {  # <status-file> <key> <note>
+  local f=$1 want=$2 note=$3 line open='' stream entry
+  [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 1
+  [ -n "$want" ] || return 1
+  if [ "$want" = default ]; then
+    stream=$(cat "$f") || return 1
+  else
+    stream=$(grep -F "[key=$want]" "$f") || stream=''
+  fi
+  [ -n "$stream" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    open=$(_fm_decision_fold_line "$open" "$line" \
+      "${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}" \
+      "${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}")
+  done <<EOF
+$stream
+EOF
+  while IFS= read -r entry; do
+    case "$entry" in
+      "$want"$'\t'*) ;;
+      *) continue ;;
+    esac
+    entry=${entry#*$'\t'}
+    [ "${entry#*$'\t'}" = "$note" ]
+    return $?
+  done <<EOF
+$open
+EOF
+  return 1
+}
+
 # Fleet-wide wrapper around status_open_decisions: scans every task's status
 # log under <state> and prefixes each still-open decision with its owning task
 # id, so a per-wake or per-session surface can print the consolidated open set
