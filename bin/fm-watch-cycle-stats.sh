@@ -5,24 +5,27 @@
 # Usage:
 #   fm-watch-cycle-stats.sh
 #
-# The ledger is the watcher's own record of every observed cycle, and its
+# The ledger is the arm's own record of every observed watcher cycle, and its
 # `started_at` and `ended_at` fields are epoch seconds, so a cycle's duration is
-# their difference. Because bin/fm-watch.sh touches the liveness beacon at the
-# TOP of every poll, a cycle's duration is also how stale that beacon got while
-# the cycle ran - which is what makes this a supervision-health number rather
-# than only a performance one. A cycle that runs long enough goes blind: the
-# classifier's bounded scan is what keeps one task's growing status log from
-# making ordinary cycles long in the first place.
+# their difference: the supervision round's latency, from arming until the
+# watcher exits. It is NOT beacon staleness - bin/fm-watch.sh touches the
+# liveness beacon at the TOP of every poll, so a long idle cycle keeps that
+# beacon fresh. The guard's grace is the separate bound on how long supervision
+# may go without a fresh beacon; the round's latency is the health number that
+# says whether ordinary rounds are running long, and the classifier's bounded
+# scan is what keeps one task's growing status log from making them long in the
+# first place.
 #
 # Prints one line:
 #   watcher cycles: median 13s · mean 14s · max 21s · cycles 37 of 37 · threshold 150s
 # and, when the median reaches the threshold, one further explicit line:
 #   watcher cycles: ALERT median 210s >= threshold 150s over 37 cycles - ordinary
-#   cycles already run long enough to blind supervision for their duration
+#   rounds are running long (round latency, not beacon staleness)
 #
-# The threshold defaults to half of FM_GUARD_GRACE, the bound the guard allows a
-# beacon to age before it reports supervision blind: at that point an ordinary
-# cycle already spends half that budget, leaving no headroom for one slow cycle.
+# The threshold defaults to half of FM_GUARD_GRACE, a deliberately conservative
+# latency budget rather than a staleness bound: the grace limits how long the
+# beacon may go unrefreshed while this metric measures a whole round, and the two
+# are related only in that one blocked poll iteration lengthens both.
 # FM_WATCH_CYCLE_MEDIAN_ALERT_SECS overrides it.
 #
 # Reads only the ledger; starts nothing and never fails a caller's turn (a
@@ -32,7 +35,7 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-LEDGER="${FM_WATCH_CYCLE_LOG:-$STATE/.watch-cycle-exits.log}"
+LEDGER="$STATE/.watch-cycle-exits.log"
 GRACE=${FM_GUARD_GRACE:-300}
 case "$GRACE" in ''|*[!0-9]*|0) GRACE=300 ;; esac
 THRESHOLD=${FM_WATCH_CYCLE_MEDIAN_ALERT_SECS:-$(( GRACE / 2 ))}
@@ -40,7 +43,7 @@ case "$THRESHOLD" in ''|*[!0-9]*|0) THRESHOLD=$(( GRACE / 2 )) ;; esac
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    -h|--help) sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) printf 'error: unknown argument: %s\nhelp: fm-watch-cycle-stats.sh\n' "$1" >&2; exit 2 ;;
   esac
 done
@@ -98,7 +101,7 @@ fi
 printf 'watcher cycles: median %ss · mean %ss · max %ss · cycles %s of %s · threshold %ss\n' \
   "$median" "$mean" "$max" "$count" "$total" "$THRESHOLD"
 if [ "$median" -ge "$THRESHOLD" ]; then
-  printf 'watcher cycles: ALERT median %ss >= threshold %ss over %s cycles - ordinary cycles already run long enough to blind supervision for their duration\n' \
+  printf 'watcher cycles: ALERT median %ss >= threshold %ss over %s cycles - ordinary rounds are running long (round latency, not beacon staleness)\n' \
     "$median" "$THRESHOLD" "$count"
 fi
 exit 0

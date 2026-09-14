@@ -468,11 +468,14 @@ grok 0.2.103 (89c3d36fb6f1) [stable]
 | Grok | `FM_GROK_LIVE_E2E=1 tests/fm-grok-continuity-live-e2e.test.sh` | Native task completion surfaced the actionable close and the cycle ledger recorded `reason=actionable-signal`. |
 
 Pi 0.81.1 repeated the continuity and clean-exit lifecycle on 2026-07-23 after the Calm presentation changes.
-The same record's arm-owned cycle ledger now answers how long a cycle took:
-`bin/fm-watch-cycle-stats.sh` reduces `state/.watch-cycle-exits.log` to one line
-(median, mean, max, count, threshold) and adds an explicit ALERT line once the
-median reaches the threshold, which defaults to half `FM_GUARD_GRACE` because a
-cycle's duration is exactly how stale the beacon got during it.
+The same record's arm-owned cycle ledger now answers how long a supervision
+round took: `bin/fm-watch-cycle-stats.sh` reduces
+`state/.watch-cycle-exits.log` to one line (median, mean, max, count, threshold)
+and adds an explicit ALERT line once the median reaches the threshold, which
+defaults to half `FM_GUARD_GRACE` as a deliberately conservative latency budget
+rather than a staleness bound. A cycle's duration is the round's latency, not how
+stale the beacon got: `bin/fm-watch.sh` touches the beacon at the top of every
+poll, so only a poll iteration that blocks ages it.
 `bin/fm-guard.sh` prints that line with a stale-beacon banner, and
 `tests/fm-watch-cycle-stats.test.sh` pins the line, the ALERT, the default
 threshold, and the malformed-row handling.

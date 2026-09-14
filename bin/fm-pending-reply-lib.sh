@@ -1103,10 +1103,22 @@ fm_pending_reply_escalation_payload() {  # <record-path> <kind>
 # that exact escalation remains open. If an unrelated decision has since taken
 # over that key, the close is withheld so the unrelated decision is not cleared.
 fm_pending_reply_escalation_line() {  # <status-file> <record-path> <corr_id>
-  local status_file=$1 rec=$2 corr=$3 line found='' kind payload own_key
+  local status_file=$1 rec=$2 corr=$3 line found='' kind payload own_key stream
   [ -f "$status_file" ] || return 0
   [ "$(fm_pending_reply_get "$rec" corr_id)" = "$corr" ] || return 0
   own_key=$(fm_pending_reply_escalation_key "$corr")
+  # Every escalation line this library publishes embeds the record's correlation
+  # id, so one literal-token pass selects the only lines that can match and the
+  # per-line parse below runs over that handful instead of the whole log. This is
+  # the watch poll path (a resolved record retries its close every cycle), so the
+  # log's lifetime must not be re-parsed line by line here; a record with no
+  # correlation token has nothing to filter on and keeps the whole-file scan.
+  if [ -n "$corr" ]; then
+    stream=$(grep -F -e "$corr" "$status_file") || stream=''
+  else
+    stream=$(cat "$status_file") || stream=''
+  fi
+  [ -n "$stream" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     [ "$(status_line_verb "$line")" = blocked ] || continue
     for kind in missed delivery-unknown recovery-delivery; do
@@ -1116,7 +1128,9 @@ fm_pending_reply_escalation_line() {  # <status-file> <record-path> <corr_id>
         "blocked [key=$own_key]: $payload "*|"blocked: $payload "*) found=$line; break ;;
       esac
     done
-  done < "$status_file"
+  done <<EOF
+$stream
+EOF
   printf '%s' "$found"
 }
 

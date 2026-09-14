@@ -1571,7 +1571,7 @@ test_escalated_undelivered_correlation_stays_retryable() {
 }
 
 test_poll_path_escalation_close_never_folds_the_whole_log() {
-  local home state corr rec i open
+  local home state corr rec i open verb_reads
   home=$(setup_parent bounded-escalation-close)
   state="$home/state"
   export FM_PENDING_REPLY_NOW=9800
@@ -1592,9 +1592,18 @@ test_poll_path_escalation_close_never_folds_the_whole_log() {
   done
   # The retry must decide from the escalation's own keyed lines. A whole-log fold
   # that has seen nothing strands in its place here: if the retry still reaches
-  # for it, it finds no open decision and never appends the close.
+  # for it, it finds no open decision and never appends the close. The verb-read
+  # log counts lines the retry actually parsed, so a returning per-line whole-log
+  # scan shows up as one read per backlog line.
+  : > "$state/verb-calls"
   (
     status_open_decisions() { :; }
+    FM_TEST_VERB_LOG="$state/verb-calls"
+    eval "$(declare -f status_line_verb | sed '1s/status_line_verb/_fm_test_status_line_verb/')"
+    status_line_verb() {
+      printf 'read\n' >> "$FM_TEST_VERB_LOG"
+      _fm_test_status_line_verb "$@"
+    }
     fm_pending_reply_tick "$state" || exit 1
   ) || fail "the poll-path escalation close failed"
   grep -Fq "resolved [key=pending-reply-$corr]" "$state/hibit.status" \
@@ -1604,6 +1613,9 @@ test_poll_path_escalation_close_never_folds_the_whole_log() {
   open=$(status_open_decisions "$state/hibit.status")
   assert_not_contains "$open" "pending-reply-$corr" \
     "the poll-path escalation close left the decision open"
+  verb_reads=$(wc -l < "$state/verb-calls" | tr -d '[:space:]')
+  [ "$verb_reads" -lt 20 ] \
+    || fail "the poll-path retry parsed the whole status log line by line ($verb_reads verb reads)"
   unset FM_PENDING_REPLY_NOW
   pass "the poll-path escalation close is bounded and never folds the whole status log"
 }

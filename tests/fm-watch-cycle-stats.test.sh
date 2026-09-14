@@ -3,10 +3,12 @@
 #
 # The arm-owned lifecycle ledger (state/.watch-cycle-exits.log) records
 # started_at and ended_at for every observed watcher cycle, so a cycle's
-# duration is their difference. Because bin/fm-watch.sh touches the liveness
-# beacon at the TOP of every poll, that duration is also how stale the beacon
-# got while the cycle ran - which is what makes the median a supervision-health
-# number rather than only a performance one. These tests drive the real
+# duration is their difference: the supervision round's latency, from arming
+# until the watcher exits. It is not beacon staleness - bin/fm-watch.sh touches
+# the liveness beacon at the TOP of every poll, so a long idle cycle keeps it
+# fresh - but the round's latency is the health number that says whether ordinary
+# rounds are running long, and its ALERT threshold is a conservative latency
+# budget rather than a staleness bound. These tests drive the real
 # bin/fm-watch-cycle-stats.sh over crafted ledgers and assert the one line it
 # reports, the threshold that turns it into an ALERT line, the default threshold
 # that follows FM_GUARD_GRACE, and that malformed rows are ignored rather than

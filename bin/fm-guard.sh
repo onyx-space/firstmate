@@ -248,10 +248,10 @@ if [ "$watcher_healthy" = false ]; then
         printf '●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.\n'
       fi
       # Why the beacon aged, in the watcher's own words: the arm-owned cycle
-      # ledger, reduced to one line (plus its ALERT line when the median cycle is
-      # long enough to spend half the grace above). A stale beacon is exactly the
-      # symptom a long cycle produces, so this is the diagnostic that says which
-      # one it was.
+      # ledger, reduced to one line (plus its ALERT line once the median round
+      # crosses its latency threshold). A poll iteration that blocked is what
+      # ages the beacon and what lengthens a round, so this is the diagnostic
+      # that says whether ordinary rounds are running long.
       FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
         "$SCRIPT_DIR/fm-watch-cycle-stats.sh" 2>/dev/null | while IFS= read -r cycle_line; do
         printf '●  %s\n' "$cycle_line"
