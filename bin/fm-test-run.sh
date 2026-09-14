@@ -18,6 +18,7 @@
 #   fm-test-run.sh --list --family <name>
 #   fm-test-run.sh --list --lane portable-parallel-1
 #   fm-test-run.sh --list-scheduled --family <name>
+#   fm-test-run.sh --list-scheduled --lane portable-parallel-1
 #   fm-test-run.sh --list-families
 #   fm-test-run.sh --list-concurrent-safe-families
 #   fm-test-run.sh --concurrent-safe-family-jobs-max <name>
@@ -35,7 +36,11 @@
 #                   tool this host could not exercise.
 #   --list          print selected script paths (one per line) and exit 0
 #   --list-scheduled
-#                   print selected paths longest-hint-first and exit 0
+#                   print selected paths longest-hint-first and exit 0.
+#                   Only --lane portable-parallel-1 or portable-parallel-2 uses
+#                   parallel hints, falling back to serial weights if missing.
+#                   Every other selection uses serial weights alone.
+#                   Equal weights are ordered by path under LC_ALL=C.
 #   --base <ref>    with --changed, compare against this ref (default: origin/main)
 #   --exclude-family <name>
 #                   drop scripts whose primary family matches <name> after selection
@@ -59,7 +64,7 @@
 #                   family proofs may impose a lower cap. Individually proven
 #                   scripts share one phase; scripts admitted only by a family
 #                   proof run in a separate phase for each family. Concurrent
-#                   phases are ordered longest-hint-first. Unproven stateful
+#                   phases use serial weights, longest-hint-first. Unproven stateful
 #                   scripts run serially after all concurrent phases. Default is
 #                   1 (serial) except for plain --changed and a plain list of
 #                   script paths, which use the bounded automatic scheduler.
@@ -111,12 +116,22 @@
 # live-capability (a live-harness guard governed by fm_live_gate, which records
 # unavailable tools and explicit policy skips; see tests/lib.sh), or none.
 #
+# Every selected script runs isolated from the host's global and system Git
+# configuration, including one that sources no test helper of its own;
+# tests/git-config-helpers.sh owns that contract and its limits.
+#
 # Family labels, the changed-file map, and production portable-shard composition
 # live in this script only (one owner). The proven-isolated candidate set remains
 # owned by bin/fm-test-isolation-proof.sh; portable parallel shards are a
 # duration-balanced partition of that exact set, and their balance weights are
 # the portable_parallel_weight_hints table below rather than the historical
 # isolation-proof snapshot (see docs/fm-test-portable-shards.md).
+# --check-coverage additionally reports parallel_max_ms (the larger lane hint
+# sum), parallel_imbalance_ms (the absolute difference between the sums), and
+# parallel_unhinted (the number of members missing a parallel hint). Those sums
+# are estimates, not measured job wall times, and a member with no hint is a
+# stale table that refuses the lane rather than one the guard packs on a guess,
+# so a healthy run reports parallel_unhinted=0.
 #
 # portable-serial stays strictly serial. Its CI shards (portable-serial-<k>of<n>)
 # split it across separate runners, so two of its stateful scripts still never
@@ -265,7 +280,8 @@ family_for_basename() {
     fm-composer-ghost.test.sh|fm-composer-lib.test.sh|\
     fm-crew-state.test.sh|fm-captain-hold-lifecycle.test.sh|\
     fm-documentation-audiences.test.sh|fm-ensure-agents-md.test.sh|fm-grok-harness.test.sh|\
-    fm-kimi-harness.test.sh|fm-muse-harness.test.sh|fm-rovo-harness.test.sh|fm-omp-harness.test.sh|fm-herdr-lab.test.sh|fm-lint.test.sh|\
+    fm-harness-precedence.test.sh|\
+    fm-kimi-harness.test.sh|fm-muse-harness.test.sh|fm-rovo-harness.test.sh|fm-agy-harness.test.sh|fm-omp-harness.test.sh|fm-herdr-lab.test.sh|fm-lint.test.sh|\
     fm-lint-workflows.test.sh|\
     fm-operational-input.test.sh|fm-pi-primary-types.test.sh|\
     fm-harness-adapter-references.test.sh|\
@@ -293,7 +309,9 @@ family_for_basename() {
     fm-backend-herdr-launcher-workspace-e2e.test.sh|\
     fm-backend-herdr-prune-safety-e2e.test.sh|fm-backend-herdr-respawn-idem-e2e.test.sh|\
     fm-backend-herdr-focus-flash-e2e.test.sh|\
-    fm-herdr-session-cleanup-e2e.test.sh|\
+    fm-backend-herdr-stale-active-tab-e2e.test.sh|\
+    fm-backend-herdr-agent-exit-shell-e2e.test.sh|\
+    fm-herdr-attached-viewer-live-e2e.test.sh|fm-herdr-session-cleanup-e2e.test.sh|\
     fm-backend-herdr-smoke.test.sh|fm-backend-herdr-workspace-per-home-e2e.test.sh|\
     fm-control-herdr-smoke.test.sh)
       printf '%s\n' real-herdr-gated
@@ -326,8 +344,9 @@ family_for_basename() {
     fm-cursor-primary-live-e2e.test.sh|\
     fm-grok-stop-live-e2e.test.sh|fm-harness-adapter-instructions-live-e2e.test.sh|\
     fm-harness-liveness-drift-live-e2e.test.sh|\
-    fm-muse-signals-live-e2e.test.sh|fm-rovo-signals-live-e2e.test.sh|\
+    fm-muse-signals-live-e2e.test.sh|fm-rovo-signals-live-e2e.test.sh|fm-agy-signals-live-e2e.test.sh|\
     fm-herdr-version-floor-live-e2e.test.sh|\
+    fm-herdr-pi-stale-registration-live-e2e.test.sh|\
     fm-opencode-primary-live-e2e.test.sh|fm-pi-branch-live-e2e.test.sh|\
     fm-pi-branch-responsiveness-live-e2e.test.sh|\
     fm-pi-primary-live-e2e.test.sh|fm-pi-codex-native.test.sh|fm-omp-primary-live-e2e.test.sh|\
@@ -547,6 +566,18 @@ tests/fm-x-mode.test.sh 27295
 EOF
 }
 
+# Sum the hints above for the scripts read on stdin, and report how many of
+# them had no hint at all, as "<summed_ms> <unhinted_count>".
+portable_parallel_lane_weight() {
+  awk '
+    NR == FNR { if (NF) { hint[$1] = $2 } ; next }
+    NF {
+      if ($1 in hint) { total += hint[$1] } else { unhinted++ }
+    }
+    END { printf "%d %d\n", total + 0, unhinted + 0 }
+  ' <(portable_parallel_weight_hints) -
+}
+
 # Balance weight for one proven-isolated script. Unlike the serial remainder
 # there is no default: the proven set only changes through a new isolation
 # proof, which measures durations itself, so a member with no hint is a stale
@@ -605,17 +636,6 @@ portable_parallel_shard_members() {
       printf '%s\n' "$script"
     fi
   done < <(portable_parallel_assignments)
-}
-
-# Total balance weight of one portable parallel shard, used by the coverage
-# guard to print both lane estimates so a stale hint table is visible in CI.
-portable_parallel_lane_estimate() {
-  local want=$1 script total=0
-  while IFS= read -r script; do
-    [ -n "$script" ] || continue
-    total=$((total + $(portable_parallel_weight_for "$script")))
-  done < <(portable_parallel_shard_members "$want")
-  printf '%s\n' "$total"
 }
 
 # Portable parallel shard 1: one LPT half of the proven-isolated set, longest
@@ -715,6 +735,8 @@ list_portable_serial() {
 # balance rather than coverage. That doc owns the refresh procedure.
 portable_serial_weight_hints() {
   cat <<'EOF'
+tests/fm-agy-harness.test.sh 11000
+tests/fm-agy-signals-live-e2e.test.sh 23
 tests/fm-afk-contract.test.sh 3000
 tests/fm-afk-inject-e2e.test.sh 35792
 tests/fm-afk-pi-herdr-return-e2e.test.sh 100
@@ -765,6 +787,7 @@ tests/fm-guard-stale-banner.test.sh 32981
 tests/fm-harness-adapter-instructions-live-e2e.test.sh 20
 tests/fm-harness-adapter-references.test.sh 55
 tests/fm-harness-liveness-drift-live-e2e.test.sh 21
+tests/fm-herdr-attached-viewer-live-e2e.test.sh 19000
 tests/fm-herdr-session-cleanup.test.sh 6704
 tests/fm-herdr-submit-confirm-live-e2e.test.sh 23
 tests/fm-herdr-version-floor-live-e2e.test.sh 23
@@ -977,6 +1000,7 @@ select_lane() {
 
 run_coverage_guard() {
   local tmp missing extra a b shard unhinted serial_total
+  local p1_ms p1_unhinted p2_ms p2_unhinted parallel_max_ms parallel_imbalance_ms
   local -a saved_scripts=()
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-coverage.XXXXXX")
 
@@ -1106,11 +1130,21 @@ run_coverage_guard() {
     fi
   fi
 
-  printf 'FM_TEST_COVERAGE ok total=%s parallel=%s parallel_est_1=%s parallel_est_2=%s serial=%s serial_shards=%s serial_unhinted=%s herdr=%s\n' \
+  # Keep these estimates derived from the membership and hint owners; see the
+  # header for the distinction between packed weights and measured job time.
+  read -r p1_ms p1_unhinted <<<"$(list_portable_parallel_1 | portable_parallel_lane_weight)"
+  read -r p2_ms p2_unhinted <<<"$(list_portable_parallel_2 | portable_parallel_lane_weight)"
+  parallel_max_ms=$p1_ms
+  [ "$p2_ms" -le "$parallel_max_ms" ] || parallel_max_ms=$p2_ms
+  parallel_imbalance_ms=$((p1_ms - p2_ms))
+  [ "$parallel_imbalance_ms" -ge 0 ] || parallel_imbalance_ms=$((-parallel_imbalance_ms))
+
+  printf 'FM_TEST_COVERAGE ok total=%s parallel=%s parallel_max_ms=%s parallel_imbalance_ms=%s parallel_unhinted=%s serial=%s serial_shards=%s serial_unhinted=%s herdr=%s\n' \
     "$(wc -l <"$tmp/all" | tr -d ' ')" \
     "$(wc -l <"$tmp/shards_union" | tr -d ' ')" \
-    "$(portable_parallel_lane_estimate 1)" \
-    "$(portable_parallel_lane_estimate 2)" \
+    "$parallel_max_ms" \
+    "$parallel_imbalance_ms" \
+    "$((p1_unhinted + p2_unhinted))" \
     "$(wc -l <"$tmp/serial" | tr -d ' ')" \
     "$PORTABLE_SERIAL_SHARDS" \
     "$unhinted" \
@@ -1242,12 +1276,14 @@ select_family() {
   [ "$found" -eq 1 ] || die "no tests mapped to family '$want'"
 }
 
-families_for_test_reference() {
-  local needle=$1 s
+families_for_test_reference() {  # <needle>...
+  local s needle
   local found=0
+  local -a needles=()
+  for needle in "$@"; do needles+=(-e "$needle"); done
   while IFS= read -r s; do
     [ -n "$s" ] || continue
-    if grep -Fq "$needle" "$s"; then
+    if grep -Fq "${needles[@]}" "$s"; then
       family_for_basename "$(basename "$s")"
       found=1
     fi
@@ -1324,14 +1360,23 @@ families_for_changed_path() {
       # resolution in the caller; emit a marker family of __script__
       printf '%s\n' "__script__:$(basename "$path")"
       ;;
-    bin/fm-test-run.sh|bin/fm-test-isolation-proof.sh)
+    bin/fm-test-run.sh)
       # Deliberately the WHOLE family, not just the two contract tests. This
       # runner executes every pure-contract-unit script, so a change to it is
       # only proven by running them: its own contract test passing says the
       # runner's logic is right, not that the suite it drives still runs.
       printf '%s\n' pure-contract-unit
+      # Only this script wraps each suite in run_script_bounded's fixture Git
+      # isolation, and only a standalone-family script proves it.
+      printf '%s\n' "__script__:fm-test-fixtures.test.sh"
       ;;
-    bin/backends/herdr*|bin/fm-herdr-lab.sh|tests/herdr-test-safety.sh)
+    bin/fm-test-isolation-proof.sh)
+      # Same reason as the runner above: the proof drives every
+      # pure-contract-unit script. It runs each candidate directly, never
+      # through run_script_bounded, so it cannot regress fixture Git isolation.
+      printf '%s\n' pure-contract-unit
+      ;;
+    bin/backends/herdr*|bin/fm-herdr-lab.sh|tests/herdr-test-safety.sh|tests/herdr-client-pair-fixture.sh)
       printf '%s\n' real-herdr-gated
       printf '%s\n' backend-dispatch
       printf '%s\n' pure-contract-unit
@@ -1357,6 +1402,13 @@ families_for_changed_path() {
       printf '%s\n' backend-dispatch
       printf '%s\n' real-herdr-gated
       ;;
+    bin/fm-agent-process-lib.sh)
+      # The shared harness-process classifier feeds both the tmux and Herdr
+      # liveness verdicts, so a change to it is proven by both backends' suites.
+      printf '%s\n' backend-dispatch
+      printf '%s\n' real-herdr-gated
+      printf '%s\n' pure-contract-unit
+      ;;
     bin/fm-watch*|bin/fm-wake*|bin/fm-inactive-reconcile.sh|\
     bin/fm-classify-lib.sh|bin/fm-daemon*|bin/fm-turnend-guard*|bin/fm-guard.sh)
       printf '%s\n' watcher-wake-lock
@@ -1381,10 +1433,14 @@ families_for_changed_path() {
     bin/fm-stow-cascade.sh)
       printf '%s\n' secondmate
       ;;
-    bin/fm-session-start.sh|bin/fm-bootstrap.sh|bin/fm-fleet-sync.sh|\
+    bin/fm-session-start.sh|bin/fm-fleet-sync.sh|\
     bin/fm-sessionstart-nudge.sh|bin/fm-startup-network.sh|bin/fm-tangle*|bin/fm-update.sh|\
     bin/fm-gate-refuse*|bin/fm-lock*)
       printf '%s\n' session-bootstrap
+      ;;
+    bin/fm-bootstrap.sh)
+      printf '%s\n' session-bootstrap
+      printf '%s\n' "__script__:fm-brief.test.sh"
       ;;
     bin/fm-quota-axi-lib.sh)
       printf '%s\n' session-bootstrap
@@ -1534,6 +1590,12 @@ families_for_changed_path() {
     .github/*|.gitattributes|.tasks.toml|AGENTS.md|CLAUDE.md|CONTRIBUTING.md|\
     docs/configuration.md|docs/supervision-protocols/*)
       printf '%s\n' pure-contract-unit
+      ;;
+    tests/git-config-helpers.sh)
+      # The reference scan is not transitive, so match the two helpers that
+      # source this one as well: most suites inherit it only through them.
+      families_for_test_reference git-config-helpers.sh lib.sh herdr-test-safety.sh \
+        || printf '%s\n' "__unmapped__:$path"
       ;;
     tests/lib.sh|tests/*-helpers.sh|tests/fixtures.sh)
       families_for_test_reference "$(basename "$path")" \
@@ -2038,7 +2100,14 @@ fi
 if [ "$LIST_ONLY" -eq 1 ] || [ "$LIST_SCHEDULED" -eq 1 ]; then
   if [ "$LIST_SCHEDULED" -eq 1 ]; then
     for s in "${SCRIPTS[@]+"${SCRIPTS[@]}"}"; do
-      printf '%s\t%s\n' "$(portable_serial_weight_for "$s")" "$s"
+      case "$MODE:$LANE" in
+        lane:portable-parallel-1|lane:portable-parallel-2)
+          printf '%s\t%s\n' "$(portable_parallel_weight_for "$s")" "$s"
+          ;;
+        *)
+          printf '%s\t%s\n' "$(portable_serial_weight_for "$s")" "$s"
+          ;;
+      esac
     done | LC_ALL=C sort -t"$(printf '\t')" -k1,1nr -k2,2 | cut -f2-
   else
     for s in "${SCRIPTS[@]+"${SCRIPTS[@]}"}"; do
@@ -2282,6 +2351,12 @@ record_script_result() {
 # because an unbounded suite is what silently outruns its caller's budget.
 run_script_bounded() {  # <script> <out> <stream> <id>
   local script=$1 out=$2 stream=$3 id=$4
+  # Declaring the variables local first keeps the helper's export scoped to this
+  # call and its child script, so the runner's own environment is left as the
+  # caller had it.
+  local GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM
+  # shellcheck source=tests/git-config-helpers.sh
+  . "$ROOT/tests/git-config-helpers.sh" || return
   local rc
   : "$id"
   set +e
