@@ -1,0 +1,6 @@
+=== CI job 'invariants': compatibility pointers (replayed from ci.yml) ===
+ok - CLAUDE.md is the canonical @AGENTS.md pointer
+ok - .claude/skills -> ../.agents/skills
+
+=== CI job 'invariants': personal fleet paths must not be tracked ===
+ok - no personal fleet paths tracked

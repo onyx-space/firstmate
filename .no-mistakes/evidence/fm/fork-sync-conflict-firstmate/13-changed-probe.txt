@@ -1,0 +1,7 @@
+=== control: does the BASE mapping also die on this diff? ===
+fm-test-run: no changed-test mapping for source path: tests/assets/board-render-harness.mjs
+base-mapping rc=2
+=== target mapping again ===
+fm-test-run: no changed-test mapping for source path: tests/assets/board-render-harness.mjs
+target rc=2
+=== worktree clean for probe? ===

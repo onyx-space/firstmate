@@ -1,0 +1,20 @@
+=== every repo path ci.yml invokes must exist and (for bin/) be executable ===
+.agents/skills
+bin/bash
+bin/fm-herdr-ci-cleanup.sh
+bin/fm-install-actionlint.sh
+bin/fm-install-herdr.sh
+bin/fm-install-shellcheck.sh
+bin/fm-install-treehouse.sh
+bin/fm-lint.sh
+bin/fm-test-run.sh
+tests/fm-bearings-snapshot.test.sh
+tests/fm-fleet-snapshot-view.test.sh
+tests/fm-public-followup.test.sh
+
+MISSING: bin/bash
+
+=== every tests/*.test.sh referenced by the workflow exists ===
+ok tests/fm-bearings-snapshot.test.sh
+ok tests/fm-fleet-snapshot-view.test.sh
+ok tests/fm-public-followup.test.sh

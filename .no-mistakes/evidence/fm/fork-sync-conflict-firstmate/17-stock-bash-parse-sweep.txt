@@ -1,0 +1,8 @@
+=== CI job 'macos-stock-bash': stock /bin/bash parse sweep over the merged shell inventory ===
+GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)
+host bash ok
+GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)
+ok - jq present
+inventory files: 119
+parsed=119 parse_fail=0
+ok - every shell file in the merged inventory parses under stock macOS bash 3.2.57

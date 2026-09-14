@@ -1,0 +1,29 @@
+=== review-fix commit scope (must touch only tests/fm-ci-workflow.test.sh) ===
+a27d1b5 no-mistakes(review): Align fm-ci-workflow test to fork's 15-minute parallel caps
+
+ tests/fm-ci-workflow.test.sh | 13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+=== .github/workflows/ci.yml is NOT modified by the review fix ===
+(empty above = untouched)
+
+=== ci.yml parallel job caps on the branch tip ===
+tests-portable-parallel-1  timeout-minutes=15
+tests-portable-parallel-2  timeout-minutes=15
+tests-portable-serial      timeout-minutes=30
+tests-herdr                timeout-minutes=75
+macos-stock-bash           timeout-minutes=10
+lint                       timeout-minutes=25
+test-coverage              timeout-minutes=5
+tests-timing-aggregate     timeout-minutes=5
+invariants                 timeout-minutes=5
+
+=== the fork rationale comment still lives on the two ci.yml cap lines ===
+79:    timeout-minutes: 15
+124:    timeout-minutes: 15
+73:    # so 15 minutes leaves a little over 2x margin over the worst healthy wall.
+75:    # held both heavyweights here and reached the previous 10-minute cap while
+76:    # every script exited 0 (run 34586799603 ran 592.7 s of lane wall clock
+
+=== worktree clean after all drives (no source mutations left) ===
+status lines: 0

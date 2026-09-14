@@ -1,0 +1,18 @@
+=== lanes referenced by ci.yml (job -> lane expression) ===
+tests-portable-parallel-1: --lane portable-parallel-1
+tests-portable-parallel-2: --lane portable-parallel-2
+tests-portable-serial: --lane "$FM_SERIAL_LANE
+tests-herdr: --family real-herdr-gated
+
+=== each ci.yml lane accepted by the runner (membership count) ===
+lane=portable-parallel-1      members=13
+lane=portable-parallel-2      members=11
+lane=portable-serial-1of5     members=34
+lane=portable-serial-2of5     members=34
+lane=portable-serial-3of5     members=33
+lane=portable-serial-4of5     members=35
+lane=portable-serial-5of5     members=33
+family=real-herdr-gated       members=16
+
+=== which lane owns tests/fm-ci-workflow.test.sh ===
+fm-ci-workflow.test.sh -> portable-serial-1of5

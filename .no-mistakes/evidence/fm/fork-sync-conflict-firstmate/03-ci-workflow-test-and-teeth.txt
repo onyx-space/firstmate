@@ -1,0 +1,25 @@
+=== A. branch ci.yml (fork 15) vs aligned test ===
+ok - a newer push to one PR supersedes that PR's in-flight CI
+ok - distinct PRs get distinct concurrency groups
+ok - every main push keeps its own group and is never cancelled
+ok - every ci.yml job carries a finite timeout
+ok - the incident's unbounded jobs keep their recommended caps
+ok - the already-measured lane bounds are unchanged
+rc=0
+
+=== B. adversarial: lower BOTH parallel caps to upstream 10, expect the test to go red ===
+replacements: 2
+tests-portable-parallel-1=10
+tests-portable-parallel-2=10
+ok - a newer push to one PR supersedes that PR's in-flight CI
+ok - distinct PRs get distinct concurrency groups
+ok - every main push keeps its own group and is never cancelled
+ok - every ci.yml job carries a finite timeout
+ok - the incident's unbounded jobs keep their recommended caps
+not ok - tests-portable-parallel-1 timeout must stay 15 minutes, got 10
+rc=1 (expected non-zero)
+
+=== restore ci.yml ===
+git-status-rc=0
+tests-portable-parallel-1=15
+tests-portable-parallel-2=15
