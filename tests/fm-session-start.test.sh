@@ -1909,6 +1909,161 @@ EOF
   pass "unavailable or incompatible tasks-axi falls back to compact manual backlog rendering"
 }
 
+# --- free-form backlog sections ----------------------------------------------
+#
+# A column-0 `## ` heading inside a run of cards is not one of the three
+# headings every backlog reader recognizes, so it cuts the run in two and every
+# card under the new heading stops being readable by id (2026-09-14: a
+# hand-appended section left 36 real cards unreadable). The digest owns the one
+# listing a session start prints, so it must say so rather than drop them.
+
+# write_unrecognized_section_backlog <path>: a real card run in two halves, with
+# markers so a hidden body leaking into the digest is unmistakable.
+write_unrecognized_section_backlog() {
+  local path=$1
+  cat > "$path" <<'EOF'
+# Backlog
+
+## In flight
+- [ ] visible-inflight - A visible in-flight card (repo: firstmate) (kind: ship) (since 2026-07-15)
+
+## Queued
+- [ ] before-cut - A queued card above the free-form heading (repo: firstmate) (kind: ship)
+  BEFORE-CUT-BODY-LINE stays with its own card.
+
+## 其它在途（都还没到能点）
+- [ ] hidden-one - A card under a free-form heading (repo: firstmate) (kind: ship)
+  HIDDEN-ONE-BODY-LINE cannot be dispatched or closed by id.
+- [ ] hidden-two - Another card under a free-form heading (repo: firstmate) (kind: scout)
+
+## Done (10 most recent)
+- [x] landed - DONE-ROW-LINE already landed (repo: firstmate) (kind: ship)
+EOF
+}
+
+test_backlog_free_form_section_is_reported_with_tasks_axi() {
+  local rec root home fakebin out
+  rec=$(new_world backlog-free-form-tasks-axi)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_tasks_axi_compact "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  write_unrecognized_section_backlog "$home/data/backlog.md"
+
+  out=$(FM_FAKE_TASKS_AXI_READY=2 run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+  assert_contains "$out" "warning: 1 unrecognized \`## \` backlog section(s) hide 2 item line(s) from every backlog reader" \
+    "the tasks-axi listing silently dropped the cards a free-form heading hides"
+  assert_contains "$out" "\`## 其它在途（都还没到能点）\`: 2 item line(s)" \
+    "the warning did not name the free-form section and the item lines under it"
+  assert_contains "$out" "move them under \`## In flight\`, \`## Queued\`, or \`## Done\`" \
+    "the warning did not say how to make the hidden cards readable again"
+  assert_not_contains "$out" "HIDDEN-ONE-BODY-LINE" \
+    "the free-form section warning leaked a hidden card's body"
+  assert_not_contains "$out" "## Done (10 most recent)" \
+    "the recognized done heading (with its qualifier) was mistaken for a free-form section"
+
+  pass "a free-form backlog heading and the rows it hides are reported by name and count"
+}
+
+test_backlog_free_form_section_is_reported_with_manual_backend() {
+  local rec root home fakebin out
+  rec=$(new_world backlog-free-form-manual)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  printf '%s\n' manual > "$home/config/backlog-backend"
+  write_unrecognized_section_backlog "$home/data/backlog.md"
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+  assert_contains "$out" "warning: 1 unrecognized \`## \` backlog section(s) hide 2 item line(s) from every backlog reader" \
+    "the manual listing silently dropped the cards a free-form heading hides"
+  assert_contains "$out" "\`## 其它在途（都还没到能点）\`: 2 item line(s)" \
+    "the manual listing warning did not name the free-form section"
+  assert_not_contains "$out" "HIDDEN-ONE-BODY-LINE" \
+    "the manual listing warning leaked a hidden card's body"
+  assert_contains "$out" "- [ ] before-cut - A queued card above the free-form heading" \
+    "a card above the free-form heading stopped being listed"
+  assert_not_contains "$out" "## Done (10 most recent)" \
+    "the recognized done heading (with its qualifier) was mistaken for a free-form section"
+  assert_contains "$out" "(shown 1 in-flight, 0 held or blocked queued, 1 of 1 other queued title line(s); 1 done row(s) omitted)" \
+    "the free-form section changed the listing's own accounting"
+
+  pass "the manual listing reports a free-form section instead of dropping its cards"
+}
+
+test_backlog_recognized_sections_report_nothing() {
+  local rec root home fakebin out
+  rec=$(new_world backlog-free-form-clean)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  printf '%s\n' manual > "$home/config/backlog-backend"
+  cat > "$home/data/backlog.md" <<'EOF'
+# Backlog
+
+## In flight
+- [ ] only-visible - The only card (repo: firstmate) (kind: ship)
+
+## Queued
+
+## Done (10 most recent)
+- [x] landed - Already landed (repo: firstmate) (kind: ship)
+EOF
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+  assert_contains "$out" "- [ ] only-visible - The only card" "the clean backlog stopped being listed"
+  assert_not_contains "$out" "unrecognized \`## \` backlog section(s)" "a backlog of recognized headings was reported as free-form"
+
+  pass "a backlog made only of recognized headings reports nothing"
+}
+
+# The warning counts only the bullet shapes the shared grammar parses, because
+# those are the lines that stop being cards under a free-form heading. The
+# legacy `- **<id>** - ` in-flight card (tasks-axi IN_FLIGHT_RE) is a real card;
+# a `* [ ]` star bullet and a `- [X]` uppercase checkbox are not cards for that
+# parser, so counting "any checkbox-looking line" both missed the legacy card
+# and inflated the count with lines the tool never reads.
+test_backlog_free_form_section_counts_only_real_card_bullets() {
+  local rec root home fakebin out
+  rec=$(new_world backlog-free-form-bullet-shapes)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  printf '%s\n' manual > "$home/config/backlog-backend"
+  cat > "$home/data/backlog.md" <<'EOF'
+# Backlog
+
+## In flight
+- [ ] visible - The only visible card (repo: firstmate) (kind: ship)
+
+## Free-form notes
+- **legacy-card** - written before the checkbox migration
+- [ ] checkbox-card - a card in the checkbox shape (repo: firstmate) (kind: ship)
+* [ ] star-bullet - not a card for the markdown grammar
+- [X] uppercase-checkbox - not the done bullet the grammar writes
+EOF
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+  assert_contains "$out" "warning: 1 unrecognized \`## \` backlog section(s) hide 2 item line(s)" \
+    "the legacy card bullet was not counted as hidden, or non-card bullets inflated the count"
+  assert_contains "$out" "\`## Free-form notes\`: 2 item line(s)" \
+    "the warning did not count exactly the two real card bullets"
+
+  pass "the hidden-item count follows the shared card grammar, not any checkbox-like line"
+}
+
 # --- runtime bound -----------------------------------------------------------
 #
 # The digest runs on a session-open hook that blocks session initialization, so
@@ -2690,6 +2845,10 @@ test_backlog_compact_tasks_axi_omits_bodies_and_keeps_metadata
 test_backlog_queued_bound_discloses_its_remainder
 test_backlog_compact_manual_backend_skips_indented_bodies
 test_backlog_compact_tasks_axi_unavailable_uses_manual_fallback
+test_backlog_free_form_section_is_reported_with_tasks_axi
+test_backlog_free_form_section_is_reported_with_manual_backend
+test_backlog_recognized_sections_report_nothing
+test_backlog_free_form_section_counts_only_real_card_bullets
 test_fleet_digest_empty_fleet
 test_next_step_sources_x_mode_cadence
 test_next_step_afk_delegates_to_daemon

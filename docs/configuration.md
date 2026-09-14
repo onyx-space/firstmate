@@ -116,6 +116,8 @@ Set the local, gitignored `config/backlog-backend` file to `manual` to force man
 A `manual` home owns its backlog file outright: the lifecycle transitions above are skipped there, dispatch and completion never fail over the file's contents, and a completed teardown prints the hand edit that is owed instead.
 Absent or `tasks-axi` selects the tasks-axi path.
 On the default markdown adapter, tasks-axi and manual edits produce the same `## In flight`, `## Queued`, and `## Done` sections.
+Those three headings are the whole grammar, matched case-insensitively with any `Done` qualifier: a column-0 `## ` heading that is none of them is a passthrough section, so every card under it is missing from every state listing and `show` answers NOT_FOUND, while the card text stays in the file.
+Session start names each such section and the cards it hides rather than dropping them silently ([`bin/fm-session-start.sh`](../bin/fm-session-start.sh)).
 
 ## Runtime backend (config/backend / FM_BACKEND)
 
