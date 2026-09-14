@@ -105,6 +105,9 @@
 # always keeps it, on either field, because that path may hold its durable home
 # rather than a disposable pool slot. The recorded endpoint's exact
 # task identity and the record's spawn incarnation are validated separately
+# before cleanup. Its current working directory is only incidental process
+# state: the same worker remains the owner after changing directory, so cwd can
+# never veto teardown of that exact recorded endpoint.
 # Treehouse's own allocation record cannot answer this for a crewmate slot that
 # was released and reassigned, because the record it would read belongs to a
 # worker that has already exited; bin/fm-wake-lib.sh therefore carries a
@@ -116,9 +119,6 @@
 # of it, no return of it, and never the other task's claim. A claim that cannot
 # be read proves nothing either way and refuses; an absent claim keeps exactly the
 # record-scan protection this guard had before claims existed.
-# before cleanup. Its current working directory is only incidental process
-# state: the same worker remains the owner after changing directory, so cwd can
-# never veto teardown of that exact recorded endpoint.
 # The scan and destructive return hold a project-identity lock in the local root
 # Firstmate home's state directory, as resolved by bin/fm-wake-lib.sh's
 # fm_firstmate_root_home; a home seeded from another machine is its own local
