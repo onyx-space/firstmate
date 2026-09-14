@@ -16,7 +16,10 @@
 # actionable event through that endpoint before the endpoint may be committed.
 # An absent status file is a successful empty span, while an existing status
 # object that cannot be read or identified is a classification failure with no
-# committable endpoint.
+# committable endpoint. A readable span whose bounded round stopped short is
+# neither: it is a deferral that reports no endpoint yet and leaves its folded
+# progress for the next call to resume (see "bounded, resumable span scan"
+# below).
 # A presentation marker independently stores the last reported file signature
 # and the last successfully classified position.
 # Successful classification advances both facts through the captured endpoint;
@@ -27,7 +30,7 @@
 # A missing, malformed, identity-mismatched, or past-end classified position reads
 # from byte 0, preferring a bounded duplicate over a lost event.
 #
-# There are three documented exceptions. The absorb classification
+# There are four documented exceptions. The absorb classification
 # (crew_absorb_class and its working/paused wrappers) is NOT a pure status-file
 # read: it reuses bin/fm-crew-state.sh, which may make a bounded no-mistakes call,
 # to decide whether a crew that just stopped its turn or went stale is working,
@@ -37,9 +40,13 @@
 # open-decisions fold" below) also writes: it persists a per-status-file byte
 # cursor and folded open-set as a side effect, so a per-drain fleet-wide scan
 # stays bounded by new appends instead of re-reading each task's whole lifetime
-# log every time. crew_worktree_written_since reads the task's meta file and walks
-# a bounded slice of its worktree instead of a status file, so callers run it only
-# at the moment they would otherwise escalate.
+# log every time. status_span_first_actionable_record (see "bounded, resumable
+# span scan" below) also writes: a round that stops short persists its
+# per-span-start progress cursor beside the status log so the next call resumes
+# it, and removes that cursor once the span is classified.
+# crew_worktree_written_since reads the task's meta file and walks a bounded slice
+# of its worktree instead of a status file, so callers run it only at the moment
+# they would otherwise escalate.
 
 # Directory of this library, used to locate the sibling fm-crew-state.sh reader.
 # Resolved at source time from BASH_SOURCE so it works whether sourced by a
