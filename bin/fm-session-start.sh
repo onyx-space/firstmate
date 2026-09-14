@@ -402,12 +402,13 @@ print_backlog_pointer() {
 # because awk's -v applies escape processing before the regex is ever compiled.
 MANUAL_KEEP_RE='[(]hold|blocked-by:'
 
-# The one owner of the headings a backlog reader recognizes. Mirrors the
-# markdown grammar tasks-axi itself parses (`sectionState` in its
-# src/backends/markdown-grammar.ts): `In flight`, `Queued`, and any heading
-# starting with `Done`, compared case-insensitively. Every reader in this file
-# shares this snippet, so the manual listing and the free-form warning below can
-# never disagree about which headings a card can live under.
+# The one owner of the headings a backlog reader recognizes, and of the card
+# bullet shapes that same grammar parses. Mirrors the markdown grammar
+# tasks-axi itself parses (`sectionState`, `IN_FLIGHT_RE`, `QUEUED_RE`,
+# `DONE_RE` in its src/backends/markdown-grammar.ts): `In flight`, `Queued`,
+# and any heading starting with `Done`, compared case-insensitively. The
+# free-form warning below shares this snippet, so it can never disagree with
+# the manual listing about which headings a card can live under.
 BACKLOG_SECTION_STATE_AWK='
 function backlog_section_state(line, heading) {
   heading = line
@@ -418,6 +419,16 @@ function backlog_section_state(line, heading) {
   if (heading == "queued") return "queued"
   if (heading ~ /^done/) return "done"
   return ""
+}
+
+# The bullet shapes that same grammar parses (IN_FLIGHT_RE / QUEUED_RE /
+# DONE_RE): the checkbox forms `- [ ] <id> - ` and `- [x] <id> - `, plus the
+# legacy `- **<id>** - ` in-flight form. A `- [X]` or a `* [ ]` line is not a
+# card, so neither may be counted as one.
+function backlog_card_line(line) {
+  return line ~ /^- \[ \] [A-Za-z0-9][A-Za-z0-9._-]* - / ||
+         line ~ /^- \[x\] [A-Za-z0-9][A-Za-z0-9._-]* - / ||
+         line ~ /^- \*\*[A-Za-z0-9][A-Za-z0-9._-]*\*\* - /
 }
 '
 
@@ -443,7 +454,7 @@ print_backlog_section_warning() {
       }
       next
     }
-    current > 0 && /^[-*][[:space:]]+\[[ xX]\]/ { hidden[current]++; next }
+    current > 0 && backlog_card_line($0) { hidden[current]++; next }
     END {
       for (i = 1; i <= sections_seen; i++) {
         if (hidden[i] > 0) { hidden_sections++; hidden_rows += hidden[i] }

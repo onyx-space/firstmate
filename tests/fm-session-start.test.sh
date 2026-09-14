@@ -2026,6 +2026,44 @@ EOF
   pass "a backlog made only of recognized headings reports nothing"
 }
 
+# The warning counts only the bullet shapes the shared grammar parses, because
+# those are the lines that stop being cards under a free-form heading. The
+# legacy `- **<id>** - ` in-flight card (tasks-axi IN_FLIGHT_RE) is a real card;
+# a `* [ ]` star bullet and a `- [X]` uppercase checkbox are not cards for that
+# parser, so counting "any checkbox-looking line" both missed the legacy card
+# and inflated the count with lines the tool never reads.
+test_backlog_free_form_section_counts_only_real_card_bullets() {
+  local rec root home fakebin out
+  rec=$(new_world backlog-free-form-bullet-shapes)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  printf '%s\n' manual > "$home/config/backlog-backend"
+  cat > "$home/data/backlog.md" <<'EOF'
+# Backlog
+
+## In flight
+- [ ] visible - The only visible card (repo: firstmate) (kind: ship)
+
+## Free-form notes
+- **legacy-card** - written before the checkbox migration
+- [ ] checkbox-card - a card in the checkbox shape (repo: firstmate) (kind: ship)
+* [ ] star-bullet - not a card for the markdown grammar
+- [X] uppercase-checkbox - not the done bullet the grammar writes
+EOF
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+  assert_contains "$out" "warning: 1 unrecognized \`## \` backlog section(s) hide 2 item line(s)" \
+    "the legacy card bullet was not counted as hidden, or non-card bullets inflated the count"
+  assert_contains "$out" "\`## Free-form notes\`: 2 item line(s)" \
+    "the warning did not count exactly the two real card bullets"
+
+  pass "the hidden-item count follows the shared card grammar, not any checkbox-like line"
+}
+
 # --- runtime bound -----------------------------------------------------------
 #
 # The digest runs on a session-open hook that blocks session initialization, so
@@ -2810,6 +2848,7 @@ test_backlog_compact_tasks_axi_unavailable_uses_manual_fallback
 test_backlog_free_form_section_is_reported_with_tasks_axi
 test_backlog_free_form_section_is_reported_with_manual_backend
 test_backlog_recognized_sections_report_nothing
+test_backlog_free_form_section_counts_only_real_card_bullets
 test_fleet_digest_empty_fleet
 test_next_step_sources_x_mode_cadence
 test_next_step_afk_delegates_to_daemon
