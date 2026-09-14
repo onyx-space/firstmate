@@ -1309,7 +1309,7 @@ malformed target                     unreadable
 The same run drove `bin/fm-spawn.sh --relaunch` against a real Herdr pane whose shell had been moved outside its recorded worktree: the shell was told once to return, ended in the recorded worktree, and the replacement was launched into the SAME pane, leaving one task tab.
 
 The adapter fixture in `tests/fm-backend-herdr.test.sh` covers both response shapes structurally, while the guard always measures whichever binary is installed and stamps the installed version on the verdicts that depend on the installed protocol, and on the failures raised through `version_fail`'s `[herdr <version>]` suffix, so the observations below are a live result on the version they name rather than a fixed protocol's.
-This host held a 0.9.0 binary for the 2026-09-10 lines and a 0.8.2 binary for the 2026-09-15 lines.
+The 2026-09-10 lines were measured on Herdr 0.9.0 and the 2026-09-15 lines on the installed Herdr 0.8.2.
 Refresh the live half, which fails naming the installed version, with:
 
 ```sh
