@@ -161,6 +161,11 @@ FM_TEST_PID_REGISTRY=$(mktemp "${TMPDIR:-/tmp}/.fm-test-pids.$$.XXXXXX") || retu
 
 # Register a process this test started so cleanup can reap it. An empty or
 # non-numeric pid is ignored rather than recorded as something unkillable.
+# Note the registry's actual reach: every current spawn site starts its watcher
+# as a direct `&` child of the test shell, so fm_test_track_background_jobs
+# covers them and this explicit call is only needed for a spawn that happens
+# somewhere the job table cannot see - a command substitution or a subshell - of
+# which there are none today.
 fm_test_track_pid() {  # <pid>
   local pid=$1
   case "$pid" in ''|*[!0-9]*) return 0 ;; esac

@@ -972,6 +972,11 @@ test_ce_workflow_boundary_section() {
 # brief must never send a worker to retitle an upstream PR into Chinese. The
 # retired ce-translate route for PR text is stated as a prohibition rather than
 # removed from the CE allow-list, since ce-translate is still a general capability.
+# The self-check also names the two things that let six consecutive PRs ship a
+# Chinese body with the pipeline's own English notes left untranslated: it must
+# run against the live body the pipeline writes, and it must cover every English
+# sentence outside the fold, the pipeline's appended validation/evidence/update
+# notes included. Both are asserted below, so the block cannot silently lose them.
 test_pr_description_discipline_section() {
   local home id mode brief
   home="$TMP_ROOT/pr-description-home"
@@ -1002,6 +1007,16 @@ test_pr_description_discipline_section() {
       "$mode brief does not self-check the folded English body"
     assert_grep '<details><summary>English</summary>' "$brief" \
       "$mode brief does not name the required English fold"
+    # The check must be run against what the pipeline actually published, and it
+    # must cover the sentences the pipeline appends itself: a worker checking only
+    # its own draft left a Chinese-first PR carrying English validation and
+    # evidence notes.
+    assert_grep 're-read them from the forge first, never your own draft' "$brief" \
+      "$mode brief does not require the self-check against the live body"
+    assert_grep 'does every English SENTENCE outside the fold have Chinese' "$brief" \
+      "$mode brief does not require every English sentence to have Chinese"
+    assert_grep 'the pipeline appends itself when it opens or updates the PR' "$brief" \
+      "$mode brief does not name the pipeline's own appended notes"
     # The contract is the captain's own-repo rule, so the self-check must first
     # make the worker classify the PR and must exempt a third-party upstream
     # instead of directing it to a Chinese title.

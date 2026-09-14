@@ -220,11 +220,12 @@ fm_pr_description_block() {  # <mode>
 # PR description
 Before you write or edit a pull request description, read the `pr-description` skill (`~/.agents/skills/pr-description/SKILL.md`); it is the single owner of that contract.
 Do not use `ce-translate` for a PR description.
-Before you report the PR ready, self-check the live title and body against that skill's rule for this PR's kind:
+Before you report the PR ready, self-check the live title and body against that skill's rule for this PR's kind - re-read them from the forge first, never your own draft, because the pipeline writes the body when it opens the PR and a check against a draft cannot see what it appends:
 - Captain's own repo (GitHub `onyx-space/*`, internal Gitea `admin/*` and `AI.Buddy/*`) - the Chinese-first contract applies; fix any "no" before you report:
   - Title: Chinese after the conventional-commit prefix (`feat(scope): <中文>`)?
   - Body: Chinese visible first, above the fold?
   - Body: the English body folded inside `<details><summary>English</summary>`?
+  - Body: does every English SENTENCE outside the fold have Chinese, including the validation, evidence, and update notes the pipeline appends itself when it opens or updates the PR? Only code, commands, paths, identifiers, and the folded machine output may stay English; an untranslated sentence there is a miss, because it is narration rather than machine output.
 - Third-party upstream repo - the Chinese-first contract does not apply; follow that upstream's own conventions, usually English, and never rewrite a third-party upstream PR title into Chinese.
 EOF
 }

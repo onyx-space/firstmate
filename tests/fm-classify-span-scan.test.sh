@@ -279,11 +279,17 @@ assert_equivalent "$eq_log" "$(line_offset "$eq_log" 12)" "late start: bounded s
 assert_equivalent "$eq_log" 999999 "start past the end: bounded scan equals the whole-file fold"
 pass "equivalence: bounded span scan equals the whole-file fold on every start offset"
 
-# A span that begins mid-line is the one case the two disagree on, and the
-# disagreement is one-directional: the whole-file fold compared a span position
-# against an absolute one and reported no live declaration at all, while the
-# bounded scan's positions are self-consistent and report it. The bounded scan
-# must never report less than the fold did.
+# A span that begins mid-line is the one case the two disagree on. A recorded
+# classified offset is a captured file size, so it can land inside a line whose
+# writer had not emitted the newline yet. There the whole-file fold compared a
+# span position against an absolute one and reported the SUPERSEDED declaration,
+# while the bounded scan's positions are self-consistent and report the live one.
+#
+# What is required is that the LIVE declaration is reported and the reported
+# decision count never falls below the fold's; the superseded first declaration
+# is allowed to be absent in this shape, and reporting it instead would be the
+# regression. The dedicated case below pins exactly that, with a key declared
+# twice on consecutive lines.
 mid_off=$(( $(line_offset "$eq_log" 4) + 3 ))
 mid_ref=$(reference_scan "$eq_log" "$mid_off")
 mid_new=$(bounded_scan_all "$eq_log" "$mid_off")
@@ -294,6 +300,30 @@ assert_contains "$mid_new" 'needs-decision: [key=dec-4] pick a path 4' \
 assert_contains "$mid_new" 'reconciliation-required: blocked: [key=pending-reply-x]' \
   "the bounded scan dropped a plain event the whole-file fold reported"
 pass "equivalence: a mid-line span reports the live declarations the absolute-numbered fold dropped"
+
+# The two directions of that allowed difference, pinned on the shape that
+# produces it: one key declared twice on consecutive lines, classified from
+# inside the first of them. The bounded scan must report the live second
+# declaration and must not report the superseded first; the whole-file fold does
+# the opposite, which is why this case exists.
+mid_line_dir="$STATE/mid-line"
+mkdir -p "$mid_line_dir" || fail "could not create $mid_line_dir"
+mid_line_log="$mid_line_dir/status.status"
+printf 'needs-decision: [key=k] first\nneeds-decision: [key=k] second\n' > "$mid_line_log" \
+  || fail "could not build the mid-line fixture"
+mid_line_start=$(( $(line_offset "$mid_line_log" 1) + 5 ))
+mid_line_ref=$(reference_scan "$mid_line_log" "$mid_line_start")
+mid_line_new=$(bounded_scan_all "$mid_line_log" "$mid_line_start")
+assert_contains "$mid_line_new" 'needs-decision: [key=k] second' \
+  "the bounded scan did not report the live declaration"
+assert_not_contains "$mid_line_new" 'needs-decision: [key=k] first' \
+  "the bounded scan reported the superseded declaration instead of the live one"
+assert_not_contains "$mid_line_ref" 'needs-decision: [key=k] second' \
+  "the whole-file fold reported the live declaration, so this case proves nothing"
+if [ -e "$mid_line_dir/.status.span-scan-cursor.$mid_line_start" ]; then
+  fail "the mid-line classification left its cursor behind"
+fi
+pass "mid-line span: the live declaration is reported, the superseded one is not, and the fold is the side that dropped it"
 
 # The reused path matters: the same log classified twice must not carry state
 # from the first pass into the second.

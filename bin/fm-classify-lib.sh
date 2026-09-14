@@ -1727,11 +1727,19 @@ _fm_status_open_decision_origins() {  # <status-file>
 # Positions are the span's own line numbers, one numbering for both the origin
 # map and the candidate lines it is compared against. That is exactly what the
 # whole-file fold compared whenever a span began on a line boundary - the case a
-# recorded classified position produces - and it is self-consistent when a span
-# instead begins mid-line, where the whole-file fold compared a span position
-# against an absolute one and so reported no live declaration at all. The
-# bounded scan therefore never reports less than the fold did; see
-# tests/fm-classify-span-scan.test.sh, which pins both directions.
+# recorded classified position normally produces. When a span instead begins
+# mid-line the two disagree, and the bounded scan is the more correct side: the
+# whole-file fold compared a span position against an absolute one, so for a key
+# declared twice on consecutive lines it reported the SUPERSEDED first
+# declaration and never the live second one, while the bounded scan reports the
+# live declaration and drops the superseded one.
+#
+# So what a bounded scan guarantees is that it never reduces what is reported: it
+# never drops a decision, never turns a decision-owned event into an ordinary
+# one, and never turns a readable log into an unreadable one. It may report the
+# live declaration instead of a superseded one in the mid-line shape above, which
+# is strictly better rather than a lost event. tests/fm-classify-span-scan.test.sh
+# pins that shape and says which direction the difference is allowed to take.
 #
 # A run of rounds is visible rather than silent: the round that stops short
 # writes one diagnostic line and leaves FM_CLASSIFY_SPAN_SCAN_NOTICE set for the
