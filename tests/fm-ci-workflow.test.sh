@@ -134,6 +134,15 @@ CAPS
 
 # Cancellation makes an undersized cap costlier: a falsely tripped job now also
 # discards a run nobody replaced. These bounds were measured, not guessed.
+#
+# fork deviation: the two portable parallel caps are 15, not upstream's measured
+# 10. The fork raised them in ac30b31 because this fork's lane reached the old
+# 10-minute cap at 592.7 s of wall clock while every script exited 0; the
+# rationale lives on the timeout-minutes lines of .github/workflows/ci.yml
+# (tests-portable-parallel-1 and tests-portable-parallel-2). If upstream later
+# treats the 10-minute value as a contract, realign these two rows at the next
+# sync. The rows below stay live expectations: lowering ci.yml back to 10 fails
+# this test.
 test_measured_lanes_keep_their_existing_bounds() {
   local job expected actual
   while read -r job expected; do
@@ -142,8 +151,8 @@ test_measured_lanes_keep_their_existing_bounds() {
     [ "$actual" = "$expected" ] \
       || fail "$job timeout must stay $expected minutes, got $actual"
   done <<'CAPS'
-tests-portable-parallel-1 10
-tests-portable-parallel-2 10
+tests-portable-parallel-1 15
+tests-portable-parallel-2 15
 tests-portable-serial 30
 tests-herdr 75
 macos-stock-bash 10
