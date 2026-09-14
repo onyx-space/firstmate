@@ -1,0 +1,73 @@
+=== LIVE DRIVE: bin/fm-session-start.sh against isolated firstmate homes ===
+target script: /Users/onyx/.no-mistakes/worktrees/9573b29b9316/01M2G5ES57WJ376F3568ZJJDNJ/bin/fm-session-start.sh (commit 7bdced1)
+base script:   ddb70a6:bin/fm-session-start.sh (extracted to /tmp)
+real tasks-axi: 0.2.5 at /Users/onyx/.local/bin/tasks-axi
+
+########## SCENARIO A: mixed backlog, tasks-axi backend (intent's shape: 30 visible / 36 hidden) ##########
+digest_rc=0
+--- digest: warning lines ---
+137:warning: 3 unrecognized `## ` backlog section(s) hide 36 item line(s) from every backlog reader; move them under `## In flight`, `## Queued`, or `## Done`
+138:  - `## 其它在途（都还没到能点）`: 4 item line(s)
+139:  - `## 🚧 在跑，PR 还没开`: 5 item line(s)
+140:  - `## 2026-09-14 复现补记`: 27 item line(s)
+--- digest: leaked hidden body marker count ---
+0
+--- tasks-axi truth: ids visible per state ---
+in_flight: inflight-00,in_flight,ship,firstmate,In-flight,inflight-01,in_flight,ship,firstmate,In-flight,inflight-02,in_flight,ship,firstmate,In-flight,inflight-03,in_flight,ship,firstmate,In-flight,inflight-04,in_flight,ship,firstmate,In-flight,inflight-05,in_flight,ship,firstmate,In-flight,inflight-06,in_flight,ship,firstmate,In-flight,inflight-07,in_flight,ship,firstmate,In-flight,inflight-08,in_flight,ship,firstmate,In-flight,inflight-09,in_flight,ship,firstmate,In-flight,inflight-10,in_flight,ship,firstmate,In-flight,inflight-11,in_flight,ship,firstmate,In-flight  (12 ids)
+queued: queued-00,queued,scout,firstmate,Queued,queued-01,queued,scout,firstmate,Queued,queued-02,queued,scout,firstmate,Queued,queued-03,queued,scout,firstmate,Queued,queued-04,queued,scout,firstmate,Queued,queued-05,queued,scout,firstmate,Queued,queued-06,queued,scout,firstmate,Queued,queued-07,queued,scout,firstmate,Queued,queued-08,queued,scout,firstmate,Queued,queued-09,queued,scout,firstmate,Queued  (10 ids)
+done: done-00,done,ship,firstmate,Landed,done-01,done,ship,firstmate,Landed,done-02,done,ship,firstmate,Landed,done-03,done,ship,firstmate,Landed,done-04,done,ship,firstmate,Landed,done-05,done,ship,firstmate,Landed,done-06,done,ship,firstmate,Landed,done-07,done,ship,firstmate,Landed  (8 ids)
+digest=/tmp/fm-live-78150/A/digest.txt
+
+########## SCENARIO B: same backlog, manual backlog-backend ##########
+digest_rc=0
+--- digest: warning lines ---
+122:warning: 3 unrecognized `## ` backlog section(s) hide 36 item line(s) from every backlog reader; move them under `## In flight`, `## Queued`, or `## Done`
+123:  - `## 其它在途（都还没到能点）`: 4 item line(s)
+124:  - `## 🚧 在跑，PR 还没开`: 5 item line(s)
+125:  - `## 2026-09-14 复现补记`: 27 item line(s)
+--- digest: leaked hidden body marker count ---
+0
+--- tasks-axi truth: ids visible per state ---
+in_flight: inflight-00,in_flight,ship,firstmate,In-flight,inflight-01,in_flight,ship,firstmate,In-flight,inflight-02,in_flight,ship,firstmate,In-flight,inflight-03,in_flight,ship,firstmate,In-flight,inflight-04,in_flight,ship,firstmate,In-flight,inflight-05,in_flight,ship,firstmate,In-flight,inflight-06,in_flight,ship,firstmate,In-flight,inflight-07,in_flight,ship,firstmate,In-flight,inflight-08,in_flight,ship,firstmate,In-flight,inflight-09,in_flight,ship,firstmate,In-flight,inflight-10,in_flight,ship,firstmate,In-flight,inflight-11,in_flight,ship,firstmate,In-flight  (12 ids)
+queued: queued-00,queued,scout,firstmate,Queued,queued-01,queued,scout,firstmate,Queued,queued-02,queued,scout,firstmate,Queued,queued-03,queued,scout,firstmate,Queued,queued-04,queued,scout,firstmate,Queued,queued-05,queued,scout,firstmate,Queued,queued-06,queued,scout,firstmate,Queued,queued-07,queued,scout,firstmate,Queued,queued-08,queued,scout,firstmate,Queued,queued-09,queued,scout,firstmate,Queued  (10 ids)
+done: done-00,done,ship,firstmate,Landed,done-01,done,ship,firstmate,Landed,done-02,done,ship,firstmate,Landed,done-03,done,ship,firstmate,Landed,done-04,done,ship,firstmate,Landed,done-05,done,ship,firstmate,Landed,done-06,done,ship,firstmate,Landed,done-07,done,ship,firstmate,Landed  (8 ids)
+digest=/tmp/fm-live-78150/B/digest.txt
+
+########## SCENARIO C (adversarial: no false positive): recognized-only backlog ##########
+digest_rc=0
+--- digest: warning lines ---
+(no warning emitted)
+--- digest: leaked hidden body marker count ---
+0
+--- tasks-axi truth: ids visible per state ---
+in_flight: only-visible,in_flight,ship,firstmate,The  (1 ids)
+queued:   (0 ids)
+done: landed,done,ship,firstmate,Already  (1 ids)
+digest=/tmp/fm-live-78150/C/digest.txt
+
+########## SCENARIO D (adversarial: bullet shapes): only real card bullets counted ##########
+digest_rc=0
+--- digest: warning lines ---
+101:warning: 1 unrecognized `## ` backlog section(s) hide 2 item line(s) from every backlog reader; move them under `## In flight`, `## Queued`, or `## Done`
+102:  - `## Free-form notes`: 2 item line(s)
+--- digest: leaked hidden body marker count ---
+0
+--- tasks-axi truth: ids visible per state ---
+in_flight: visible-plain,in_flight,ship,firstmate,a,legacy-visible,in_flight,ship,firstmate,legacy  (2 ids)
+queued:   (0 ids)
+done:   (0 ids)
+digest=/tmp/fm-live-78150/D/digest.txt
+
+########## SCENARIO E (adversarial: heading mirror): lookalike headings flagged, Done* not flagged ##########
+digest_rc=0
+--- digest: warning lines ---
+100:warning: 2 unrecognized `## ` backlog section(s) hide 2 item line(s) from every backlog reader; move them under `## In flight`, `## Queued`, or `## Done`
+101:  - `## In-flight`: 1 item line(s)
+102:  - `## Queued (captain-gated)`: 1 item line(s)
+--- digest: leaked hidden body marker count ---
+0
+--- tasks-axi truth: ids visible per state ---
+in_flight: normal-inflight,in_flight,ship,firstmate,normal  (1 ids)
+queued:   (0 ids)
+done: doneish-landed,done,ship,firstmate,recognized  (1 ids)
+digest=/tmp/fm-live-78150/E/digest.txt

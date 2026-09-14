@@ -1,0 +1,50 @@
+data/backlog.md
+--------------------------------------------------------------------------------
+compact backlog listing (tasks-axi; done rows omitted; every in-flight, held, and blocked row shown in full; ready queued bounded to 20; task bodies omitted)
+
+in flight:
+count: 12
+tasks[12]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:
+  inflight-00,in_flight,ship,firstmate,In-flight card 0,none,"-","-"
+  inflight-01,in_flight,ship,firstmate,In-flight card 1,none,"-","-"
+  inflight-02,in_flight,ship,firstmate,In-flight card 2,none,"-","-"
+  inflight-03,in_flight,ship,firstmate,In-flight card 3,none,"-","-"
+  inflight-04,in_flight,ship,firstmate,In-flight card 4,none,"-","-"
+  inflight-05,in_flight,ship,firstmate,In-flight card 5,none,"-","-"
+  inflight-06,in_flight,ship,firstmate,In-flight card 6,none,"-","-"
+  inflight-07,in_flight,ship,firstmate,In-flight card 7,none,"-","-"
+  inflight-08,in_flight,ship,firstmate,In-flight card 8,none,"-","-"
+  inflight-09,in_flight,ship,firstmate,In-flight card 9,none,"-","-"
+  inflight-10,in_flight,ship,firstmate,In-flight card 10,none,"-","-"
+  inflight-11,in_flight,ship,firstmate,In-flight card 11,none,"-","-"
+
+held (captain- or time-gated; an in-flight item that is also held appears in both groups):
+count: 0
+tasks: 0 held tasks in this backlog
+
+blocked queued:
+count: 0
+tasks: 0 blocked queued tasks in this backlog
+
+ready queued (dispatchable now):
+count: 10
+ready[10]{id,state,kind,repo,title}:
+  queued-00,queued,scout,firstmate,Queued card 0
+  queued-01,queued,scout,firstmate,Queued card 1
+  queued-02,queued,scout,firstmate,Queued card 2
+  queued-03,queued,scout,firstmate,Queued card 3
+  queued-04,queued,scout,firstmate,Queued card 4
+  queued-05,queued,scout,firstmate,Queued card 5
+  queued-06,queued,scout,firstmate,Queued card 6
+  queued-07,queued,scout,firstmate,Queued card 7
+  queued-08,queued,scout,firstmate,Queued card 8
+  queued-09,queued,scout,firstmate,Queued card 9
+ready_public_followups: 0 delivery-ready obligations
+(shown 10 of 10 ready queued item(s))
+warning: 3 unrecognized `## ` backlog section(s) hide 36 item line(s) from every backlog reader; move them under `## In flight`, `## Queued`, or `## Done`
+  - `## 其它在途（都还没到能点）`: 4 item line(s)
+  - `## 🚧 在跑，PR 还没开`: 5 item line(s)
+  - `## 2026-09-14 复现补记`: 27 item line(s)
+Full task bodies remain available on demand: tasks-axi show <id> --full when compatible tasks-axi is available, or data/backlog.md.
+
+Work under way (state/*.meta)

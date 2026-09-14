@@ -1,0 +1,41 @@
+=== REAL tasks-axi 0.2.5 vs the isolated 66-card backlog ===
+file: /tmp/fm-live-78150/A/home/data/backlog.md (12 in-flight + 10 queued + 8 done visible; 36 cards under three free-form headings)
+
+--- list --state in_flight / queued / done ---
+$ tasks-axi list --state in_flight
+  visible ids: 12
+$ tasks-axi list --state queued
+  visible ids: 10
+$ tasks-axi list --state done
+  visible ids: 8
+
+--- the intent's trigger: show/update/done a card under a free-form heading ---
+$ tasks-axi show hidden-a0
+  error: "Task \"hidden-a0\" not found in this backlog"
+  code: NOT_FOUND
+  help[1]: Run `tasks-axi list --file=/tmp/fm-live-78150/probe.md` to see existing tasks
+$ tasks-axi update hidden-a0 --title captain-tries-to-edit
+  error: "Task \"hidden-a0\" not found in this backlog"
+  code: NOT_FOUND
+  help[1]: Run `tasks-axi list --file=/tmp/fm-live-78150/probe.md` to see existing tasks
+$ tasks-axi done hidden-c26
+  error: "Task \"hidden-c26\" not found in this backlog"
+  code: NOT_FOUND
+  help[1]: Run `tasks-axi list --file=/tmp/fm-live-78150/probe.md` to see existing tasks
+
+--- visible-card control ---
+$ tasks-axi show inflight-00
+  task:
+    id: inflight-00
+    title: captain edits a visible card
+$ tasks-axi update inflight-00 --title captain-edits-visible-card
+  ok: updated inflight-00 (title)
+  task:
+    id: inflight-00
+    title: captain-edits-visible-card
+
+--- heading mirror boundary (scenario E fixture) ---
+  normal-inflight -> task:
+  hyphen-lookalike -> error: "Task \"hyphen-lookalike\" not found in this backlog"
+  qualified-queued -> error: "Task \"qualified-queued\" not found in this backlog"
+  doneish-landed -> task:
