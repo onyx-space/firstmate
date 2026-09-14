@@ -56,6 +56,14 @@ Exercise Herdr lifecycle control safely.
 Keep the isolated endpoint and worktree intact.
 EOF
 
+# Replacement harness stand-ins must be resolvable in a pane this run never
+# controls: a REBUILT endpoint is created by the Herdr server, which passes its
+# own startup environment to every pane it spawns (bin/backends/herdr.sh's
+# server notes), so the fake has to be on PATH before that server starts.
+FAKEBIN="$SCRATCH/fakebin"
+mkdir -p "$FAKEBIN"
+export PATH="$FAKEBIN:$PATH"
+
 # A real git worktree so the control plane's checkpoint has a real local copy.
 PROJ="$SCRATCH/proj"
 WT="$SCRATCH/wt"
@@ -154,8 +162,6 @@ STATE=$(fm_backend_agent_state herdr "$SESSION:$PANE_ID")
   || version_fail "a malformed endpoint target does not stay unreadable"
 pass "real herdr $HERDR_VERSION: a gone session reads recoverable while a live pane and a malformed target do not"
 
-FAKEBIN="$SCRATCH/fakebin"
-mkdir -p "$FAKEBIN"
 cat > "$FAKEBIN/codex" <<EOF
 #!/usr/bin/env bash
 : > "$SCRATCH/codex-launched"
@@ -309,6 +315,121 @@ awk -F= '$1 == "harness" {$0="harness=claude"} {print}' "$HOME_DIR/state/hsmoke.
   > "$HOME_DIR/state/hsmoke.meta.tmp"
 mv "$HOME_DIR/state/hsmoke.meta.tmp" "$HOME_DIR/state/hsmoke.meta"
 pass "real herdr: a stale registration no longer blocks relaunch, and the endpoint and local copy survive"
+
+# --- a structurally gone endpoint: the pane itself is closed --------------
+#
+# The 2026-09-15 shape (backlog card
+# herdr-stale-agent-status-blocks-lifecycle): the recorded pane no longer
+# exists at all, so herdr answers pane_not_found. That answer is authoritative
+# absence, so the recovery-grade read must settle on `missing` - never on
+# `alive` and never on `unreadable`. `missing` is what lets the two halves of
+# the control plane agree instead of deadlocking: there is no agent left for
+# `exit` to stop, and `bin/fm-spawn.sh --relaunch` rebuilds the endpoint
+# through its rehome branch rather than refusing forever.
+#
+# The divergence control is the SAME task before its pane is closed: a present,
+# agent-free endpoint must read `dead`, so the rebuild branch can never be
+# reached for an endpoint that is still there.
+GONE_BRANCH=hgone
+WT_GONE="$SCRATCH/wt-gone"
+git -C "$PROJ" worktree add --quiet -b "$GONE_BRANCH" "$WT_GONE" \
+  || fail 'could not create the gone-endpoint task worktree'
+mkdir -p "$HOME_DIR/data/$GONE_BRANCH"
+cat > "$HOME_DIR/data/$GONE_BRANCH/brief.md" <<'EOF'
+# Task
+## Captain's intent
+Exercise recovery of a structurally gone Herdr endpoint safely.
+
+## Firstmate spec
+Rebuild the endpoint and keep the local copy intact.
+EOF
+read -r TAB_GONE PANE_GONE <<EOF
+$(fm_backend_herdr_create_task "$CONTAINER" "fm-$GONE_BRANCH" "$WT_GONE" "")
+EOF
+[ -n "$TAB_GONE" ] && [ -n "$PANE_GONE" ] \
+  || fail 'create_task did not return the gone-endpoint tab/pane ids'
+{
+  echo "window=$SESSION:$PANE_GONE"
+  echo "endpoint_task_id=$GONE_BRANCH"
+  echo "worktree=$WT_GONE"
+  echo "project=$PROJ"
+  echo "harness=codex"
+  echo "kind=ship"
+  echo "mode=no-mistakes"
+  echo "yolo=off"
+  echo "model=default"
+  echo "effort=default"
+  echo "backend=herdr"
+  echo "herdr_session=$SESSION"
+  echo "herdr_workspace_id=$WORKSPACE_ID"
+  echo "herdr_tab_id=$TAB_GONE"
+  echo "herdr_pane_id=$PANE_GONE"
+} > "$HOME_DIR/state/$GONE_BRANCH.meta"
+
+[ "$(fm_backend_agent_state herdr "$SESSION:$PANE_GONE")" = dead ] \
+  || version_fail "a present, agent-free pane reads '$(fm_backend_agent_state herdr "$SESSION:$PANE_GONE")' rather than 'dead'; a reachable endpoint must never take the rebuild branch"
+
+# fm_backend_herdr_kill is the production close path this suite already uses;
+# the pane ends up gone the same way it does when a worker dies with its pane.
+fm_backend_herdr_kill "$SESSION:$PANE_GONE" || true
+GONE_RAW=$(herdr pane get "$PANE_GONE" --session "$SESSION" 2>&1 || true)
+case "$GONE_RAW" in
+  *pane_not_found*) : ;;
+  *) version_fail "a closed pane no longer answers pane_not_found: $GONE_RAW" ;;
+esac
+GONE_STATE=$(fm_backend_agent_state herdr "$SESSION:$PANE_GONE")
+[ "$GONE_STATE" = missing ] \
+  || version_fail "a recorded pane that no longer exists reads '$GONE_STATE' rather than 'missing'; every relaunch of that endpoint would be refused"
+pass "real herdr $HERDR_VERSION: a closed pane reads pane_not_found and classifies missing"
+
+# The replacement is an inert stand-in: it registers itself on whatever pane
+# Herdr gives it and stays there as the foreground process, so the relaunch can
+# finish on the supported path without a real harness.
+cat > "$FAKEBIN/codex" <<EOF
+#!/usr/bin/env bash
+: > "$SCRATCH/gone-launched"
+if [ -n "\${HERDR_PANE_ID:-}" ] && [ -n "\${HERDR_SESSION:-}" ]; then
+  herdr pane report-agent "\$HERDR_PANE_ID" --source fm-control-smoke --agent codex --state idle --session "\$HERDR_SESSION" >/dev/null 2>&1 || true
+fi
+exec sleep 900
+EOF
+chmod +x "$FAKEBIN/codex"
+rm -f "$SCRATCH/gone-launched"
+if ! OUT=$(env FM_HOME="$HOME_DIR" HERDR_SESSION="$SESSION" FM_SPAWN_NO_GUARD=1 \
+    FM_CONTROL_POLL=0.2 FM_CONTROL_EXIT_WAIT=2 FM_CONTROL_LAUNCH_WAIT=60 \
+    "$ROOT/bin/fm-control.sh" "$GONE_BRANCH" relaunch \
+      --note 'the agent exited and its pane went with it' 2>&1); then
+  fail "a structurally gone Herdr endpoint must be relaunchable: $OUT"
+fi
+case "$OUT" in
+  *"did not stop"*) fail "relaunch must not try to stop an endpoint that no longer exists: $OUT" ;;
+esac
+case "$OUT" in
+  *"relaunched $GONE_BRANCH harness=codex"*) : ;;
+  *) fail "the rebuild should report the relaunch it performed, got: $OUT" ;;
+esac
+for _ in $(seq 1 20); do
+  [ ! -e "$SCRATCH/gone-launched" ] || break
+  sleep 0.1
+done
+[ -e "$SCRATCH/gone-launched" ] \
+  || fail 'the replacement harness was never launched into the rebuilt endpoint'
+GONE_WINDOW=$(sed -n 's/^window=//p' "$HOME_DIR/state/$GONE_BRANCH.meta" | tail -1)
+[ "$GONE_WINDOW" != "$SESSION:$PANE_GONE" ] \
+  || fail "the relaunch reused the gone endpoint instead of rebuilding it"
+case "$GONE_WINDOW" in
+  "$SESSION:"*) : ;;
+  *) fail "the rebuilt record names an endpoint outside this lab session: '$GONE_WINDOW'" ;;
+esac
+herdr pane get "${GONE_WINDOW#*:}" --session "$SESSION" >/dev/null 2>&1 \
+  || fail "the rebuilt endpoint '$GONE_WINDOW' does not exist"
+[ -d "$WT_GONE" ] || fail 'the rebuild must never remove the local copy'
+GONE_JOURNAL="$HOME_DIR/state/$GONE_BRANCH.control-relaunch"
+[ "$(sed -n 's/^phase=//p' "$GONE_JOURNAL" | tail -1)" = complete ] \
+  || fail "the rebuild did not complete: $(cat "$GONE_JOURNAL" 2>/dev/null)"
+[ "$(sed -n 's/^exit_result=//p' "$GONE_JOURNAL" | tail -1)" = endpoint-missing ] \
+  || fail "the relaunch must record that it skipped stopping a gone endpoint, got '$(sed -n 's/^exit_result=//p' "$GONE_JOURNAL" | tail -1)'"
+pass "real herdr: a closed endpoint is rebuilt by relaunch and the local copy survives"
 
 # Last, because it deliberately types a harness command into a foreground
 # process that ignores it: the registered agent cannot actually be stopped
