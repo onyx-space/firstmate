@@ -662,4 +662,36 @@ if [ -e "$tail_dir/.status.span-scan-cursor.0" ]; then
 fi
 pass "tail decision: resuming reaches a decision in the span's tail, and an unfinished round reports none of it"
 
+# --- caller-named output variables the scan's own frames must not swallow ---
+
+# The helper assigns its record and decision flag to variables the CALLER names,
+# and bash sends `printf -v` to the nearest enclosing frame that declares that
+# name. A caller following the documented contract must get its answers back even
+# when it picks a name one of the scan's own inner frames happens to use.
+assert_out_params() {  # <record-var> <needs-var> <expected-record>
+  local rv=$1 nv=$2 want=$3 got_record got_needs
+  eval "$rv=''"
+  eval "$nv=''"
+  status_span_first_actionable_record "$shadow_log" 0 "$rv" "$nv" 2>/dev/null
+  eval "got_record=\${$rv-}"
+  eval "got_needs=\${$nv-}"
+  [ "$got_record" = "$want" ] \
+    || fail "record-var '$rv' was not assigned (got '$got_record', want '$want')"
+  [ "$got_needs" = 1 ] || fail "needs-var '$nv' was not assigned (got '$got_needs')"
+}
+
+out_param_dir="$STATE/out-var"
+mkdir -p "$out_param_dir" || fail "could not create $out_param_dir"
+shadow_log="$out_param_dir/status.status"
+{
+  printf 'working: first\n'
+  printf 'needs-decision: [key=shadow] second\n'
+} > "$shadow_log"
+shadow_record=$(status_span_first_actionable_record "$shadow_log" 0 2>/dev/null)
+[ -n "$shadow_record" ] || fail "the out-parameter fixture produced no record to compare against"
+assert_out_params out text "$shadow_record"
+assert_out_params rec needs "$shadow_record"
+assert_out_params live emitted "$shadow_record"
+pass "out-parameters: a caller-named record and decision variable survive the scan's inner frames"
+
 printf 'ok - fm-classify-span-scan\n'

@@ -1764,12 +1764,12 @@ _fm_span_scan_cursor_exists() {  # <state> <task-id>
 }
 
 _fm_span_scan_emit() {  # <record> <needs-flag> <output-var> <needs-var>
-  local result=$1 needs=$2 output_var=${3-} needs_var=${4-}
-  if [ -n "$output_var" ]; then
-    printf -v "$output_var" '%s' "$result"
-    [ -z "$needs_var" ] || printf -v "$needs_var" '%s' "$needs"
+  local _fmse_result=$1 _fmse_needs=$2 _fmse_output_var=${3-} _fmse_needs_var=${4-}
+  if [ -n "$_fmse_output_var" ]; then
+    printf -v "$_fmse_output_var" '%s' "$_fmse_result"
+    [ -z "$_fmse_needs_var" ] || printf -v "$_fmse_needs_var" '%s' "$_fmse_needs"
   else
-    printf '%s' "$result"
+    printf '%s' "$_fmse_result"
   fi
 }
 
@@ -2034,32 +2034,33 @@ _fm_span_scan_round() {  # <chunk-file> <rest-file>
 # only while it is still its key's live declaration, plain events always, both
 # in the order the log carried them.
 _fm_span_scan_finalize() {  # <size> <ident> <output-var> <needs-var>
-  local size=$1 ident=$2 output_var=${3-} needs_var=${4-}
-  local rec tag rest key pos verb text live out='' emitted=0 needs=$FM_SPAN_SCAN_ND result
-  while IFS= read -r rec || [ -n "$rec" ]; do
-    [ -n "$rec" ] || continue
-    tag=${rec%%$'\t'*}
-    rest=${rec#*$'\t'}
-    key=${rest%%$'\t'*}; rest=${rest#*$'\t'}
-    pos=${rest%%$'\t'*}; rest=${rest#*$'\t'}
-    verb=${rest%%$'\t'*}; text=${rest#*$'\t'}
-    if [ "$tag" = D ]; then
-      _fm_span_origin_line_into live "$key" || continue
-      [ "$live" = "$pos" ] || continue
-      case "$verb" in
-        needs-decision) needs=1 ;;
-        blocked) _fm_is_pending_reply_escalation "$key" "$(status_line_note "$text")" && needs=1 ;;
+  local _fmss_size=$1 _fmss_ident=$2 _fmss_output_var=${3-} _fmss_needs_var=${4-}
+  local _fmss_rec _fmss_tag _fmss_rest _fmss_key _fmss_pos _fmss_verb _fmss_text _fmss_live
+  local _fmss_out='' _fmss_emitted=0 _fmss_needs=$FM_SPAN_SCAN_ND _fmss_result
+  while IFS= read -r _fmss_rec || [ -n "$_fmss_rec" ]; do
+    [ -n "$_fmss_rec" ] || continue
+    _fmss_tag=${_fmss_rec%%$'\t'*}
+    _fmss_rest=${_fmss_rec#*$'\t'}
+    _fmss_key=${_fmss_rest%%$'\t'*}; _fmss_rest=${_fmss_rest#*$'\t'}
+    _fmss_pos=${_fmss_rest%%$'\t'*}; _fmss_rest=${_fmss_rest#*$'\t'}
+    _fmss_verb=${_fmss_rest%%$'\t'*}; _fmss_text=${_fmss_rest#*$'\t'}
+    if [ "$_fmss_tag" = D ]; then
+      _fm_span_origin_line_into _fmss_live "$_fmss_key" || continue
+      [ "$_fmss_live" = "$_fmss_pos" ] || continue
+      case "$_fmss_verb" in
+        needs-decision) _fmss_needs=1 ;;
+        blocked) _fm_is_pending_reply_escalation "$_fmss_key" "$(status_line_note "$_fmss_text")" && _fmss_needs=1 ;;
       esac
     fi
-    [ -n "$out" ] && out="${out} ; "
-    out="${out}${text}"
-    emitted=1
+    [ -n "$_fmss_out" ] && _fmss_out="${_fmss_out} ; "
+    _fmss_out="${_fmss_out}${_fmss_text}"
+    _fmss_emitted=1
   done <<EOF
 $FM_SPAN_SCAN_EVENTS
 EOF
-  if [ "$emitted" -eq 1 ]; then result="${size}"$'\t'"${ident}"$'\t'"${out}"; else result="${size}"$'\t'"${ident}"; fi
-  _fm_span_scan_emit "$result" "$needs" "$output_var" "$needs_var"
-  [ "$emitted" -eq 1 ] && return 0
+  if [ "$_fmss_emitted" -eq 1 ]; then _fmss_result="${_fmss_size}"$'\t'"${_fmss_ident}"$'\t'"${_fmss_out}"; else _fmss_result="${_fmss_size}"$'\t'"${_fmss_ident}"; fi
+  _fm_span_scan_emit "$_fmss_result" "$_fmss_needs" "$_fmss_output_var" "$_fmss_needs_var"
+  [ "$_fmss_emitted" -eq 1 ] && return 0
   return 1
 }
 
