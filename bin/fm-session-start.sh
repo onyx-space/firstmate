@@ -402,22 +402,68 @@ print_backlog_pointer() {
 # because awk's -v applies escape processing before the regex is ever compiled.
 MANUAL_KEEP_RE='[(]hold|blocked-by:'
 
+# The one owner of the headings a backlog reader recognizes. Mirrors the
+# markdown grammar tasks-axi itself parses (`sectionState` in its
+# src/backends/markdown-grammar.ts): `In flight`, `Queued`, and any heading
+# starting with `Done`, compared case-insensitively. Every reader in this file
+# shares this snippet, so the manual listing and the free-form warning below can
+# never disagree about which headings a card can live under.
+BACKLOG_SECTION_STATE_AWK='
+function backlog_section_state(line, heading) {
+  heading = line
+  sub(/^##[[:space:]]+/, "", heading)
+  sub(/[[:space:]]+$/, "", heading)
+  heading = tolower(heading)
+  if (heading == "in flight") return "in_flight"
+  if (heading == "queued") return "queued"
+  if (heading ~ /^done/) return "done"
+  return ""
+}
+'
+
+# A column-0 `## ` heading that is not one of those three ends the current card
+# run, and every card under it stops being readable by id: tasks-axi parses the
+# section as passthrough, so it is missing from every state listing and `show`
+# answers NOT_FOUND. That is how 36 real cards became undispatchable and
+# unclosable on 2026-09-14. This digest owns the one listing a session start
+# prints, so it names those sections and the cards they hide rather than dropping
+# them silently; a backlog of recognized headings prints nothing at all.
+print_backlog_section_warning() {
+  local path=$1
+  awk "$BACKLOG_SECTION_STATE_AWK"'
+    /^##[[:space:]]+/ {
+      heading = $0
+      sub(/^##[[:space:]]+/, "", heading)
+      sub(/[[:space:]]+$/, "", heading)
+      if (backlog_section_state($0) == "") {
+        if (!(heading in seen)) { sections_seen++; seen[heading] = sections_seen; name[sections_seen] = heading }
+        current = seen[heading]
+      } else {
+        current = 0
+      }
+      next
+    }
+    current > 0 && /^[-*][[:space:]]+\[[ xX]\]/ { hidden[current]++; next }
+    END {
+      for (i = 1; i <= sections_seen; i++) {
+        if (hidden[i] > 0) { hidden_sections++; hidden_rows += hidden[i] }
+      }
+      if (hidden_sections == 0) exit
+      printf "warning: %d unrecognized `## ` backlog section(s) hide %d item line(s) from every backlog reader; move them under `## In flight`, `## Queued`, or `## Done`\n", hidden_sections, hidden_rows
+      for (i = 1; i <= sections_seen; i++) {
+        if (hidden[i] > 0) printf "  - `## %s`: %d item line(s)\n", name[i], hidden[i]
+      }
+    }
+  ' "$path"
+}
+
 print_backlog_manual_compact() {
   local path=$1 reason=$2
   printf 'compact backlog listing (%s; done rows omitted; every in-flight, held, and blocked title line kept; other queued bounded to %s; indented task bodies omitted)\n' \
     "$reason" "$QUEUED_LIMIT"
-  awk -v max="$QUEUED_LIMIT" -v keep_re="$MANUAL_KEEP_RE" '
-    function state_for_heading(line, heading) {
-      heading = line
-      sub(/^##[[:space:]]+/, "", heading)
-      sub(/[[:space:]]+$/, "", heading)
-      if (heading == "In flight") return "in_flight"
-      if (heading == "Queued") return "queued"
-      if (heading == "Done") return "done"
-      return ""
-    }
+  awk -v max="$QUEUED_LIMIT" -v keep_re="$MANUAL_KEEP_RE" "$BACKLOG_SECTION_STATE_AWK"'
     /^##[[:space:]]+/ {
-      state = state_for_heading($0)
+      state = backlog_section_state($0)
       # The Done heading is recognized so its items are skipped, never printed.
       if (state != "" && state != "done") print $0
       next
@@ -520,6 +566,7 @@ print_backlog_compact() {
       else
         print_backlog_manual_compact "$path" "tasks-axi unavailable or incompatible"
       fi
+      print_backlog_section_warning "$path"
       print_backlog_pointer
     else
       printf '(present, empty)\n'
