@@ -409,6 +409,7 @@ MANUAL_KEEP_RE='[(]hold|blocked-by:'
 # and any heading starting with `Done`, compared case-insensitively. The
 # free-form warning below shares this snippet, so it can never disagree with
 # the manual listing about which headings a card can live under.
+# shellcheck disable=SC2016  # single quotes are deliberate: this is literal awk program text that must reach awk unexpanded, not a shell expression.
 BACKLOG_SECTION_STATE_AWK='
 function backlog_section_state(line, heading) {
   heading = line
