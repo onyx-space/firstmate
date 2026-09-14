@@ -151,78 +151,46 @@ export FM_TEST_STUB_MAX_BLOCK_SECONDS
 # A test spawns watchers and other long-lived children with `&`. Cleanup removed
 # their directories but reaped no processes, so a case that exited without
 # killing one - or a run killed hard enough to skip its traps - left a watcher
-# polling against a state directory that no longer existed. Every spawned pid is
-# tracked in a `$$`-keyed registry for the same reason the temp roots are: the
-# spawn usually happens inside a command substitution, so a shell array would
-# silently track nothing. Reaping uses exactly those pids and the current shell's
-# own background jobs - never a name or command pattern, which would reach into
-# another home's live watcher.
-FM_TEST_PID_REGISTRY=$(mktemp "${TMPDIR:-/tmp}/.fm-test-pids.$$.XXXXXX") || return 1
+# polling against a state directory that no longer existed. The tracked set is
+# the shell's own job table, read fresh at reap/assert time: `jobs -r -p` names
+# exactly the children this shell started that are still running, and never a
+# name or command pattern, which would reach into another home's live watcher.
+# Reading it fresh is what keeps the set honest - a pid remembered from an
+# earlier poll may since have exited, been reaped, and had its number reused by
+# a parallel shard, so signalling or reporting it would reach an unrelated
+# process.
 
-# Register a process this test started so cleanup can reap it. An empty or
-# non-numeric pid is ignored rather than recorded as something unkillable.
-# Note the registry's actual reach: every current spawn site starts its watcher
-# as a direct `&` child of the test shell, so fm_test_track_background_jobs
-# covers them and this explicit call is only needed for a spawn that happens
-# somewhere the job table cannot see - a command substitution or a subshell - of
-# which there are none today.
-fm_test_track_pid() {  # <pid>
-  local pid=$1
-  case "$pid" in ''|*[!0-9]*) return 0 ;; esac
-  printf '%s\n' "$pid" >> "$FM_TEST_PID_REGISTRY" 2>/dev/null || true
-}
-
-# Add this shell's still-running background jobs to the tracked set, so a test
-# that never called fm_test_track_pid still cannot leak the watcher it spawned.
-fm_test_track_background_jobs() {
-  local pid
-  for pid in $(jobs -p 2>/dev/null); do
-    fm_test_track_pid "$pid"
-  done
-}
-
-# Reap every tracked pid: TERM first so a watcher runs its own exit path, then
-# KILL whatever is still alive. Called before the temp roots are removed so no
-# child is left racing a state directory that is going away.
+# Reap this shell's live own children: TERM first so a watcher runs its own exit
+# path, then KILL whatever is still alive. Called before the temp roots are
+# removed so no child is left racing a state directory that is going away.
 fm_test_reap_tracked_pids() {
   local pid i alive
-  fm_test_track_background_jobs
-  [ -f "$FM_TEST_PID_REGISTRY" ] || return 0
-  while IFS= read -r pid; do
-    [ -n "$pid" ] || continue
+  for pid in $(jobs -r -p 2>/dev/null); do
     kill -TERM "$pid" 2>/dev/null || true
-  done < "$FM_TEST_PID_REGISTRY"
+  done
   i=0
   while [ "$i" -lt 20 ]; do
     alive=0
-    while IFS= read -r pid; do
-      [ -n "$pid" ] || continue
+    for pid in $(jobs -r -p 2>/dev/null); do
       kill -0 "$pid" 2>/dev/null && alive=1
-    done < "$FM_TEST_PID_REGISTRY"
+    done
     [ "$alive" -eq 0 ] && break
     sleep 0.05
     i=$((i + 1))
   done
-  while IFS= read -r pid; do
-    [ -n "$pid" ] || continue
+  for pid in $(jobs -r -p 2>/dev/null); do
     kill -KILL "$pid" 2>/dev/null || true
-  done < "$FM_TEST_PID_REGISTRY"
-  rm -f "$FM_TEST_PID_REGISTRY"
+  done
 }
 
-# Fail the case when a process it started is still alive at its end. The check
-# reads the tracked set only, so another home's live watcher can never trip it.
+# Fail the case when a running child it started is still alive at its end. The
+# check reads the shell's own job table only, so another home's live watcher can
+# never trip it.
 fm_test_assert_no_leftover_processes() {  # <label>
   local pid alive=''
-  fm_test_track_background_jobs
-  if [ ! -f "$FM_TEST_PID_REGISTRY" ]; then
-    pass "$1: no process this case started is still running"
-    return 0
-  fi
-  while IFS= read -r pid; do
-    [ -n "$pid" ] || continue
+  for pid in $(jobs -r -p 2>/dev/null); do
     kill -0 "$pid" 2>/dev/null && alive="$alive $pid"
-  done < "$FM_TEST_PID_REGISTRY"
+  done
   [ -z "$alive" ] || fail "$1: process(es) this case started are still running:$alive"
   pass "$1: every process this case started was reaped"
 }
