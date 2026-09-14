@@ -633,7 +633,7 @@ SH
 # tampering involved; without a rebind the very next fire would be refused.
 test_primary_update_rebinds_local_watch() {
   local w before_hash after_hash out spec
-  w=$(new_world t12)
+  w=$(new_world t15)
   mkdir -p "$w/seed/bin"
   printf "#!/usr/bin/env bash\necho v1 >> \"\$1\"\n" > "$w/seed/bin/watched-action.sh"
   chmod +x "$w/seed/bin/watched-action.sh"
