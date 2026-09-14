@@ -1,0 +1,16 @@
+[Unit]
+Description=Sync declared container memory caps into cgroups (cgroup v1 memsw workaround)
+Documentation=file:///Users/onyx/memory/outline-h-server-deploy.md
+# 容器由 podman-restart.service 在开机时拉起，之后才能知道它们的 cgroup 路径。
+After=podman-restart.service
+Wants=podman-restart.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/local/bin/container-mem-limits.sh
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

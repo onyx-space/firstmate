@@ -1,0 +1,10 @@
+[Unit]
+Description=Alert for a failed container health check
+
+[Service]
+Type=oneshot
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/local/bin/h-healthcheck-notify.sh fail
+# 告警本身失败不能把失败状态藏起来：非 0 退出会让 systemd 把它标成 failed，
+# 于是 `systemctl --failed` 同时列出检查与告警两个单元，失败不会静默。
+TimeoutStartSec=90
