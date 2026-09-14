@@ -1,0 +1,4 @@
+=== target (bounded grep prefilter), 20000-line parent log ===
+label=target tick_rc=0 tick_ms=125 closed=9800
+=== base (unbounded per-line scan), 20000-line parent log ===
+label=base tick_rc=0 tick_ms=63063 closed=9800

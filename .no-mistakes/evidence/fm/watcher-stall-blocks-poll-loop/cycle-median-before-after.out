@@ -1,0 +1,12 @@
+== base ledger rows ==
+arm_pid=10985 | watcher_pid=11297 | started_at=1789359052 | ended_at=1789359071
+arm_pid=54441 | watcher_pid=54461 | started_at=1789359071 | ended_at=1789359091
+arm_pid=97649 | watcher_pid=97680 | started_at=1789359091 | ended_at=1789359111
+-- reduced by the target fm-watch-cycle-stats.sh --
+watcher cycles: median 20s · mean 20s · max 20s · cycles 3 of 3 · threshold 150s
+== target ledger rows ==
+arm_pid=41217 | watcher_pid=41341 | started_at=1789359112 | ended_at=1789359115
+arm_pid=45168 | watcher_pid=45195 | started_at=1789359115 | ended_at=1789359119
+arm_pid=50145 | watcher_pid=50174 | started_at=1789359119 | ended_at=1789359123
+-- reduced by the target fm-watch-cycle-stats.sh --
+watcher cycles: median 4s · mean 4s · max 4s · cycles 3 of 3 · threshold 150s

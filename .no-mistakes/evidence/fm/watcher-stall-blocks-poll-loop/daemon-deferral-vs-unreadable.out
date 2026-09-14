@@ -1,0 +1,9 @@
+== readable over-budget log: classify_signal ==
+scan budget exceeded for readable; resuming next poll
+self|routine signal: rc=0
+== readable over-budget log: classify_stale ==
+scan budget exceeded for readable; resuming next poll
+self|transient stale (sess:fm-readable): working: routine progress line 99999rc=0
+cursor: 532
+== genuinely unreadable log: classify_signal ==
+escalate|unreadable.status: unreadable status spanrc=0

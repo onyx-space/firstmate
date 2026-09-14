@@ -1,0 +1,16 @@
+ok - equivalence: bounded span scan equals the whole-file fold on every start offset
+ok - equivalence: a mid-line span reports the live declarations the absolute-numbered fold dropped
+ok - mid-line span: the live declaration is reported, the superseded one is not, and the fold is the side that dropped it
+ok - equivalence: a completed scan leaves no state that changes the next one
+ok - equivalence: bounded span scan equals the whole-file fold on pseudo-random traffic
+ok - teeth: the equivalence assertion detects a scan that skips its input
+ok - bounded rounds: 4 rounds over 3284ms, slowest round 1000ms of a 1s budget
+ok - resumption: an abandoned round resumes from its cursor and still reaches the full answer
+ok - resumption: an untrustworthy cursor restarts safely instead of answering in part
+ok - resumption: a cursor positioned past the log's lines restarts instead of answering empty
+ok - resumption: a rejected cursor's records never leak into the answered span
+ok - isolation: two callers keep separate span progress without restarting
+ok - verdicts: a bounded deferral reports 4, a genuinely unreadable log still reports 2
+ok - tail decision: resuming reaches a decision in the span's tail, and an unfinished round reports none of it
+ok - out-parameters: a caller-named record and decision variable survive the scan's inner frames
+ok - fm-classify-span-scan

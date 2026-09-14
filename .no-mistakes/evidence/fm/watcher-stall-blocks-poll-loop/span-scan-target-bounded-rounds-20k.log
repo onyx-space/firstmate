@@ -1,0 +1,102 @@
+scan budget exceeded for task; resuming next poll
+round 1: rc=4 round_ms=357 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 2: rc=4 round_ms=994 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 3: rc=4 round_ms=993 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 4: rc=4 round_ms=992 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 5: rc=4 round_ms=991 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 6: rc=4 round_ms=992 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 7: rc=4 round_ms=994 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 8: rc=4 round_ms=995 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 9: rc=4 round_ms=994 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 10: rc=4 round_ms=993 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 11: rc=4 round_ms=993 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 12: rc=4 round_ms=994 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 13: rc=4 round_ms=993 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 14: rc=4 round_ms=998 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 15: rc=4 round_ms=989 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 16: rc=4 round_ms=995 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 17: rc=4 round_ms=992 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 18: rc=4 round_ms=994 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 19: rc=4 round_ms=994 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 20: rc=4 round_ms=993 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 21: rc=4 round_ms=993 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 22: rc=4 round_ms=993 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 23: rc=4 round_ms=994 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 24: rc=4 round_ms=992 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 25: rc=4 round_ms=994 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 26: rc=4 round_ms=994 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 27: rc=4 round_ms=994 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 28: rc=4 round_ms=992 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 29: rc=4 round_ms=992 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 30: rc=4 round_ms=996 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 31: rc=4 round_ms=993 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 32: rc=4 round_ms=991 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 33: rc=4 round_ms=995 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 34: rc=4 round_ms=992 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 35: rc=4 round_ms=993 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 36: rc=4 round_ms=994 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 37: rc=4 round_ms=995 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 38: rc=4 round_ms=993 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 39: rc=4 round_ms=994 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 40: rc=4 round_ms=992 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 41: rc=4 round_ms=995 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 42: rc=4 round_ms=995 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 43: rc=4 round_ms=992 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 44: rc=4 round_ms=995 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 45: rc=4 round_ms=993 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 46: rc=4 round_ms=994 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 47: rc=4 round_ms=992 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 48: rc=4 round_ms=993 beacon_touched
+scan budget exceeded for task; resuming next poll
+round 49: rc=4 round_ms=993 beacon_touched
+round 50: rc=0 round_ms=199 beacon_touched
+lib=target-post-change rounds=50 final_rc=0 total_ms=48572
+record=728941	strong:16777229:94141383:1789358074.991482999	needs-decision: [key=tail] pick the release target
+needs=1

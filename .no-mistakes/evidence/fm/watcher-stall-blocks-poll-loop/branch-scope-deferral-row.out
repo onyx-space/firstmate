@@ -1,0 +1,24 @@
+== control: ordinary signal row for the same task ==
+{
+  "status": "safe",
+  "eligible": true,
+  "projects": [
+    "approved"
+  ],
+  "eligibleSeqs": [
+    "1"
+== real deferred needs-decision row ==
+{
+  "status": "unsafe",
+  "eligible": false,
+  "projects": [],
+  "eligibleSeqs": [],
+  "eligibleTasks": [],
+  "corrupted": false,
+  "needsDecisionKeys": [
+    "task.status"
+  ],
+  "taskByWakeKey": {
+    "task": "task",
+    "task.status": "task",
+    "task.turn-ended": "task",

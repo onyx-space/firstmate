@@ -1,0 +1,6 @@
+ok - cycle stats: one line carries median, mean, max, count, and threshold
+ok - cycle stats: a median at the threshold records the ALERT line
+ok - cycle stats: the default threshold is half FM_GUARD_GRACE
+ok - cycle stats: the removed window argument is refused as unknown
+ok - cycle stats: a malformed ledger row is ignored, never counted as an instant cycle
+ok - fm-watch-cycle-stats

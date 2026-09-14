@@ -1,0 +1,7 @@
+== 1. failing case still reaps its own child (EXIT trap) ==
+driver exit=1 output=not ok - deliberate case failure
+reaped: pid 39491 is gone after a failing case
+== 2. leftover assertion is red when a child it started is alive ==
+driver exit=1 output=not ok - leak-probe: process(es) this case started are still running: 40386
+== 3. leftover assertion is green when none is alive ==
+driver exit=0 output=ok - clean-probe: every process this case started was reaped

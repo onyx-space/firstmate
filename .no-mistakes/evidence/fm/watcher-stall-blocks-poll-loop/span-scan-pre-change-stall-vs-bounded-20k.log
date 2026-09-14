@@ -1,0 +1,4 @@
+round 1: rc=0 round_ms=147599 beacon_touched
+lib=base-pre-change rounds=1 final_rc=0 total_ms=147610
+record=728941	strong:16777229:94141383:1789358074.991482999	needs-decision: [key=tail] pick the release target
+needs=1

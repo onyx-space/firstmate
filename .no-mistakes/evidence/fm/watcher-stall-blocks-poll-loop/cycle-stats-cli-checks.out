@@ -1,0 +1,26 @@
+== missing ledger ==
+watcher cycles: EMPTY - no readable cycle ledger at /tmp/fm-test-live/nope/.watch-cycle-exits.log
+rc=0
+== symlinked ledger ==
+watcher cycles: EMPTY - no readable cycle ledger at /tmp/fm-test-live/symstate/.watch-cycle-exits.log
+rc=0
+== empty ledger ==
+watcher cycles: EMPTY - no completed cycles recorded (0 rows seen)
+rc=0
+== removed --recent option ==
+error: unknown argument: --recent
+help: fm-watch-cycle-stats.sh
+rc=2
+== removed --recent bare ==
+error: unknown argument: --recent
+help: fm-watch-cycle-stats.sh
+rc=2
+== default threshold follows grace (120 -> 60) ==
+watcher cycles: ALERT median 159s >= threshold 60s over 824 cycles - ordinary rounds are running long (round latency, not beacon staleness)
+== override threshold ==
+watcher cycles: median 159s · mean 281s · max 6598s · cycles 824 of 824 · threshold 900s
+== help ==
+One-line self-check of how long watcher cycles are taking, computed from the
+arm-owned lifecycle ledger (state/.watch-cycle-exits.log).
+
+Usage:

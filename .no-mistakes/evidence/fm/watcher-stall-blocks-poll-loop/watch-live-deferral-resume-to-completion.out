@@ -1,0 +1,5 @@
+fixture=/private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-live-resume.xeIjIP/resume
+poll 1: cursor_line=1780 queue_row=signal	task.status	needs-decision: /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-live-resume.xeIjIP/resume/state/task.status
+poll 2: cursor_line=(cursor gone: span fully classified) queue_row=signal	task.status	needs-decision: /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-live-resume.xeIjIP/resume/state/task.status
+span fully classified after poll 2
+final: cursor=gone

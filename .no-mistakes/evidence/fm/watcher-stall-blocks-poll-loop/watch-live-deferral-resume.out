@@ -1,0 +1,8 @@
+fixture=/private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-live-resume.Md2m5O/resume
+poll 1: cursor_line=85 queue_row=signal	task.status	needs-decision: /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/
+poll 2: cursor_line=316 queue_row=signal	task.status	needs-decision: /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/
+poll 3: cursor_line=447 queue_row=signal	task.status	needs-decision: /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/
+poll 4: cursor_line=559 queue_row=signal	task.status	needs-decision: /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/
+poll 5: cursor_line=754 queue_row=signal	task.status	needs-decision: /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/
+poll 6: cursor_line=950 queue_row=signal	task.status	needs-decision: /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/
+final: cursor=present
