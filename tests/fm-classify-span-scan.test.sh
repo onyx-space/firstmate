@@ -666,8 +666,9 @@ pass "tail decision: resuming reaches a decision in the span's tail, and an unfi
 
 # The helper assigns its record and decision flag to variables the CALLER names,
 # and bash sends `printf -v` to the nearest enclosing frame that declares that
-# name. A caller following the documented contract must get its answers back even
-# when it picks a name one of the scan's own inner frames happens to use.
+# name - the helper frames AND the public function's own frame sit between the
+# assignment and the caller. A caller following the documented contract must get
+# its answers back even when it picks a name one of those frames happens to use.
 assert_out_params() {  # <record-var> <needs-var> <expected-record>
   local rv=$1 nv=$2 want=$3 got_record got_needs
   eval "$rv=''"
@@ -692,6 +693,12 @@ shadow_record=$(status_span_first_actionable_record "$shadow_log" 0 2>/dev/null)
 assert_out_params out text "$shadow_record"
 assert_out_params rec needs "$shadow_record"
 assert_out_params live emitted "$shadow_record"
+assert_out_params result cursor "$shadow_record"
+assert_out_params size rest_file "$shadow_record"
+assert_out_params ident scan_rc "$shadow_record"
+assert_out_params start output_var "$shadow_record"
+assert_out_params needs_var scratch "$shadow_record"
+assert_out_params chunk_file cur_ident "$shadow_record"
 pass "out-parameters: a caller-named record and decision variable survive the scan's inner frames"
 
 printf 'ok - fm-classify-span-scan\n'

@@ -2065,71 +2065,71 @@ EOF
 }
 
 status_span_first_actionable_record() {  # <status-file> <start-offset> [record-var] [needs-decision-var]
-  local f=$1 start=${2:-0} output_var=${3-} needs_var=${4-} size ident result
-  local cursor chunk_file rest_file scratch cur_ident scan_rc
+  local _fmss_f=$1 _fmss_start=${2:-0} _fmss_output_var=${3-} _fmss_needs_var=${4-} _fmss_size _fmss_ident
+  local _fmss_cursor _fmss_chunk_file _fmss_rest_file _fmss_scratch _fmss_cur_ident _fmss_scan_rc
   FM_CLASSIFY_SPAN_SCAN_NOTICE=''
-  [ -e "$f" ] || { [ -L "$f" ] && return 2; return 1; }
-  [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 2
-  ident=$(_fm_open_decisions_file_ident "$f") || return 2
-  size=$(_fm_status_file_size "$f") || return 2
-  size=${size//[[:space:]]/}
-  case "$size" in ''|*[!0-9]*) return 2 ;; esac
-  case "$start" in ''|*[!0-9]*) start=0 ;; esac
-  [ "$start" -le "$size" ] || start=0
-  if [ "$start" -ge "$size" ]; then
-    _fm_span_scan_emit "${size}"$'\t'"${ident}" 0 "$output_var" "$needs_var"
+  [ -e "$_fmss_f" ] || { [ -L "$_fmss_f" ] && return 2; return 1; }
+  [ -f "$_fmss_f" ] && [ -r "$_fmss_f" ] && [ ! -L "$_fmss_f" ] || return 2
+  _fmss_ident=$(_fm_open_decisions_file_ident "$_fmss_f") || return 2
+  _fmss_size=$(_fm_status_file_size "$_fmss_f") || return 2
+  _fmss_size=${_fmss_size//[[:space:]]/}
+  case "$_fmss_size" in ''|*[!0-9]*) return 2 ;; esac
+  case "$_fmss_start" in ''|*[!0-9]*) _fmss_start=0 ;; esac
+  [ "$_fmss_start" -le "$_fmss_size" ] || _fmss_start=0
+  if [ "$_fmss_start" -ge "$_fmss_size" ]; then
+    _fm_span_scan_emit "${_fmss_size}"$'\t'"${_fmss_ident}" 0 "$_fmss_output_var" "$_fmss_needs_var"
     return 1
   fi
-  scratch=$(_fm_status_span_scratch "$f") || return 2
-  chunk_file="${scratch}.span"; rest_file="${scratch}.rest"
-  cursor=$(_fm_span_scan_cursor_path "$f" "$start")
+  _fmss_scratch=$(_fm_status_span_scratch "$_fmss_f") || return 2
+  _fmss_chunk_file="${_fmss_scratch}.span"; _fmss_rest_file="${_fmss_scratch}.rest"
+  _fmss_cursor=$(_fm_span_scan_cursor_path "$_fmss_f" "$_fmss_start")
   # A cursor the loader rejects leaves the round state at line 0, which is a
   # safe rescan rather than a partial answer.
-  _fm_span_scan_load "$cursor" "$ident" "$start" "$size" || true
-  _fm_status_read_span "$f" "$start" "$((size - start))" > "$chunk_file" 2>/dev/null \
-    || { rm -f "$chunk_file" "$rest_file"; return 2; }
-  cur_ident=$(_fm_open_decisions_file_ident "$f") || {
-    rm -f "$chunk_file" "$rest_file"; return 2;
+  _fm_span_scan_load "$_fmss_cursor" "$_fmss_ident" "$_fmss_start" "$_fmss_size" || true
+  _fm_status_read_span "$_fmss_f" "$_fmss_start" "$((_fmss_size - _fmss_start))" > "$_fmss_chunk_file" 2>/dev/null \
+    || { rm -f "$_fmss_chunk_file" "$_fmss_rest_file"; return 2; }
+  _fmss_cur_ident=$(_fm_open_decisions_file_ident "$_fmss_f") || {
+    rm -f "$_fmss_chunk_file" "$_fmss_rest_file"; return 2;
   }
-  [ "$cur_ident" = "$ident" ] || { rm -f "$chunk_file" "$rest_file"; return 2; }
-  _fm_span_scan_round "$chunk_file" "$rest_file"
-  scan_rc=$?
-  if [ "$scan_rc" -eq 3 ]; then
+  [ "$_fmss_cur_ident" = "$_fmss_ident" ] || { rm -f "$_fmss_chunk_file" "$_fmss_rest_file"; return 2; }
+  _fm_span_scan_round "$_fmss_chunk_file" "$_fmss_rest_file"
+  _fmss_scan_rc=$?
+  if [ "$_fmss_scan_rc" -eq 3 ]; then
     # Stale state from a rewritten log: restart the span from line 0.
     _fm_span_scan_reset
-    _fm_span_scan_round "$chunk_file" "$rest_file"
-    scan_rc=$?
+    _fm_span_scan_round "$_fmss_chunk_file" "$_fmss_rest_file"
+    _fmss_scan_rc=$?
   fi
-  rm -f "$chunk_file" "$rest_file"
-  if [ "$scan_rc" -eq 2 ]; then
+  rm -f "$_fmss_chunk_file" "$_fmss_rest_file"
+  if [ "$_fmss_scan_rc" -eq 2 ]; then
     # The remaining span could not be read. That is a classification failure,
     # never an answer built from part of the input, and the caller must keep
     # treating it as unreadable content.
     return 2
   fi
-  if [ "$scan_rc" -ne 0 ]; then
-    if [ -n "$needs_var" ]; then
+  if [ "$_fmss_scan_rc" -ne 0 ]; then
+    if [ -n "$_fmss_needs_var" ]; then
       if [ "$FM_SPAN_SCAN_ND" = 1 ] || [ "$FM_SPAN_SCAN_NDP" = 1 ]; then
-        printf -v "$needs_var" '%s' 1
+        printf -v "$_fmss_needs_var" '%s' 1
       else
-        printf -v "$needs_var" '%s' 0
+        printf -v "$_fmss_needs_var" '%s' 0
       fi
     fi
     # A round that stopped short is a deferral, never an answer: persist what it
     # folded so the next call resumes exactly there, say so in one line, and
     # report the deferral verdict (4) rather than the unreadable one (2) - the
     # log is readable, its classification simply is not finished.
-    if _fm_span_scan_save "$cursor" "$ident" "$start" "$size"; then
-      _fm_span_scan_stopped "$(basename "$f" .status)"
+    if _fm_span_scan_save "$_fmss_cursor" "$_fmss_ident" "$_fmss_start" "$_fmss_size"; then
+      _fm_span_scan_stopped "$(basename "$_fmss_f" .status)"
     else
-      rm -f "$cursor"
-      FM_CLASSIFY_SPAN_SCAN_NOTICE="scan progress for $(basename "$f" .status) could not be persisted; the log will be re-classified"
+      rm -f "$_fmss_cursor"
+      FM_CLASSIFY_SPAN_SCAN_NOTICE="scan progress for $(basename "$_fmss_f" .status) could not be persisted; the log will be re-classified"
       printf '%s\n' "$FM_CLASSIFY_SPAN_SCAN_NOTICE" >&2
     fi
     return 4
   fi
-  rm -f "$cursor"
-  _fm_span_scan_finalize "$size" "$ident" "$output_var" "$needs_var"
+  rm -f "$_fmss_cursor"
+  _fm_span_scan_finalize "$_fmss_size" "$_fmss_ident" "$_fmss_output_var" "$_fmss_needs_var"
 }
 
 status_span_first_actionable() {  # <status-file> <start-offset>
