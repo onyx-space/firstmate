@@ -95,7 +95,7 @@ jq -r '.scripts[] | [.path, .duration_ms] | @tsv' /tmp/fm-par/*/*/*.json \
 bin/fm-test-run.sh --check-coverage
 ```
 
-The refresh fires on evidence rather than on a schedule: a shard whose measured wall approaches its job cap, or a `parallel_est_1=` / `parallel_est_2=` pair on the coverage-guard line that no longer matches what the lane takes, is the signal that the table has drifted.
+The refresh fires on evidence rather than on a schedule: a shard whose measured wall approaches its job cap, or a `parallel_max_ms=` / `parallel_imbalance_ms=` pair on the coverage-guard line that no longer matches what the lane takes, is the signal that the table has drifted.
 `docs/fm-test-portable-shards.md` is the only place the estimate is written down, so a refresh that changes `bin/fm-test-run.sh` also changes both tables here.
 
 `bin/fm-test-run.sh --check-coverage` reports the packed result as
@@ -162,7 +162,7 @@ Measure native-Windows-only scripts through the focused Git Bash runner and reta
 It also verifies that the parallel lanes, portable serial lane, and real-Herdr family are disjoint and cover every `tests/*.test.sh` script.
 It separately verifies that the portable serial CI shards are non-empty, disjoint, and together equal the portable serial lane.
 It reports the unmeasured serial share as `serial_unhinted=` and refuses when that share exceeds `PORTABLE_SERIAL_MAX_UNHINTED_PERCENT`, so the shards stay balanced on evidence rather than on the default weight.
-It also prints both parallel lane estimates as `parallel_est_1=` and `parallel_est_2=`, which are the two numbers in the [Parallel lanes](#parallel-lanes) table, so the CI log carries the estimate a later refresh is compared against.
+It also prints the larger lane's hint sum as `parallel_max_ms=` and the difference between the two sums as `parallel_imbalance_ms=`, which together are the two numbers in the [Parallel lanes](#parallel-lanes) table, so the CI log carries the estimate a later refresh is compared against.
 A proven-isolated script with no weight has no default and fails the guard loudly, because the proven set only changes through a new isolation proof, which measures its own durations.
 
 ## Timing artifacts

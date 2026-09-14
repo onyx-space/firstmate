@@ -387,22 +387,6 @@ teardown_treehouse_state_path() {  # <slot>
   printf '%s\n' "$(dirname "$(dirname "$1")")/treehouse-state.json"
 }
 
-# A Treehouse slot has the managed pool's fixed <pool>/<slot>/<repo> layout.
-# Require both its pool state and the same Git common directory as the recorded
-# project; an ordinary linked worktree is not evidence that Treehouse owns it.
-is_treehouse_pool_slot() {  # <project> <worktree>
-  local project=$1 worktree=$2 slot state project_common slot_common
-  [ -d "$project" ] && [ -d "$worktree" ] || return 1
-  slot=$(CDPATH='' cd -- "$worktree" 2>/dev/null && pwd -P) || return 1
-  state=$(teardown_treehouse_state_path "$slot")
-  [ -f "$state" ] && [ ! -L "$state" ] || return 1
-  project_common=$(git -C "$project" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
-  slot_common=$(git -C "$slot" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
-  project_common=$(CDPATH='' cd -- "$project_common" 2>/dev/null && pwd -P) || return 1
-  slot_common=$(CDPATH='' cd -- "$slot_common" 2>/dev/null && pwd -P) || return 1
-  [ "$project_common" = "$slot_common" ]
-}
-
 META="$STATE/$ID.meta"
 TREEHOUSE_PROJECT_LOCK=
 TREEHOUSE_PROJECT_LOCK_HELD=0
