@@ -1103,10 +1103,22 @@ fm_pending_reply_escalation_payload() {  # <record-path> <kind>
 # that exact escalation remains open. If an unrelated decision has since taken
 # over that key, the close is withheld so the unrelated decision is not cleared.
 fm_pending_reply_escalation_line() {  # <status-file> <record-path> <corr_id>
-  local status_file=$1 rec=$2 corr=$3 line found='' kind payload own_key
+  local status_file=$1 rec=$2 corr=$3 line found='' kind payload own_key stream
   [ -f "$status_file" ] || return 0
   [ "$(fm_pending_reply_get "$rec" corr_id)" = "$corr" ] || return 0
   own_key=$(fm_pending_reply_escalation_key "$corr")
+  # Every escalation line this library publishes embeds the record's correlation
+  # id, so one literal-token pass selects the only lines that can match and the
+  # per-line parse below runs over that handful instead of the whole log. This is
+  # the watch poll path (a resolved record retries its close every cycle), so the
+  # log's lifetime must not be re-parsed line by line here; a record with no
+  # correlation token has nothing to filter on and keeps the whole-file scan.
+  if [ -n "$corr" ]; then
+    stream=$(grep -F -e "$corr" "$status_file") || stream=''
+  else
+    stream=$(cat "$status_file") || stream=''
+  fi
+  [ -n "$stream" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     [ "$(status_line_verb "$line")" = blocked ] || continue
     for kind in missed delivery-unknown recovery-delivery; do
@@ -1116,7 +1128,9 @@ fm_pending_reply_escalation_line() {  # <status-file> <record-path> <corr_id>
         "blocked [key=$own_key]: $payload "*|"blocked: $payload "*) found=$line; break ;;
       esac
     done
-  done < "$status_file"
+  done <<EOF
+$stream
+EOF
   printf '%s' "$found"
 }
 
@@ -1146,7 +1160,7 @@ fm_pending_reply_close_escalation() {  # <state-dir> <corr_id>
 
 _fm_pending_reply_close_escalation_locked() {  # <state-dir> <corr_id>
   local state=$1 corr=$2 rec escalated closed parent_status escalation key note
-  local open_line open_key open_note now close_line close_rc _task _via
+  local now close_line close_rc _task _via
   rec=$(fm_pending_reply_path "$state" "$corr")
   [ -f "$rec" ] || return 1
   [ "$(fm_pending_reply_get "$rec" phase)" = resolved ] || return 0
@@ -1160,13 +1174,14 @@ _fm_pending_reply_close_escalation_locked() {  # <state-dir> <corr_id>
   if [ -n "$escalation" ]; then
     key=$(_fm_decision_key "$escalation") || key=''
     note=$(status_line_note "$escalation")
-    while IFS= read -r open_line; do
-      [ -n "$open_line" ] || continue
-      open_key=${open_line%%$'\t'*}
-      [ "$open_key" = "$key" ] || continue
-      open_note=${open_line#*$'\t'}
-      open_note=${open_note#*$'\t'}
-      [ "$open_note" = "$note" ] || continue
+    # This runs on every watcher poll for a resolved record, so the whole-file
+    # open-decisions fold is off limits: one long parent log would hold the poll
+    # loop - and freeze the liveness beacon - for the length of that log's
+    # history. status_key_open_with_note folds only the lines carrying this key's
+    # literal token, which is the keyed decision's whole input and nothing else.
+    # The legacy unkeyed escalation has no token to filter on and is the one
+    # caller that still reads the whole stream.
+    if status_key_open_with_note "$parent_status" "$key" "$note"; then
       # This close is the home's own bookkeeping, written by the same resolve
       # or tick that already consumed the reply, so it uses the guarded
       # self-announced append (bin/fm-wake-lib.sh, sourced by this function's
@@ -1179,10 +1194,7 @@ _fm_pending_reply_close_escalation_locked() {  # <state-dir> <corr_id>
       fm_wake_status_append_self_announced "${parent_status%/*}" "$parent_status" "$close_line" \
         2>/dev/null || close_rc=$?
       [ "$close_rc" -ne 2 ] || return 1
-      break
-    done <<EOF
-$(status_open_decisions "$parent_status")
-EOF
+    fi
   fi
   now=$(fm_pending_reply_now)
   fm_pending_reply_set "$rec" escalation_closed_epoch "$now"

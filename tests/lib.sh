@@ -146,8 +146,58 @@ fm_test_reap_procevent_homes() {
 FM_TEST_STUB_MAX_BLOCK_SECONDS=${FM_TEST_STUB_MAX_BLOCK_SECONDS:-120}
 export FM_TEST_STUB_MAX_BLOCK_SECONDS
 
+# --- tracked test processes -------------------------------------------------
+#
+# A test spawns watchers and other long-lived children with `&`. Cleanup removed
+# their directories but reaped no processes, so a case that exited without
+# killing one - or a run killed hard enough to skip its traps - left a watcher
+# polling against a state directory that no longer existed. The tracked set is
+# the shell's own job table, read fresh at reap/assert time: `jobs -r -p` names
+# exactly the children this shell started that are still running, and never a
+# name or command pattern, which would reach into another home's live watcher.
+# Reading it fresh is what keeps the set honest - a pid remembered from an
+# earlier poll may since have exited, been reaped, and had its number reused by
+# a parallel shard, so signalling or reporting it would reach an unrelated
+# process.
+
+# Reap this shell's live own children: TERM first so a watcher runs its own exit
+# path, then KILL whatever is still alive. Called before the temp roots are
+# removed so no child is left racing a state directory that is going away.
+fm_test_reap_tracked_pids() {
+  local pid i alive
+  for pid in $(jobs -r -p 2>/dev/null); do
+    kill -TERM "$pid" 2>/dev/null || true
+  done
+  i=0
+  while [ "$i" -lt 20 ]; do
+    alive=0
+    for pid in $(jobs -r -p 2>/dev/null); do
+      kill -0 "$pid" 2>/dev/null && alive=1
+    done
+    [ "$alive" -eq 0 ] && break
+    sleep 0.05
+    i=$((i + 1))
+  done
+  for pid in $(jobs -r -p 2>/dev/null); do
+    kill -KILL "$pid" 2>/dev/null || true
+  done
+}
+
+# Fail the case when a running child it started is still alive at its end. The
+# check reads the shell's own job table only, so another home's live watcher can
+# never trip it.
+fm_test_assert_no_leftover_processes() {  # <label>
+  local pid alive=''
+  for pid in $(jobs -r -p 2>/dev/null); do
+    kill -0 "$pid" 2>/dev/null && alive="$alive $pid"
+  done
+  [ -z "$alive" ] || fail "$1: process(es) this case started are still running:$alive"
+  pass "$1: every process this case started was reaped"
+}
+
 fm_test_cleanup() {
   local d
+  fm_test_reap_tracked_pids
   fm_test_reap_procevent_homes
   for d in "${FM_TEST_CLEANUP_DIRS[@]:-}"; do
     [ -n "$d" ] && rm -rf "$d"

@@ -1551,6 +1551,10 @@ signal_files_actionable() {  # <status-file> ...
   local f task record rest endpoint ident needs_decision rc found=1
   FM_SIGNAL_SURFACE_ENDPOINTS=''
   FM_SIGNAL_NEEDS_DECISION_FILES=''
+  # Files whose span classification is unfinished this poll (fm-classify-lib.sh
+  # verdict 4). This batch commits no reported signature for them, so they come
+  # back next poll and the bounded scan resumes where it stopped.
+  FM_SIGNAL_DEFERRED_FILES=''
   for f in "$@"; do
     case "$f" in *.status) ;; *) continue ;; esac
     [ -e "$f" ] || [ -L "$f" ] || continue
@@ -1561,10 +1565,27 @@ signal_files_actionable() {  # <status-file> ...
     rc=$?
     [ "$rc" -eq 1 ] && [ -z "$record" ] && continue
     if [ "$rc" -eq 2 ]; then
-      # Could not classify this log. Surface it rather than absorbing it, and
-      # record NO classified endpoint for it below, so its content is classified
-      # again once it is readable. The wake signature still advances, which is
-      # what bounds this to one report per distinct file state.
+      # Could not read this log. Surface it rather than absorbing it, and record
+      # NO classified endpoint for it below, so its content is classified again
+      # once it is readable. The wake signature still advances, which is what
+      # bounds an unreadable log to one report per distinct file state.
+      [ -z "$FM_CLASSIFY_SPAN_SCAN_NOTICE" ] || triage_log "$FM_CLASSIFY_SPAN_SCAN_NOTICE"
+      found=0
+      continue
+    fi
+    if [ "$rc" -eq 4 ]; then
+      # Readable, but the bounded scan round stopped short: the span is not yet
+      # classified. Surface it rather than absorbing unknown content, and route
+      # it decision-owned because an unfolded tail may hold a decision that must
+      # never be queued for the supervision branch as an ordinary signal. It is
+      # the deferral - not the reported signature - that this poll records: the
+      # signature commit below is skipped for it so the file signals again and
+      # the scan resumes, which is what keeps a decision in the span's tail from
+      # being stranded unclassified. The round itself is already budget-bounded,
+      # so this neither spins nor lets one log's size hold the poll loop.
+      [ -z "$FM_CLASSIFY_SPAN_SCAN_NOTICE" ] || triage_log "$FM_CLASSIFY_SPAN_SCAN_NOTICE"
+      FM_SIGNAL_DEFERRED_FILES="${FM_SIGNAL_DEFERRED_FILES} ${f}"
+      FM_SIGNAL_NEEDS_DECISION_FILES="${FM_SIGNAL_NEEDS_DECISION_FILES} ${f}"
       found=0
       continue
     fi
@@ -1626,6 +1647,13 @@ heartbeat_scan_finds_actionable() {
       status_presentation_marker_reported_matches "$marker" "$sig" && continue
       FM_HEARTBEAT_SURFACE_ENDPOINTS="${FM_HEARTBEAT_SURFACE_ENDPOINTS}${f}"$'\t'"ERROR"$'\t'"${sig}"$'\n'
       found=0
+      continue
+    fi
+    if [ "$rc" -eq 4 ]; then
+      # A bounded scan round stopped short. It is neither an unreadable log nor
+      # an event the per-wake path absorbed: the ordinary signal path surfaces
+      # and retries it, so reporting its signature here would only pre-empt that
+      # retry while adding nothing. Leave the file to the next poll.
       continue
     fi
     endpoint=${record%%$'\t'*}; rest=${record#*$'\t'}; ident=${rest%%$'\t'*}
@@ -2112,6 +2140,7 @@ EOF
       # an unreadable log's content is still classified once it becomes readable.
       while IFS=$(printf '\t') read -r sf sig f; do
         [ -n "$sf" ] || continue
+        case " $FM_SIGNAL_DEFERRED_FILES " in *" $f "*) continue ;; esac
         case "$f" in
           *.status)
             fm_wake_status_reported_commit "$STATE" "$f" "$sig" || true

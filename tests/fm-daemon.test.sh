@@ -293,6 +293,49 @@ test_status_read_failure_surfaces_without_advancing_seen() {
   pass "a status read failure surfaces without advancing the daemon suppressor"
 }
 
+# A bounded-scan deferral (fm-classify-lib.sh verdict 4) is unfinished
+# classification of a READABLE log, never a failure to read one. classify_signal
+# and classify_stale must read it as "nothing actionable yet" so the next tick
+# resumes, and must keep the "unreadable status span" wording for a span that
+# genuinely cannot be read.
+test_span_deferral_is_not_unreadable() {
+  local dir state log out first_line second_line
+  dir=$(make_supercase span-deferral-not-unreadable); state="$dir/state"
+  log="$state/defer-r1.status"
+  # A span far larger than any host folds inside the 1s budget, so the round is
+  # guaranteed to stop short on a readable log (the cursor assertions below prove
+  # it really did, rather than trusting a timing accident).
+  awk 'BEGIN { for (i = 0; i < 100000; i++) print "working: routine progress line " i }' \
+    > "$log" || fail "could not build the over-budget fixture"
+
+  out=$(FM_CLASSIFY_SCAN_BUDGET_SECS=1 classify_signal "$log" "$state" 2>/dev/null)
+  case "$out" in
+    *unreadable*) fail "a readable span deferred by the scan budget read as unreadable: $out" ;;
+  esac
+  [ -e "$state/.defer-r1.span-scan-cursor.0" ] \
+    || fail "the readable span was not deferred, so this case asserted nothing"
+  first_line=$(sed -n 's/^line=//p' "$state/.defer-r1.span-scan-cursor.0")
+
+  out=$(FM_CLASSIFY_SCAN_BUDGET_SECS=1 classify_stale "sess:fm-defer-r1" "$state" 2>/dev/null)
+  case "$out" in
+    *unreadable*) fail "a readable stale span deferred by the scan budget read as unreadable: $out" ;;
+  esac
+  second_line=$(sed -n 's/^line=//p' "$state/.defer-r1.span-scan-cursor.0" 2>/dev/null)
+  [ "${second_line:-0}" -gt "${first_line:-0}" ] \
+    || fail "the stale call did not resume the unfinished span (${first_line:-none} -> ${second_line:-none})"
+
+  out=$(
+    # shellcheck disable=SC2329 # Invoked indirectly by the function under test.
+    _fm_status_read_span() { return 1; }
+    classify_signal "$log" "$state"
+  )
+  case "$out" in
+    *"unreadable status span"*) ;;
+    *) fail "a genuinely unreadable status span was silently absorbed: $out" ;;
+  esac
+  pass "a deferred readable span is not unreadable while a genuine read failure still is"
+}
+
 test_catchall_advances_routine_then_surfaces_append() {
   local dir state out
   dir=$(make_supercase catchall-routine); state="$dir/state"
@@ -2731,6 +2774,7 @@ test_stale_read_failure_surfaces_without_advancing_seen
 test_recreated_status_rejects_captured_identity
 test_unverifiable_identity_surfaces_without_marker
 test_status_read_failure_surfaces_without_advancing_seen
+test_span_deferral_is_not_unreadable
 test_catchall_advances_routine_then_surfaces_append
 test_escalation_buffer_failure_retains_wake_and_position
 test_catchall_buffer_failure_preserves_position

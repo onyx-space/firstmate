@@ -1570,6 +1570,55 @@ test_escalated_undelivered_correlation_stays_retryable() {
   pass "an escalated correlation stays retryable only while undelivered"
 }
 
+test_poll_path_escalation_close_never_folds_the_whole_log() {
+  local home state corr rec i open verb_reads
+  home=$(setup_parent bounded-escalation-close)
+  state="$home/state"
+  export FM_PENDING_REPLY_NOW=9800
+  corr=$(fm_pending_reply_create "$home" "$state" "hibit" "bounded close")
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  # The watcher already published this keyed escalation, then the record resolved
+  # and the close append failed, so every following poll retries the close with
+  # the record still resolved and escalation_closed_epoch still empty.
+  fm_pending_reply_set "$rec" phase resolved
+  fm_pending_reply_set "$rec" escalated_epoch 9750
+  fm_pending_reply_set "$rec" parent_status "$state/hibit.status"
+  printf 'blocked [key=pending-reply-%s]: pending-reply-missed: task=hibit pending-reply-id=%s request=bounded close\n' \
+    "$corr" "$corr" > "$state/hibit.status"
+  i=0
+  while [ "$i" -lt 300 ]; do
+    printf 'working: backlog line %s\n' "$i" >> "$state/hibit.status"
+    i=$((i + 1))
+  done
+  # The retry must decide from the escalation's own keyed lines. Every whole-log
+  # shape it could reach for - the per-line escalation scan and the
+  # status_open_decisions fold behind it - parses each line through
+  # status_line_verb, so the verb-read log counts any of them as one read per
+  # backlog line instead of the few this key's own lines need.
+  : > "$state/verb-calls"
+  (
+    FM_TEST_VERB_LOG="$state/verb-calls"
+    eval "$(declare -f status_line_verb | sed '1s/status_line_verb/_fm_test_status_line_verb/')"
+    status_line_verb() {
+      printf 'read\n' >> "$FM_TEST_VERB_LOG"
+      _fm_test_status_line_verb "$@"
+    }
+    fm_pending_reply_tick "$state" || exit 1
+  ) || fail "the poll-path escalation close failed"
+  grep -Fq "resolved [key=pending-reply-$corr]" "$state/hibit.status" \
+    || fail "the poll-path escalation close still depended on the whole-log fold"
+  [ -n "$(fm_pending_reply_get "$rec" escalation_closed_epoch)" ] \
+    || fail "the poll-path escalation close was not recorded"
+  open=$(status_open_decisions "$state/hibit.status")
+  assert_not_contains "$open" "pending-reply-$corr" \
+    "the poll-path escalation close left the decision open"
+  verb_reads=$(wc -l < "$state/verb-calls" | tr -d '[:space:]')
+  [ "$verb_reads" -lt 20 ] \
+    || fail "the poll-path retry parsed the whole status log line by line ($verb_reads verb reads)"
+  unset FM_PENDING_REPLY_NOW
+  pass "the poll-path escalation close is bounded and never folds the whole status log"
+}
+
 # --- run --------------------------------------------------------------------
 
 test_normal_correlated_reply_resolves_once
@@ -1611,5 +1660,6 @@ test_mechanical_helper_writes_parent_channel
 test_remote_parent_replies_is_not_wrong_home
 test_local_parent_replies_is_wrong_home_evidence
 test_escalated_undelivered_correlation_stays_retryable
+test_poll_path_escalation_close_never_folds_the_whole_log
 
 printf 'ok - all pending-reply tests passed\n'
