@@ -19,7 +19,7 @@
 # 内存上限：权威声明源是 `container-mem-limits.sh` 的 `MEM_LIMITS` 表（该容器 88g）。
 # 这里也显式传同值，好处是 `podman inspect` 自描述、且 podman 自己重启时能应用 memory；
 # **memsw 仍然必须靠那张表补**（h 机 cgroup v1 上 podman 不写 memory.memsw.limit_in_bytes）。
-# 所以：改上限时两处都要改（表和这里），文档 §5「容器内存上限」也是这么写的。
+# 所以：改上限时两处都要改（表和这里）；memsw 与每小时重写仍只归那张表。
 set -euo pipefail
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 

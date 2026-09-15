@@ -1,7 +1,8 @@
 # h 机 outline 防复发加固（experimental）
 
 > **STATUS: experimental** — 可能被重写或删除。这些文件是 2026-09-14 巡检对 h 机（192.168.1.4）
-> 三项加固改动**已实际部署形态的源副本**：受管机器上的文件由 `install.sh` 从本目录推送。
+> 三项加固改动的**部署源**：h 机上的同名文件由 `install.sh` 从本目录幂等推送，
+> 改完本目录要重跑 `install.sh` 才会落到 h 机（实机形态可能落后于本目录）。
 > 部署事实、逐条验证证据与回滚步骤见 `/Users/onyx/code/firstmate/data/h-hardening/report.md`；
 > 运维文档见 vault `/Users/onyx/memory/outline-h-server-deploy.md`（§5）。
 
@@ -12,8 +13,8 @@
    起因：2026-09-10 停服约 2 小时，根因是调用方 PATH 缺 `/usr/sbin` 导致 podman CNI 网络写操作半途失败；
    而原有的 `MAILTO=root` 告警**本来也发不出去**（h 机 postfix disabled、无 mailx）。
 2. **容器内存上限** — outline 四容器 + `vllm-ascend` 的 cgroup 上限与 memsw。
-   声明源是 `container-mem-limits.sh` 的 `MEM_LIMITS` 表（不写 `podman run --memory`：
-   h 机 cgroup v1 上 `--memory-swap` 空转，且 `podman update` 不回写 config、重启即丢）。
+   权威声明源是 `container-mem-limits.sh` 的 `MEM_LIMITS` 表（为什么不把 `podman run --memory`
+   当声明源：h 机 cgroup v1 上 `--memory-swap` 空转，且 `podman update` 不回写 config、重启即丢）。
    每小时 + 开机 + 每次 `deploy-outline.sh` 重写一次。
    未做→**已做**（2026-09-14 22:55，队长授权）：`vllm-ascend` 现已 `--restart=always`，
    并补上了原先不存在的容器创建脚本 `start-vllm-ascend.sh`。
@@ -28,7 +29,7 @@
 | `h/container-healthcheck-alert.service` | `/etc/systemd/system/` | 检查失败时由 systemd 拉起 |
 | `h/h-healthcheck-notify.sh` | `/usr/local/bin/` | 告警出口：journal + 标记 + 邮件（冷却 / 恢复 / 自测前缀） |
 | `h/container-healthcheck.sh` | `/usr/local/bin/` | 检查逻辑本体（自含 PATH） |
-| `h/container-mem-limits.sh` | `/usr/local/bin/` | **内存上限唯一声明源** + 落地（memory + memsw） |
+| `h/container-mem-limits.sh` | `/usr/local/bin/` | **内存上限权威声明源** + 落地（memory + memsw） |
 | `h/container-mem-limits.service` | `/etc/systemd/system/` | 开机后（`After=podman-restart.service`）落一次上限 |
 | `h/start-vllm-ascend.sh` | `/usr/local/bin/` | vllm-ascend 容器创建/启动（幂等；2026-09-14 补的缺失重建路径，含 `--restart=always`） |
 | `h/deploy-outline.sh` | `/opt/outline/` | outline 四容器部署（结尾调上面的上限脚本） |

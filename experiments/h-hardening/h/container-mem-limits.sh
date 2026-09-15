@@ -1,5 +1,5 @@
 #!/bin/bash
-# 容器内存上限 —— 唯一声明源 + 执行点（h 机 cgroup v1 的两个 podman 坑的补丁）。
+# 容器内存上限 —— 权威声明源 + 执行点（h 机 cgroup v1 的两个 podman 坑的补丁）。
 #
 # 为什么不是写 `podman run --memory` 就完了（2026-09-14 实测 podman 4.9.4 + cgroup v1）：
 #   坑 1：`--memory-swap` 不生效。HostConfig.MemorySwap 记录了值，但
@@ -9,7 +9,7 @@
 #   坑 2：`podman update --memory` 只改 cgroup，**不回写容器 config**（inspect 里 HostConfig.Memory 仍为 0）。
 #         所以容器一重启，cgroup 按旧 config 重建 → 上限静默消失。
 #
-# 因此上限表放在这里（唯一声明源），由本脚本写进 cgroup，并且**每小时重写一次**
+# 因此上限表放在这里（权威声明源），由本脚本写进 cgroup，并且**每小时重写一次**
 # （container-healthcheck.timer → container-healthcheck.service，脚本末尾调用本脚本），
 # 把重启后丢掉的上限补回来。
 # 开机也跑（container-mem-limits.service，After=podman-restart.service）。
