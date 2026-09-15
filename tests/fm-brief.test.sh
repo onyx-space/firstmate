@@ -982,24 +982,25 @@ remote_authority_orders_push_and_pr() {
   remote_authority_has "$1" 'Push your `fm/<task-id>` branch there and open the PR there.'
 }
 
-# Shared predicate for a ship brief's remote repository authority section: does the
-# emitted section carry its heading plus the three load-bearing constraints?
-brief_has_ship_remote_authority_section() {
-  grep -qF -- '# Remote repository authority' "$1" || return 1
-  # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
-  remote_authority_has "$1" 'the `origin` remote as this home registered it' || return 1
-  remote_authority_has "$1" "needs the captain's explicit consent first" || return 1
-  remote_authority_has "$1" 'do not open the PR' || return 1
-  return 0
-}
-
-# A scout brief's section: the upstream and origin boundary without any push or PR
-# instruction, since a scout never opens a PR.
-brief_has_scout_remote_authority_section() {
+# The boundary every rendered section must keep, whatever its role: the heading,
+# the upstream/third-party consent rule, and the origin-upstream stop.
+brief_has_remote_authority_boundary() {
   grep -qF -- '# Remote repository authority' "$1" || return 1
   remote_authority_has "$1" "the captain's explicit consent" || return 1
   # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
   remote_authority_has "$1" '`origin` points at an upstream parent' || return 1
+  return 0
+}
+
+# A PR-opening ship brief additionally names the clone's own fork as the default
+# target. The predicate must go red once the section is stripped, which is the
+# negative control that proves it is not matching unrelated brief text.
+brief_has_pr_opening_remote_authority_section() {
+  brief_has_remote_authority_boundary "$1" || return 1
+  # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+  remote_authority_has "$1" 'the `origin` remote as this home registered it' || return 1
+  remote_authority_has "$1" "needs the captain's explicit consent first" || return 1
+  remote_authority_has "$1" 'do not open the PR' || return 1
   return 0
 }
 
@@ -1010,26 +1011,22 @@ brief_has_scout_remote_authority_section() {
 # brief must also send the worker to a decision instead of a PR when it finds that
 # same shape. The brief is the only surface every worker reads, which is why the
 # contract lives there rather than relying on firstmate restating it per dispatch.
-# The section is rendered by role, so a scout brief - which opens no PR - carries
-# the boundary without the ship-only push/PR instruction.
+# The section is rendered by role, so a no-PR role (`local-only`, scout) carries
+# the boundary without the push/PR instruction its own contract forbids.
 test_remote_repository_authority_section() {
   local home id mode brief stripped parent
   home="$TMP_ROOT/remote-authority"
   mkdir -p "$home/data"
-  for mode in no-mistakes direct-PR local-only; do
+  for mode in no-mistakes direct-PR; do
     id="brief-remote-$mode"
     FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" >/dev/null 2>&1 \
       || fail "$mode: scaffold failed"
     brief="$home/data/$id/brief.md"
-    brief_has_ship_remote_authority_section "$brief" \
+    brief_has_pr_opening_remote_authority_section "$brief" \
       || fail "$mode brief is missing the remote repository authority section or one of its constraints"
     remote_authority_orders_push_and_pr "$brief" \
       || fail "$mode brief lost the own-fork push/PR instruction"
     assert_grep 'onyx-space/<name>' "$brief" "$mode brief lost the default own-fork PR target"
-    assert_grep 'needs-decision [key=remote-upstream-access]' "$brief" \
-      "$mode brief lost the upstream-consent decision route"
-    assert_grep 'needs-decision [key=remote-origin-upstream]' "$brief" \
-      "$mode brief lost the upstream-origin stop route"
     for parent in 'kunchenguid/' 'EveryInc/' 'tt-a1i/' 'cli/cli' 'herdrdev/herdr'; do
       assert_grep "$parent" "$brief" "$mode brief lost third-party parent $parent"
     done
@@ -1043,25 +1040,42 @@ test_remote_repository_authority_section() {
     "$brief" > "$stripped"
   assert_no_grep '# Remote repository authority' "$stripped" \
     "strip control did not remove the remote authority section"
-  brief_has_ship_remote_authority_section "$stripped" \
+  brief_has_pr_opening_remote_authority_section "$stripped" \
     && fail "ship remote authority predicate stayed green on a brief with the section stripped"
 
-  # local-only opens no PR, so the ship section stays but adds one line naming the
-  # target rules a PR-less task cannot use.
-  brief="$home/data/brief-remote-local-only/brief.md"
+  # local-only opens no PR: its section keeps the upstream and origin boundary but
+  # must not carry the push/PR instruction its own Rule 1 forbids, nor the own-fork
+  # target only a PR-opening mode can use.
+  id="brief-remote-local-only"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode local-only >/dev/null 2>&1 \
+    || fail "local-only: scaffold failed"
+  brief="$home/data/$id/brief.md"
+  brief_has_remote_authority_boundary "$brief" \
+    || fail "local-only brief is missing the remote repository authority boundary"
+  remote_authority_orders_push_and_pr "$brief" \
+    && fail "local-only brief orders a push and a PR its own Rule 1 forbids"
+  remote_authority_has "$brief" 'onyx-space/<name>' \
+    && fail "local-only brief carries the own-fork PR target it cannot use"
+  assert_grep 'needs-decision [key=remote-upstream-access]' "$brief" \
+    "local-only brief lost the upstream-consent decision route"
+  assert_grep 'needs-decision [key=remote-origin-upstream]' "$brief" \
+    "local-only brief lost the upstream-origin stop route"
+  for parent in 'kunchenguid/' 'EveryInc/' 'tt-a1i/' 'cli/cli' 'herdrdev/herdr'; do
+    assert_grep "$parent" "$brief" "local-only brief lost third-party parent $parent"
+  done
   # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
-  assert_grep 'This task is `local-only`, so it opens no PR at all' "$brief" \
-    "local-only brief lost the PR-less carve-out in the remote authority section"
+  assert_no_grep 'This task is `local-only`, so it opens no PR at all' "$brief" \
+    "local-only brief still carries the push/PR carve-out the role rendering replaced"
 
-  # A scout opens no PR either, but it keeps a full brief rather than an added
-  # carve-out line, so its section must replace the push/PR instruction with the
-  # boundary alone. The ship predicate has to be red here and green above: that
-  # pair is what proves the two roles render differently.
+  # A scout opens no PR either, so its section is the boundary alone, with no
+  # push/PR instruction and no remote-operation decision route. The ship predicate
+  # has to be red here and green above: that pair is what proves the roles render
+  # differently.
   id="brief-remote-scout"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --scout >/dev/null 2>&1 \
     || fail "scout: scaffold failed"
   brief="$home/data/$id/brief.md"
-  brief_has_scout_remote_authority_section "$brief" \
+  brief_has_remote_authority_boundary "$brief" \
     || fail "scout brief is missing the remote repository authority boundary"
   remote_authority_orders_push_and_pr "$brief" \
     && fail "scout brief orders a push and a PR the scout rules forbid"
