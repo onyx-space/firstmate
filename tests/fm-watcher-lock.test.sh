@@ -195,11 +195,12 @@ test_guard_warnings() {
 }
 
 test_lock_single_winner_under_concurrency() {
-  local dir state lockdir marker i pids pid wins
+  local dir state lockdir marker release i pids winner pid wins
   dir=$(make_case lock-concurrency)
   state="$dir/state"
   lockdir="$state/.contend.lock"
   marker="$dir/wins"
+  release="$dir/release"
   : > "$marker"
   pids=
   i=1
@@ -207,18 +208,36 @@ test_lock_single_winner_under_concurrency() {
     FM_STATE_OVERRIDE="$state" bash -c '
       . "$1"
       if fm_lock_try_acquire "$2"; then
-        printf "%s\n" "$$" >> "$3"
-        # Stay alive so the held lock names a live pid for the whole window;
-        # otherwise a late contender could legitimately reclaim a dead-pid lock.
-        sleep 1
+        printf "%s\n" "${BASHPID:-$$}" >> "$3"
+        # Hold until the test releases us, so the lock names a live pid for as
+        # long as any contender can still attempt. The cap keeps a BROKEN lock
+        # failing the assertion instead of deadlocking the suite: every
+        # contender that wrongly wins here waits out the cap and is counted.
+        i=0
+        while [ ! -e "$4" ] && [ "$i" -lt 400 ]; do sleep 0.05; i=$((i + 1)); done
+        fm_lock_release "$2"
       fi
-    ' _ "$LIB" "$lockdir" "$marker" &
+    ' _ "$LIB" "$lockdir" "$marker" "$release" &
     pids="$pids $!"
     i=$((i + 1))
   done
+  # Wait for the single winner to identify itself, then for every other
+  # contender to finish attempting, and only then release. The property under
+  # test is mutual exclusion, not how fast 40 shells start: with a fixed hold
+  # instead, a contender whose one attempt lands after that hold expires would
+  # legitimately reclaim a dead-pid lock and be counted as a second winner.
+  i=0
+  while [ "$i" -lt 200 ] && [ ! -s "$marker" ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+  winner=$(head -n 1 "$marker" 2>/dev/null || true)
   for pid in $pids; do
+    [ "$pid" = "$winner" ] && continue
     wait "$pid" 2>/dev/null || true
   done
+  : > "$release"
+  [ -z "$winner" ] || wait "$winner" 2>/dev/null || true
   wins=$(awk 'NF { c++ } END { print c + 0 }' "$marker")
   [ "$wins" -eq 1 ] || fail "expected exactly one lock winner under concurrency, got $wins"
   pass "concurrent fm_lock_try_acquire yields exactly one winner"
@@ -427,7 +446,9 @@ test_lock_paused_mid_acquire_claim_fails_during_steal() {
 # The field signature this regression exists for: a holder is killed, its pid is
 # recycled by an unrelated long-lived process, and the lock - whose recorded pid
 # therefore looks alive - can never be reclaimed by liveness alone. Every waiter
-# then spins forever. The recorded pid-identity is what proves reuse.
+# then spins forever. A recorded identity is one proof of reuse; this case pins
+# the outcome on every host, so it backdates the record as well and lets whichever
+# proof the host can actually make decide.
 test_lock_recycled_pid_owner_is_reclaimed() {
   local dir state lockdir live out rc
   dir=$(make_case lock-recycled-pid)
@@ -437,9 +458,10 @@ test_lock_recycled_pid_owner_is_reclaimed() {
   live=$!
   mkdir "$lockdir"
   printf '%s\n' "$live" > "$lockdir/pid"
-  # An identity no live process can answer to: the recorded owner is provably not
-  # this pid any more.
+  # An identity no live process can answer to, on a record the live process also
+  # provably started after.
   printf '%s\n' 'proc-starttime=1 cmdline-hex=00' > "$lockdir/pid-identity"
+  touch -t 202001010000 "$lockdir" "$lockdir/pid" "$lockdir/pid-identity"
   rc=0
   out=$(FM_STATE_OVERRIDE="$state" bash -c '
     . "$1"
@@ -457,6 +479,70 @@ test_lock_recycled_pid_owner_is_reclaimed() {
   kill "$live" 2>/dev/null || true
   wait "$live" 2>/dev/null || true
   pass "a live pid whose recorded identity changed is reclaimed as pid reuse"
+}
+
+# The identity proof's own mechanism. Only the /proc form ("... cmdline-hex=...")
+# is a property of the process rather than of the process reading it, so only that
+# form may be compared; where the host renders identity from ps instead, the
+# record-age proof carries reuse and this case says so rather than passing
+# vacuously.
+test_lock_reader_independent_stamp_mismatch_is_proof() {
+  local dir state lockdir live real out rc
+  dir=$(make_case lock-stamp-mismatch)
+  state="$dir/state"
+  lockdir="$state/.contend.lock"
+  sleep 300 &
+  live=$!
+  mkdir "$lockdir"
+  printf '%s\n' "$live" > "$lockdir/pid"
+  real=$(FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    fm_pid_identity "$2"
+  ' _ "$LIB" "$live" 2>/dev/null || true)
+  case "$real" in
+    *' cmdline-hex='*)
+      printf '%s\n' 'proc-starttime=1 cmdline-hex=00' > "$lockdir/pid-identity"
+      rc=0
+      out=$(FM_STATE_OVERRIDE="$state" bash -c '
+        . "$1"
+        if fm_lock_try_acquire "$2"; then echo acquired; else echo held; fi
+      ' _ "$LIB" "$lockdir") || rc=$?
+      kill "$live" 2>/dev/null || true
+      wait "$live" 2>/dev/null || true
+      expect_code 0 "$rc" "the stamp comparison must not fail on this host"
+      [ "$out" = acquired ] || fail "a differing reader-independent start stamp is not proof: $out"
+      pass "a differing reader-independent start stamp is proof of pid reuse"
+      ;;
+    *)
+      kill "$live" 2>/dev/null || true
+      wait "$live" 2>/dev/null || true
+      pass "skipped - this host renders process identity from ps, so reuse rides the record-age proof"
+      ;;
+  esac
+}
+
+# The hazard that rule exists for: a ps-rendered stamp is not a property of the
+# process, so a mismatch in that form must never authorize a reclaim. The record
+# here is fresh, so no other proof can fire either - the lock must stay held.
+test_lock_render_dependent_stamp_is_not_proof() {
+  local dir state lockdir live out
+  dir=$(make_case lock-render-stamp)
+  state="$dir/state"
+  lockdir="$state/.contend.lock"
+  sleep 300 &
+  live=$!
+  mkdir "$lockdir"
+  printf '%s\n' "$live" > "$lockdir/pid"
+  printf '%s\n' 'Tue Jan  1 00:00:00 2019 some other command' > "$lockdir/pid-identity"
+  out=$(FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    if fm_lock_try_acquire "$2"; then echo acquired; else echo held; fi
+  ' _ "$LIB" "$lockdir")
+  kill "$live" 2>/dev/null || true
+  wait "$live" 2>/dev/null || true
+  [ "$out" = held ] || fail "a reader-dependent stamp mismatch must never reclaim: $out"
+  [ "$(cat "$lockdir/pid")" = "$live" ] || fail "the live owner's lock record changed"
+  pass "a reader-dependent stamp mismatch is never treated as pid reuse"
 }
 
 # The safety direction of the same rule: without identity evidence there is no
@@ -517,12 +603,13 @@ test_lock_legacy_recycled_pid_owner_is_reclaimed() {
 # The reclaim path must still serialize: a proven-stale record is a race between
 # every waiter, and exactly one of them may end up owning it.
 test_lock_legacy_stale_reclaim_single_winner_under_concurrency() {
-  local dir state lockdir owner live marker i pids pid wins
+  local dir state lockdir owner live marker release i pids winner pid wins
   dir=$(make_case lock-legacy-concurrency)
   state="$dir/state"
   lockdir="$state/.contend.lock"
   owner="$lockdir.owner.LEGACY"
   marker="$dir/wins"
+  release="$dir/release"
   sleep 300 &
   live=$!
   mkdir "$owner"
@@ -537,15 +624,28 @@ test_lock_legacy_stale_reclaim_single_winner_under_concurrency() {
       . "$1"
       if fm_lock_try_acquire "$2"; then
         printf "%s\n" "${BASHPID:-$$}" >> "$3"
-        sleep 1
+        i=0
+        while [ ! -e "$4" ] && [ "$i" -lt 400 ]; do sleep 0.05; i=$((i + 1)); done
+        fm_lock_release "$2"
       fi
-    ' _ "$LIB" "$lockdir" "$marker" &
+    ' _ "$LIB" "$lockdir" "$marker" "$release" &
     pids="$pids $!"
     i=$((i + 1))
   done
+  # Same discipline as the live-holder case above: no attempt may land after the
+  # winner releases, so the assertion never depends on shell start order.
+  i=0
+  while [ "$i" -lt 200 ] && [ ! -s "$marker" ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+  winner=$(head -n 1 "$marker" 2>/dev/null || true)
   for pid in $pids; do
+    [ "$pid" = "$winner" ] && continue
     wait "$pid" 2>/dev/null || true
   done
+  : > "$release"
+  [ -z "$winner" ] || wait "$winner" 2>/dev/null || true
   wins=$(awk 'NF { c++ } END { print c + 0 }' "$marker")
   kill "$live" 2>/dev/null || true
   wait "$live" 2>/dev/null || true
@@ -1377,6 +1477,8 @@ test_lock_late_claim_loses_after_recreate
 test_lock_paused_mid_acquire_claim_fails_during_steal
 test_lock_recycled_pid_owner_is_reclaimed
 test_lock_live_owner_without_identity_is_not_reclaimed
+test_lock_reader_independent_stamp_mismatch_is_proof
+test_lock_render_dependent_stamp_is_not_proof
 test_lock_legacy_recycled_pid_owner_is_reclaimed
 test_lock_legacy_stale_reclaim_single_winner_under_concurrency
 test_lock_handoff_identity_follows_the_caller

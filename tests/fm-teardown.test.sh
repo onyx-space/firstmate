@@ -3684,9 +3684,10 @@ plant_recycled_pid_lock() {  # <case-dir> <live-pid> <identity|-> <fresh|backdat
   return 0
 }
 
-# A recycled-pid owner that carries its identity is PROVEN stale, so teardown
-# must reclaim the lock and finish the cleanup it was asked for - not merely
-# give up on it.
+# A recycled-pid owner is PROVEN stale - by the identity stamp where the host
+# renders a reader-independent one, and by the record's own age otherwise - so
+# teardown must reclaim the lock and finish the cleanup it was asked for, not
+# merely give up on it.
 test_recycled_pid_record_lock_self_heals() {
   local case_dir rc
   case_dir=$(make_case record-lock-recycled)
@@ -3696,7 +3697,7 @@ test_recycled_pid_record_lock_self_heals() {
   local live_pid
   sleep 300 &
   live_pid=$!
-  plant_recycled_pid_lock "$case_dir" "$live_pid" 'proc-starttime=1 cmdline-hex=00' fresh
+  plant_recycled_pid_lock "$case_dir" "$live_pid" 'proc-starttime=1 cmdline-hex=00' backdate
 
   rc=0
   run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?

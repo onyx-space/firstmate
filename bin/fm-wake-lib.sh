@@ -473,11 +473,16 @@ fm_lock_prepare_owner() {
   # Record the owner's process identity beside its pid so a later stale-owner
   # check can PROVE pid reuse instead of trusting bare liveness, which is what
   # let a killed holder's recycled pid pin a lock forever (fm_lock_owner_recycled).
-  # Best effort: a host where the identity cannot be read keeps the bare-pid
-  # contract, and identifying the owner is not a reason to refuse the lock.
-  identity=$(fm_pid_identity "$mypid" 2>/dev/null || true)
-  if [ -n "$identity" ]; then
-    printf '%s\n' "$identity" > "$ownerdir/pid-identity" 2>/dev/null || true
+  # Only where that comparison can use it: a locally rendered identity is not a
+  # property of the process and is never proof, so on such a host the record is
+  # skipped rather than paying a fork for it (the record-age proof covers reuse
+  # there). Best effort throughout - identifying the owner is not a reason to
+  # refuse the lock.
+  if fm_pid_identity_reader_independent_available "$mypid"; then
+    identity=$(fm_pid_identity "$mypid" 2>/dev/null || true)
+    if [ -n "$identity" ]; then
+      printf '%s\n' "$identity" > "$ownerdir/pid-identity" 2>/dev/null || true
+    fi
   fi
   return 0
 }
@@ -619,24 +624,39 @@ fm_lock_recheck_stale_owner() {
   return 0
 }
 
+# fm_pid_identity_reader_independent_available <pid>: true when this host can
+# render a reader-independent process identity for <pid> at all, i.e. when
+# fm_pid_identity takes its /proc branch. Recorded identities only exist to be
+# compared later, and the comparison refuses forms that depend on who reads them,
+# so on a host without /proc - Darwin, BSD - recording one costs a ps fork per
+# lock acquisition and buys nothing. Checks a readable /proc path, never forks.
+#
+fm_pid_identity_reader_independent_available() {
+  local pid=$1 proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc}
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  [ -r "$proc_root/$pid/stat" ] && [ -r "$proc_root/$pid/cmdline" ]
+}
+
 # fm_pid_start_stamp <identity-string>: the process START-TIME field of an
-# fm_pid_identity value, without its command line. Both identity shapes put the
-# start time first: the /proc form is "<key>=<starttime> cmdline-hex=<hex>" and
-# the ps fallback is "<lstart 24 chars> <command>".
+# fm_pid_identity value, without its command line, and ONLY when that field is
+# reader-independent. Only the /proc form ("<key>=<starttime> cmdline-hex=<hex>",
+# a boot-relative tick count) qualifies; the ps fallback renders lstart through
+# the reading process's local timezone, so its text is not a property of the
+# process and two readers can disagree about it.
 #
 # Only the start time is stable for the life of a process. The command line is
 # not: a process that execs into another program keeps its pid and start time
 # but changes its command, and this repo's own tests (and the watcher) do exactly
 # that after taking a lock. Comparing commands would read such an exec as pid
 # reuse and steal a lock from its live owner, so the reuse proof compares start
-# times only.
+# times only - and returns nothing at all when the shape it is given cannot be
+# compared across readers.
 #
 fm_pid_start_stamp() {
   local identity=$1
-  [ -n "$identity" ] || return 1
   case "$identity" in
     *' cmdline-hex='*) printf '%s\n' "${identity%% cmdline-hex=*}" ;;
-    *) printf '%s\n' "${identity:0:24}" ;;
+    *) return 1 ;;
   esac
 }
 
@@ -664,12 +684,13 @@ fm_pid_elapsed_seconds() {
   printf '%s\n' "$((10#$days * 86400 + 10#$hours * 3600 + 10#$minutes * 60 + 10#$seconds))"
 }
 
-# Whole-second rounding guard for the record-age proof below. ps renders an
+# Whole-second rounding allowance for the record-age proof below. ps renders an
 # elapsed lifetime in whole seconds and stat renders a record's mtime in whole
 # seconds, so a genuine owner's start can otherwise appear up to a second after
-# its own record. Anything inside the guard counts as no proof and keeps the
-# lock held; it is a rounding allowance, never a staleness heuristic.
-FM_LOCK_OWNER_START_GRACE="${FM_LOCK_OWNER_START_GRACE:-2}"
+# its own record. Anything inside the allowance counts as no proof and keeps the
+# lock held. It is a rounding allowance, never a staleness heuristic, so it is a
+# fixed constant rather than a knob nothing asks to tune.
+FM_LOCK_OWNER_START_ALLOWANCE=2
 
 # fm_lock_owner_pid_started_after <lockdir> <pid>: true only with PROOF that the
 # process answering to <pid> now began AFTER this owner record was written, which
@@ -696,10 +717,8 @@ fm_lock_owner_pid_started_after() {
   [ -n "$elapsed" ] || return 1
   now=$(date +%s) || return 1
   case "$now" in ''|*[!0-9]*) return 1 ;; esac
-  grace=$FM_LOCK_OWNER_START_GRACE
-  case "$grace" in ''|*[!0-9]*) grace=2 ;; esac
   started=$((now - elapsed))
-  [ "$started" -gt $((mtime + grace)) ]
+  [ "$started" -gt $((mtime + FM_LOCK_OWNER_START_ALLOWANCE)) ]
 }
 
 # fm_lock_owner_recycled <lockdir> <pid>: true only with PROOF that a live <pid>
@@ -708,12 +727,17 @@ fm_lock_owner_pid_started_after() {
 # carry it:
 #
 #   - a recorded pid-identity whose start stamp the live pid no longer answers
-#     to (the exact rule, available for every lock created since identity
-#     recording, and the same abandonment rule the supervision locks apply in
-#     fm_autoarm_claim_abandoned);
-#   - a record with no identity at all, whose record the live pid's process
-#     provably started after (fm_lock_owner_pid_started_after) - the legacy
-#     shape, including the fleet's own stale nm-document-step-json-shape lock.
+#     to (the exact rule, the same abandonment rule the supervision locks apply
+#     in fm_autoarm_claim_abandoned). It needs both sides in the SAME
+#     reader-independent form (fm_pid_identity_reader_independent): on a host
+#     without /proc the identity is a locally rendered timestamp whose text
+#     depends on the reading process's timezone, so two renderings of one live
+#     process can differ. A form mismatch is never proof of reuse.
+#   - a record the live pid's process provably started after
+#     (fm_lock_owner_pid_started_after). It needs no identity at all, so it
+#     covers the legacy shape - including the fleet's own stale
+#     nm-document-step-json-shape lock - and any record whose identity cannot be
+#     compared reader-independently.
 #
 # Missing, empty, or currently unreadable evidence is NEVER proof: such a pid
 # stays a live holder. A false positive here would hand one lock to two owners,
@@ -723,11 +747,13 @@ fm_lock_owner_recycled() {
   local lockdir=$1 pid=$2 recorded current recorded_stamp current_stamp
   recorded=$(cat "$lockdir/pid-identity" 2>/dev/null || true)
   if [ -n "$recorded" ]; then
-    recorded_stamp=$(fm_pid_start_stamp "$recorded") || return 1
-    current=$(fm_pid_identity "$pid" 2>/dev/null) || return 1
-    current_stamp=$(fm_pid_start_stamp "$current") || return 1
-    [ "$current_stamp" != "$recorded_stamp" ]
-    return
+    recorded_stamp=$(fm_pid_start_stamp "$recorded") || recorded_stamp=
+    current=$(fm_pid_identity "$pid" 2>/dev/null || true)
+    current_stamp=$(fm_pid_start_stamp "$current") || current_stamp=
+    if [ -n "$recorded_stamp" ] && [ -n "$current_stamp" ]; then
+      [ "$current_stamp" != "$recorded_stamp" ]
+      return
+    fi
   fi
   fm_lock_owner_pid_started_after "$lockdir" "$pid"
 }
@@ -1231,8 +1257,8 @@ fm_lock_wait_refusal() {
 # transfer the still-live caller is the owner. <seconds> is the caller's own
 # bound, passed through so the helper refuses at the same deadline rather than
 # at the library default.
-_fm_lock_acquire_wait_handoff() {  # <lockdir> <caller-pid> [seconds]
-  local lockdir=$1 caller_pid=$2 seconds=${3:-} ownerdir current back
+_fm_lock_acquire_wait_handoff() {  # <lockdir> <caller-pid> [seconds] [caller-identity]
+  local lockdir=$1 caller_pid=$2 seconds=${3:-} caller_identity=${4:-} ownerdir current back
   case "$caller_pid" in ''|*[!0-9]*) return 1 ;; esac
   fm_pid_alive "$caller_pid" || return 1
   trap 'fm_lock_release "$lockdir"; exit 143' TERM INT
@@ -1247,25 +1273,30 @@ _fm_lock_acquire_wait_handoff() {  # <lockdir> <caller-pid> [seconds]
   fi
   fm_current_pid current || { fm_lock_release "$lockdir"; return 1; }
   back=$(cat "$ownerdir/pid" 2>/dev/null || true)
-  if [ "$back" != "$current" ] \
-    || ! printf '%s\n' "$caller_pid" > "$ownerdir/pid" 2>/dev/null \
+  [ "$back" = "$current" ] || { fm_lock_release "$lockdir"; return 1; }
+  # The identity record must describe the pid beside it, and no window may pair a
+  # live pid with another process's stamp. Left as the helper's own identity the
+  # next acquirer would read the live caller's lock as a recycled pid and steal a
+  # lock a live owner still holds. So drop the helper's identity BEFORE the pid
+  # moves: an identity-less record never licenses a reclaim from a stamp, it
+  # falls back to the record-age proof, which still answers "held" for a caller
+  # that started before the record was written. Only then move the pid and
+  # publish the identity the caller was verified with before the wait began -
+  # never one computed now, which a caller that died and had its pid recycled in
+  # the meantime would turn into a stranger's stamp. A caller whose identity
+  # could not be read leaves the record without one.
+  rm -f "$ownerdir/pid-identity" 2>/dev/null || true
+  if ! printf '%s\n' "$caller_pid" > "$ownerdir/pid" 2>/dev/null \
     || [ "$(cat "$ownerdir/pid" 2>/dev/null || true)" != "$caller_pid" ]; then
     fm_lock_release "$lockdir"
     return 1
   fi
-  # The identity record must describe the pid beside it. Left as the helper's own
-  # identity it would name a process that has almost certainly exited, so the
-  # next acquirer would prove "pid reuse" against the live caller and steal a
-  # lock a live owner still holds - the mutual-exclusion break this record
-  # exists to prevent. When the caller's identity cannot be read, drop the record
-  # instead of keeping a wrong one: the lock then falls back to the record-age
-  # rule, which is a proof rather than a mismatch.
-  back=$(fm_pid_identity "$caller_pid" 2>/dev/null || true)
-  if [ -n "$back" ] && printf '%s\n' "$back" > "$ownerdir/pid-identity" 2>/dev/null; then
-    :
-  else
-    rm -f "$ownerdir/pid-identity" 2>/dev/null || true
-  fi
+  case "$caller_identity" in
+    *' cmdline-hex='*)
+      printf '%s\n' "$caller_identity" > "$ownerdir/pid-identity" 2>/dev/null \
+        || rm -f "$ownerdir/pid-identity" 2>/dev/null || true
+      ;;
+  esac
   trap - TERM INT
 }
 
@@ -1280,7 +1311,7 @@ _fm_lock_acquire_wait_handoff() {  # <lockdir> <caller-pid> [seconds]
 # unattended close. Mutation-critical callers that just need a bounded wait use
 # fm_lock_acquire_wait, which refuses loudly on its own.
 fm_lock_acquire_wait_bounded() {
-  local lockdir=$1 seconds=$2 caller_pid rc owner_pid
+  local lockdir=$1 seconds=$2 caller_pid rc owner_pid caller_identity
   case "$seconds" in ''|*[!0-9]*|0) return 2 ;; esac
   _fm_wake_require_timeout || return 1
   if fm_lock_try_acquire "$lockdir"; then
@@ -1288,14 +1319,23 @@ fm_lock_acquire_wait_bounded() {
   fi
 
   fm_current_pid caller_pid || return 1
+  # Snapshot the caller's identity NOW, while it is known to be alive and before
+  # the helper takes over: an identity read after the wait could describe a
+  # recycled pid rather than this caller (contract in the handoff below). Only
+  # where the value is comparable across readers - see the availability helper.
+  caller_identity=
+  if fm_pid_identity_reader_independent_available "$caller_pid"; then
+    caller_identity=$(fm_pid_identity "$caller_pid" 2>/dev/null || true)
+  fi
   # shellcheck disable=SC2016 # Positional parameters expand in the child shell.
   if fm_run_timed "$seconds" env \
     "FM_STATE_OVERRIDE=$STATE" \
     "FM_ROOT_OVERRIDE=$FM_ROOT" \
     "FM_LOCK_STALE_AFTER=$FM_LOCK_STALE_AFTER" \
     "FM_LOCK_ACQUIRE_WAIT_SECS=$FM_LOCK_ACQUIRE_WAIT_SECS" \
-    bash -c '. "$1"; _fm_lock_acquire_wait_handoff "$2" "$3" "$4"' \
+    bash -c '. "$1"; _fm_lock_acquire_wait_handoff "$2" "$3" "$4" "$5"' \
       _ "$FM_WAKE_LIB_DIR/fm-wake-lib.sh" "$lockdir" "$caller_pid" "$seconds" \
+      "$caller_identity" \
       </dev/null >/dev/null 2>&1; then
     rc=0
   else
