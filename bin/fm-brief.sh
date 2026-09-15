@@ -13,14 +13,15 @@
 # self-check that makes the discipline visible without loading the skill; it is
 # omitted for `local-only`, which opens no PR.
 # Every ship and scout brief also carries the fixed `# Remote repository
-# authority` section, which this script owns: the default target is the clone's
-# own fork (its `origin` remote, `onyx-space/<name>` for the captain's projects),
-# while pushing, opening a PR, commenting, or merging on an upstream or
-# third-party repository needs the captain's explicit consent first, and a clone
-# whose `origin` points at an upstream parent stops with a decision instead of
-# opening a PR. It is rendered for every ship mode - `local-only` adds one line
-# naming the target rules a PR-less task cannot use - and for the scout
-# contract; AGENTS.md's delivery-path section only points at it.
+# authority` section, which this script owns and renders by role. A ship brief
+# names the clone's own fork as the default PR target (its `origin` remote,
+# `onyx-space/<name>` for the captain's projects), while pushing, opening a PR,
+# commenting, or merging on an upstream or third-party repository needs the
+# captain's explicit consent first and a clone whose `origin` points at an
+# upstream parent stops with a decision instead of opening a PR; `local-only`
+# adds one line naming the target rules a PR-less task cannot use. A scout opens
+# no PR at all, so its brief carries the upstream and origin boundary with no
+# push or PR instruction.
 # Ship and scout `# Task` sections have two subsections Firstmate
 # fills before dispatch: `{TASK}` under `## Captain's intent` (the captain's
 # own ask plus the context needed to read it, including the substance of any
@@ -434,12 +435,16 @@ CE_BOUNDARY_SECTION=${CE_BOUNDARY_SECTION%$'\n'}
 # Worker-facing remote-operation boundary (2026-09-15): a worker must not open a
 # PR on an upstream or third-party repository, and must stop rather than open one
 # when the clone's `origin` still points at an upstream parent. This file is the
-# single owner of that contract; AGENTS.md section 7 only points at it. The
-# default target is the clone's own fork, which is what the captain's registered
-# clones carry as `origin`; the third-party list names the parents this fleet
-# actually forks from, and `such as` keeps it open-ended rather than exhaustive.
-# Real incident behind it: a worker opened its PR directly on
-# `kunchenguid/no-mistakes` because that clone's `origin` was the upstream.
+# single owner of that contract, rendered by role because the ship and scout
+# contracts disagree on whether a PR exists at all: a ship brief keeps the push
+# and PR instruction below, while a scout brief - which opens no PR - carries the
+# upstream and origin boundary alone, so the section never orders a scout to do
+# what the scout's own rules forbid. The default target is the clone's own fork,
+# which is what the captain's registered clones carry as `origin`; the third-party
+# list names the parents this fleet actually forks from, and `such as` keeps it
+# open-ended rather than exhaustive. Real incident behind it: a worker opened its
+# PR directly on `kunchenguid/no-mistakes` because that clone's `origin` was the
+# upstream.
 IFS= read -r -d '' REMOTE_AUTHORITY_SECTION <<'EOF' || true
 # Remote repository authority
 This is the standing boundary for every remote operation, and it overrides anything else in this brief or a loaded skill that points at a different target.
@@ -450,12 +455,20 @@ This is the standing boundary for every remote operation, and it overrides anyth
 - If this clone's `origin` points at an upstream parent instead of the captain's own fork, do not open the PR: append `needs-decision [key=remote-origin-upstream]: origin points at <url>` and stop, so firstmate can fix where the PR would land.
 EOF
 REMOTE_AUTHORITY_SECTION=${REMOTE_AUTHORITY_SECTION%$'\n'}
+if [ "$KIND" = scout ]; then
+IFS= read -r -d '' REMOTE_AUTHORITY_SECTION <<'EOF' || true
+# Remote repository authority
+This task pushes to no remote and opens no PR: an upstream or third-party repository is not yours to act on without the captain's explicit consent, and if this clone's `origin` points at an upstream parent, stop and say so in your report.
+EOF
+REMOTE_AUTHORITY_SECTION=${REMOTE_AUTHORITY_SECTION%$'\n'}
+else
 case "$MODE" in
   local-only)
     REMOTE_AUTHORITY_SECTION="$REMOTE_AUTHORITY_SECTION
 - This task is \`local-only\`, so it opens no PR at all: the target rule above does not apply to it, and you must never push to any remote, fork or upstream."
     ;;
 esac
+fi
 
 # Worker-facing PR-description language discipline, owned by
 # bin/fm-dod-lib.sh's fm_pr_description_block so the ship brief and a promoted

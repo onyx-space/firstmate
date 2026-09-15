@@ -958,18 +958,48 @@ test_ce_workflow_boundary_section() {
   pass "fm-brief.sh: worker briefs carry the CE workflow boundary section"
 }
 
-# Shared predicate for the remote repository authority section: does <brief> carry
-# its heading and the three load-bearing constraints?
-# Kept separate so the same check runs green on a real scaffold and red on a brief
-# with the section stripped - that negative control is what proves the assertions
-# below bite, rather than passing on unrelated brief text.
-brief_has_remote_authority_section() {
-  local brief=$1
-  grep -qF -- '# Remote repository authority' "$brief" || return 1
+# Extract a brief's `# Remote repository authority` section body - the heading
+# itself and the following section excluded - so a scout brief can be checked for
+# the absence of a push/PR instruction without tripping over the same words in the
+# scout Rules. The emitted brief is a generated interface, so these assertions run
+# on it rather than on bin/fm-brief.sh's source.
+remote_authority_body() {
+  awk '
+    $0 == "# Remote repository authority" { inside = 1; next }
+    inside && /^# / { inside = 0 }
+    inside { print }
+  ' "$1"
+}
+
+remote_authority_has() {
+  remote_authority_body "$1" | grep -qF -- "$2"
+}
+
+# The ship-only imperative: a scout opens no PR, so its brief must never carry it,
+# while the ship predicate below must go red once the section is gone.
+remote_authority_orders_push_and_pr() {
   # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
-  grep -qF -- 'the `origin` remote as this home registered it' "$brief" || return 1
-  grep -qF -- "needs the captain's explicit consent first" "$brief" || return 1
-  grep -qF -- 'do not open the PR' "$brief" || return 1
+  remote_authority_has "$1" 'Push your `fm/<task-id>` branch there and open the PR there.'
+}
+
+# Shared predicate for a ship brief's remote repository authority section: does the
+# emitted section carry its heading plus the three load-bearing constraints?
+brief_has_ship_remote_authority_section() {
+  grep -qF -- '# Remote repository authority' "$1" || return 1
+  # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+  remote_authority_has "$1" 'the `origin` remote as this home registered it' || return 1
+  remote_authority_has "$1" "needs the captain's explicit consent first" || return 1
+  remote_authority_has "$1" 'do not open the PR' || return 1
+  return 0
+}
+
+# A scout brief's section: the upstream and origin boundary without any push or PR
+# instruction, since a scout never opens a PR.
+brief_has_scout_remote_authority_section() {
+  grep -qF -- '# Remote repository authority' "$1" || return 1
+  remote_authority_has "$1" "the captain's explicit consent" || return 1
+  # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+  remote_authority_has "$1" '`origin` points at an upstream parent' || return 1
   return 0
 }
 
@@ -980,6 +1010,8 @@ brief_has_remote_authority_section() {
 # brief must also send the worker to a decision instead of a PR when it finds that
 # same shape. The brief is the only surface every worker reads, which is why the
 # contract lives there rather than relying on firstmate restating it per dispatch.
+# The section is rendered by role, so a scout brief - which opens no PR - carries
+# the boundary without the ship-only push/PR instruction.
 test_remote_repository_authority_section() {
   local home id mode brief stripped parent
   home="$TMP_ROOT/remote-authority"
@@ -989,8 +1021,10 @@ test_remote_repository_authority_section() {
     FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" >/dev/null 2>&1 \
       || fail "$mode: scaffold failed"
     brief="$home/data/$id/brief.md"
-    brief_has_remote_authority_section "$brief" \
+    brief_has_ship_remote_authority_section "$brief" \
       || fail "$mode brief is missing the remote repository authority section or one of its constraints"
+    remote_authority_orders_push_and_pr "$brief" \
+      || fail "$mode brief lost the own-fork push/PR instruction"
     assert_grep 'onyx-space/<name>' "$brief" "$mode brief lost the default own-fork PR target"
     assert_grep 'needs-decision [key=remote-upstream-access]' "$brief" \
       "$mode brief lost the upstream-consent decision route"
@@ -1009,29 +1043,38 @@ test_remote_repository_authority_section() {
     "$brief" > "$stripped"
   assert_no_grep '# Remote repository authority' "$stripped" \
     "strip control did not remove the remote authority section"
-  brief_has_remote_authority_section "$stripped" \
-    && fail "remote authority predicate stayed green on a brief with the section stripped"
+  brief_has_ship_remote_authority_section "$stripped" \
+    && fail "ship remote authority predicate stayed green on a brief with the section stripped"
 
-  # local-only opens no PR, so the section stays but adds one line naming the
+  # local-only opens no PR, so the ship section stays but adds one line naming the
   # target rules a PR-less task cannot use.
   brief="$home/data/brief-remote-local-only/brief.md"
   # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
   assert_grep 'This task is `local-only`, so it opens no PR at all' "$brief" \
     "local-only brief lost the PR-less carve-out in the remote authority section"
 
-  # The scout contract carries it too; the secondmate charter is not a worker
-  # brief and must not.
+  # A scout opens no PR either, but it keeps a full brief rather than an added
+  # carve-out line, so its section must replace the push/PR instruction with the
+  # boundary alone. The ship predicate has to be red here and green above: that
+  # pair is what proves the two roles render differently.
   id="brief-remote-scout"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --scout >/dev/null 2>&1 \
     || fail "scout: scaffold failed"
-  brief_has_remote_authority_section "$home/data/$id/brief.md" \
-    || fail "scout brief is missing the remote repository authority section"
+  brief="$home/data/$id/brief.md"
+  brief_has_scout_remote_authority_section "$brief" \
+    || fail "scout brief is missing the remote repository authority boundary"
+  remote_authority_orders_push_and_pr "$brief" \
+    && fail "scout brief orders a push and a PR the scout rules forbid"
+  remote_authority_has "$brief" 'needs-decision' \
+    && fail "scout brief carries a remote-operation decision route it cannot use"
+
+  # The secondmate charter is not a worker brief and must not carry it.
   FM_SECONDMATE_CHARTER='Supervise assigned work.' \
     FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-remote-sm --secondmate --no-projects >/dev/null 2>&1 \
     || fail "secondmate: scaffold failed"
   assert_no_grep '# Remote repository authority' "$home/data/brief-remote-sm/brief.md" \
     "secondmate charter must not carry the worker remote authority section"
-  pass "fm-brief.sh: worker briefs carry the remote repository authority section"
+  pass "fm-brief.sh: worker briefs carry the mode-appropriate remote repository authority section"
 }
 
 # The captain's PR-language discipline (2026-09-11) must reach every worker that
