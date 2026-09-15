@@ -505,6 +505,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "experiments/h-hardening/README.md",
+      "audience": "maintainer-verification"
+    },
+    {
       "path": "skills/stow/SKILL.md",
       "audience": "public-product"
     }

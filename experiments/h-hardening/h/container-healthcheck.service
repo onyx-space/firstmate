@@ -1,0 +1,26 @@
+[Unit]
+Description=Podman container health check (outline-app, outline-dex, gitea)
+Documentation=file:///Users/onyx/memory/outline-h-server-deploy.md
+After=network-online.target
+OnFailure=container-healthcheck-alert.service
+
+[Service]
+Type=oneshot
+# 显式 PATH：2026-09-10 停服的根因就是调用方 PATH 缺 /usr/sbin，
+# 导致 podman 的 CNI 网络写操作找不到 iptables、IPAM 租约泄漏。
+# 这条是本次改动的重点，不是装饰。
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# ⚠️ 脚本必须在 /usr/local/bin 下（SELinux 标签 bin_t）。
+#    放在 /root 下标签是 admin_home_t，SELinux Enforcing 会拒绝 init_t 执行它，
+#    单元直接 203/EXEC 失败 —— 见 2026-09-14 实测（report.md「① 的第一个坑」）。
+ExecStart=/usr/local/bin/container-healthcheck.sh
+# 内存上限在脚本末尾无条件重写（不挂 ExecStartPost：ExecStart 非 0 时它不执行，
+# 而刚被 restart 过的容器正是上限被 cgroup 重建丢掉、最需要补的时刻）。
+# 这里只在检查通过时发恢复通知：上限没落地 → 脚本非 0 → 单元失败 → recover 不发，
+# 不会出现“假恢复”。见 container-mem-limits.sh 头注释。
+ExecStartPost=/usr/local/bin/h-healthcheck-notify.sh recover
+TimeoutStartSec=120
+# 保持旧 cron 的日志契约：检查输出继续写 /var/log/container-healthcheck.log
+# （告警邮件正文和运维速查都读这个文件）。改动前是 crontab 里的 `>>` 重定向。
+StandardOutput=append:/var/log/container-healthcheck.log
+StandardError=append:/var/log/container-healthcheck.log
