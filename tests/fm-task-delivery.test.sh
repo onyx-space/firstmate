@@ -307,7 +307,7 @@ test_promote_refuses_a_symlinked_task_record() {
 # prints against a capturing fm-send.sh, and asserts on the message the worker would
 # actually receive - for every supported mode.
 test_promotion_delivers_the_real_definition_of_done() {
-  local home meta out sendroot payload mode id brief_dod delivered_dod
+  local home meta out sendroot payload mode id brief_dod delivered_dod authority
   home="$TMP_ROOT/promote-dod/home"
   sendroot="$TMP_ROOT/promote-dod/sendroot"
   mkdir -p "$home/state" "$sendroot/bin"
@@ -376,6 +376,35 @@ STUB
         "$mode: promoted worker did not receive the pre-PR description self-check"
     fi
 
+    # The scout brief's remote-repository-authority section is the scout-time form
+    # ("pushes to no remote and opens no PR"). Promotion must re-render it by mode
+    # from the same single owner the ship brief uses, and rule 6 must name it as
+    # superseded, or the promoted worker holds a section forbidding the PR its own
+    # ship contract requires.
+    authority="$TMP_ROOT/promote-dod/authority-$id"
+    awk '/^# Remote repository authority$/{inside=1; print; next} inside && /^# /{exit} inside' \
+      "$payload" > "$authority"
+    assert_grep '# Remote repository authority' "$authority" \
+      "$mode: promoted worker did not receive the remote repository authority section"
+    assert_grep "the captain's explicit consent" "$authority" \
+      "$mode: promoted worker lost the upstream-consent boundary"
+    # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+    assert_grep '`origin` points at an upstream parent' "$authority" \
+      "$mode: promoted worker lost the origin-upstream stop"
+    assert_no_grep 'This task pushes to no remote and opens no PR' "$payload" \
+      "$mode: promoted worker kept the scout-time no-push/no-PR statement"
+    if [ "$mode" = local-only ]; then
+      # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+      assert_no_grep 'Push your `fm/<task-id>` branch there and open the PR there.' "$authority" \
+        "$mode: promoted worker received a push/PR order its own contract forbids"
+    else
+      assert_grep 'onyx-space/<name>' "$authority" \
+        "$mode: promoted worker lost the default own-fork PR target"
+      # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+      assert_grep 'Push your `fm/<task-id>` branch there and open the PR there.' "$authority" \
+        "$mode: promoted worker did not receive the own-fork push/PR order"
+    fi
+
     # Compare the public outputs of both real generation paths. The promoted
     # payload ends at its Definition of done, as does an ordinary generated
     # brief, so identical suffixes prove both workers receive the same contract.
@@ -403,7 +432,7 @@ STUB
     "promoted no-mistakes worker did not receive the fleet-wide ban wording"
 
   payload="$TMP_ROOT/promote-dod/payload-promote-dod-direct-pr"
-  assert_grep "supersede the scout delivery rules, the scout-time artifact-placement rules, and the report-based Definition of done" "$payload" \
+  assert_grep "supersede the scout delivery rules, the scout-time artifact-placement rules, the scout-time remote repository authority section, and the report-based Definition of done" "$payload" \
     "promoted worker retained the scout delivery and artifact-placement contracts"
   assert_grep "status protocol; the instruction inbox and its acknowledgement; the escalation rules, including ask-user; and every safety rule" "$payload" \
     "promoted worker lost the scout protocols and safety rules that still apply"

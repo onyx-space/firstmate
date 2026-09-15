@@ -6,8 +6,9 @@
 # no-mistakes worker that never received the ask-user escalation rule or the
 # `--yes` ban is the exact delivery hole this single owner exists to close.
 # It is also the single owner of the worker-facing PR-description pointer block
-# (fm_pr_description_block) so a briefed worker and a promoted one receive it from
-# one source rather than two copies that drift.
+# (fm_pr_description_block) and of the remote-repository authority block
+# (fm_remote_authority_block) so a briefed worker and a promoted one receive each
+# from one source rather than two copies that drift.
 # fm_dod_block <no-mistakes|direct-PR|local-only> <task-id> prints the block on
 # stdout with no trailing blank line. The caller validates the mode; an unknown
 # mode is refused rather than silently rendered as the pipeline contract.
@@ -227,6 +228,54 @@ Before you report the PR ready, self-check the live title and body against that 
   - Body: the English body folded inside `<details><summary>English</summary>`?
   - Body: does every English SENTENCE outside the fold have Chinese, including the validation, evidence, and update notes the pipeline appends itself when it opens or updates the PR? Only code, commands, paths, identifiers, and the folded machine output may stay English; an untranslated sentence there is a miss, because it is narration rather than machine output.
 - Third-party upstream repo - the Chinese-first contract does not apply; follow that upstream's own conventions, usually English, and never rewrite a third-party upstream PR title into Chinese.
+EOF
+}
+
+# Single owner of the worker-facing remote-repository authority block. Rendered by
+# bin/fm-brief.sh into every ship and scout brief and by bin/fm-promote.sh into the
+# ship instructions a promoted scout receives, so a promoted scout gets the
+# ship-time form instead of keeping the scout-time "pushes to no remote and opens
+# no PR" sentence its promoted ship contract contradicts. Role-rendered because
+# the PR-opening and no-PR contracts disagree on whether a PR exists: a PR-opening
+# mode (`no-mistakes` / `direct-PR`) carries the own-fork push/PR instruction,
+# while `local-only` and a scout carry the upstream and origin boundary alone,
+# never an order their own rules forbid. `scout` is a brief kind rather than a
+# mode, so the caller passes it explicitly. The caller validates the role; an
+# unknown role is refused rather than silently rendered as the ship contract.
+# Real incident behind it: a worker opened its PR directly on
+# `kunchenguid/no-mistakes` because that clone's `origin` was the upstream.
+# The third-party list names the parents this fleet actually forks from, and
+# `such as` keeps it open-ended rather than exhaustive.
+fm_remote_authority_block() {  # <scout|no-mistakes|direct-PR|local-only>
+  local role=$1
+  case "$role" in
+    scout)
+      cat <<'EOF'
+# Remote repository authority
+This task pushes to no remote and opens no PR: an upstream or third-party repository is not yours to act on without the captain's explicit consent, and if this clone's `origin` points at an upstream parent, stop and say so in your report.
+EOF
+      return 0 ;;
+    no-mistakes|direct-PR|local-only) ;;
+    *)
+      echo "error: fm_remote_authority_block: unknown role '$role'" >&2
+      return 1 ;;
+  esac
+  cat <<'EOF'
+# Remote repository authority
+This is the standing boundary for every remote operation, and it overrides anything else in this brief or a loaded skill that points at a different target.
+EOF
+  case "$role" in
+    no-mistakes|direct-PR)
+      cat <<'EOF'
+- Default PR target: this clone's own fork - the `origin` remote as this home registered it, which for the captain's projects is `onyx-space/<name>`.
+  Push your `fm/<task-id>` branch there and open the PR there.
+EOF
+      ;;
+  esac
+  cat <<'EOF'
+- Upstream and third-party repositories are not yours to act on: the parent this project was forked from, and any repository you do not own, such as `kunchenguid/*`, `EveryInc/*`, `tt-a1i/*`, `cli/cli`, or `herdrdev/herdr`.
+  Pushing, opening a PR, commenting on an issue or PR, or merging there needs the captain's explicit consent first: append `needs-decision [key=remote-upstream-access]: <the exact operation and repository>` and stop.
+- If this clone's `origin` points at an upstream parent instead of the captain's own fork, do not open the PR: append `needs-decision [key=remote-origin-upstream]: origin points at <url>` and stop, so firstmate can fix where the PR would land.
 EOF
 }
 
