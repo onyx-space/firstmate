@@ -1245,7 +1245,7 @@ Herdr is one of the two backends whose recovery-grade agent-state classifier the
 tests/fm-control-herdr-smoke.test.sh
 ```
 
-Observed output, refreshed 2026-09-10 on Herdr 0.9.0 after the stale-registration fix (the two stale-registration lines are recorded under "Stale agent registration" below):
+Observed output, refreshed 2026-09-10 on Herdr 0.9.0 after the stale-registration fix (the stale-registration lines are recorded under "Stale agent registration" and the closed-endpoint lines under "Endpoint recovery classification" below):
 
 ```text
 ok - real herdr: exit on a pane with no registered agent is idempotent success
@@ -1308,7 +1308,8 @@ malformed target                     unreadable
 
 The same run drove `bin/fm-spawn.sh --relaunch` against a real Herdr pane whose shell had been moved outside its recorded worktree: the shell was told once to return, ended in the recorded worktree, and the replacement was launched into the SAME pane, leaving one task tab.
 
-Herdr 0.8.x is not installed on this host, so protocol-20 coverage is structural plus the adapter fixture exercising both response shapes; it is not a live result.
+The adapter fixture in `tests/fm-backend-herdr.test.sh` covers both response shapes structurally, while the guard always measures whichever binary is installed and stamps the installed version on the verdicts that depend on the installed protocol, and on the failures raised through `version_fail`'s `[herdr <version>]` suffix, so the observations below are a live result on the version they name rather than a fixed protocol's.
+The 2026-09-10 lines were measured on Herdr 0.9.0 and the 2026-09-15 lines on the installed Herdr 0.8.2.
 Refresh the live half, which fails naming the installed version, with:
 
 ```sh
@@ -1321,6 +1322,18 @@ Observed 2026-09-10:
 ok - real herdr 0.9.0: a gone session reads recoverable while a live pane and a malformed target do not
 ok - real herdr: a drifted agent-free shell returns to its worktree and reuses the same endpoint
 ```
+
+The same recovery has a second half: the endpoint that is gone rather than drifted.
+A recorded pane whose pane id no longer exists answers `pane_not_found`, which is authoritative absence and must settle the recovery-grade read on `missing` - never on `alive` and never on `unreadable`.
+`missing` is what keeps the control plane from deadlocking, because `bin/fm-control.sh <id> relaunch` skips the stop step for it and `bin/fm-spawn.sh --relaunch` rebuilds the endpoint through its rehome branch ([agent-control.md](../agent-control.md)).
+Measured 2026-09-15 on macOS aarch64 against the installed Herdr 0.8.2, in the same isolated `fm-lab-` session the guard opens:
+
+```text
+ok - real herdr 0.8.2: a closed pane reads pane_not_found and classifies missing
+ok - real herdr: a closed endpoint is rebuilt by relaunch and the local copy survives
+```
+
+Both halves of that shape are pinned rather than assumed: removing the `dead`-to-`missing` mapping makes the pane read `unreadable`, and removing the relaunch's `missing` branch makes the command die on `there is no agent to stop`, so the guard turns red for each independently.
 
 `tests/fm-backend-herdr.test.sh` pins the logic portably by driving the two signals apart - the same failed pane read yields `missing` under a stopped server and `unreadable` under a running one - and asserts that the husk classifier still refuses on that identical read.
 `tests/fm-control-herdr-smoke.test.sh` proves the Herdr-only drift recovery against a real binary in an isolated lab session.
