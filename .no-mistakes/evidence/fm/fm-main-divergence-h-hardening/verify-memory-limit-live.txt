@@ -1,0 +1,42 @@
+
+Authorized users only. All activities may be monitored and reported.
+shielded: d9711b2061ae95bc == this-change sha
+=== 内存上限语义自证 @ server 2026-09-15 18:56:14 ===
+--- 0. 宿主基线 ---
+ 18:56:14 up 13 days, 22:21,  7 users,  load average: 0.57, 0.65, 0.82
+               total        used        free      shared  buff/cache   available
+Mem:          127374       56242        4982         773       68925       71131
+
+--- A/B. 声明上限 → cgroup 落值（含 memsw）---
+  podman run rc=0
+  podman run 之后：memory=67108864 memsw=9223372036854771712
+[ok] memlimit-selftest: memory=64m memsw=64m（cgroup: 67108864 / 67108864）
+  PASS  A. cgroup memory.limit_in_bytes: 67108864
+  PASS  B. cgroup memory.memsw.limit_in_bytes: 67108864
+
+--- C. 超限 → cgroup OOM kill（内核证据）---
+  内核 CONSTRAINT_MEMCG OOM kill 次数：+1（等待 6 s）
+  Sep 15 18:56:21 server kernel: oom-kill:constraint=CONSTRAINT_MEMCG,nodemask=(null),cpuset=container,mems_allowed=0,oom_memcg=/machine.slice/libpod-bf4b09b98a6afe77806bb75a6090f62b15f6e8a3064cd5d78a0759237b51e100.scope/container,task_memcg=/machine.slice/libpod-bf4b09b98a6afe77806bb75a6090f62b15f6e8a3064cd5d78a0759237b51e100.scope/container,task=python3,pid=4186234,uid=0
+  Sep 15 18:56:21 server kernel: Memory cgroup out of memory: Killed process 4186234 (python3) total-vm:628872kB, anon-rss:65536kB, file-rss:7884kB, shmem-rss:0kB, UID:0 pgtables:184kB oom_score_adj:0
+  PASS  超限被本容器 cgroup（bf4b09b98a6a…）的 MEMCG OOM 杀死
+  podman 报告：status=exited exit=137 oomkilled=false
+  PASS  C. ExitCode（SIGKILL=137）: 137
+
+--- C-still-alive. 宿主存活 + 生产容器未受影响 ---
+  PASS  宿主仍可响应: up 1 week, 6 days, 22 hours, 21 minutes
+  outline-app    running
+  outline-db     running
+  outline-redis  running
+  outline-dex    running
+  gitea          running
+               total        used        free      shared  buff/cache   available
+Mem:          127374       56235        4988         773       68926       71138
+
+--- D. --restart=always 把被杀的容器拉回来 ---
+  status=running restarts=3
+  PASS  RestartCount=3 >= 2（被杀后反复拉起）
+
+--- E. 清理牺牲容器 ---
+  PASS  已删除
+
+=== 结果: ALL PASS ===

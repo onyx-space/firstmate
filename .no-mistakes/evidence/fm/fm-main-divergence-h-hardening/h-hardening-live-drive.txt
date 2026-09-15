@@ -1,0 +1,93 @@
+
+Authorized users only. All activities may be monitored and reported.
+### H0 environment
+host=server kernel=6.6.0-132.0.0.111.oe2403sp3.aarch64 pid1=systemd
+podman=podman version 4.9.4
+cgroup_fs=tmpfs
+host_root_memcg_limit_before=9223372036854771712
+deployed_mem_limits_sha=75bff1ea30c1c0c2
+this_change_mem_limits_sha=d9711b2061ae95bc
+
+### H1 throwaway container that is RUNNING but has no cgroup path
+status=running  cgpath=[]
+
+### H2 guard: pre-fix vs this-change, host root memcg path shadowed in a private namespace
+  [ns] /sys/fs/cgroup/memory fstype=tmpfs  <- shadowed copy of the host root memcg
+  [ns] real podman still sees: status=running cgpath=[]
+  [ns] --- PRE-FIX code (as currently deployed on h) ---
+[ok] nm-probe-nocgroup: memory=64m memsw=64m（cgroup: 67108864 / 67108864）
+  [ns] pre-fix rc=0
+  [ns] root-path file after pre-fix: 67108864
+  [ns] --- THIS CHANGE ---
+[FAIL] nm-probe-nocgroup: 取不到容器 cgroup 路径（容器可能刚被删除/重建）；跳过，不写宿主根 cgroup
+  [ns] this-change rc=1
+  [ns] root-path file after this-change: 67108864
+
+### H3 happy path on the real host cgroup fs: declared cap lands on a real container
+before: limit=100663296 memsw=9223372036854771712
+[ok] nm-probe-normal: memory=128m memsw=128m（cgroup: 134217728 / 134217728）
+rc=0
+after:  limit=134217728 memsw=134217728
+
+### H4 health check, real dependencies (control)
+  [ns] /var/log fstype=tmpfs
+2026-09-15 18:55:46 [ok] outline-app (port 60920) code=200
+2026-09-15 18:55:46 [ok] outline-dex (port 60921) code=404
+2026-09-15 18:55:46 [ok] gitea (port 3000) code=200
+[ok] outline-app: memory=2g memsw=2g（cgroup: 2147483648 / 2147483648）
+[ok] outline-db: memory=2g memsw=2g（cgroup: 2147483648 / 2147483648）
+[ok] outline-redis: memory=512m memsw=512m（cgroup: 536870912 / 536870912）
+[ok] outline-dex: memory=256m memsw=256m（cgroup: 268435456 / 268435456）
+[ok] vllm-ascend: memory=88g memsw=88g（cgroup: 94489280512 / 94489280512）
+  [ns] healthcheck control rc=0
+  [ns] FAILMARK written: no
+
+### H5 health check when the cap rewrite fails (must fail the check)
+2026-09-15 18:55:47 [ok] outline-app (port 60920) code=200
+2026-09-15 18:55:47 [ok] outline-dex (port 60921) code=404
+2026-09-15 18:55:47 [ok] gitea (port 3000) code=200
+  [ns] healthcheck with cap-rewrite failing rc=1  (expect non-zero)
+  [ns] FAILMARK written: no
+
+### H6 health check when port checks fail (cap rewrite must still run)
+2026-09-15 18:55:47 [RESTART] outline-app (port 60920) 无响应 code=none -> podman restart
+2026-09-15 18:55:47 [WARN] outline-app restart 失败 -> 兜底 podman start
+2026-09-15 18:55:47 [FAIL] outline-app 无法自动恢复：restart 与 start 均失败（port 60920 code=none）
+2026-09-15 18:55:47 [FAIL] 人工检查：podman ps -a | grep outline-app；ls -l /var/lib/cni/networks/outline-net/；podman logs --tail 50 outline-app
+2026-09-15 18:55:47 [RESTART] outline-dex (port 60921) 无响应 code=none -> podman restart
+2026-09-15 18:55:47 [WARN] outline-dex restart 失败 -> 兜底 podman start
+2026-09-15 18:55:47 [FAIL] outline-dex 无法自动恢复：restart 与 start 均失败（port 60921 code=none）
+2026-09-15 18:55:47 [FAIL] 人工检查：podman ps -a | grep outline-dex；ls -l /var/lib/cni/networks/outline-net/；podman logs --tail 50 outline-dex
+2026-09-15 18:55:47 [RESTART] gitea (port 3000) 无响应 code=none -> podman restart
+2026-09-15 18:55:47 [WARN] gitea restart 失败 -> 兜底 podman start
+2026-09-15 18:55:47 [FAIL] gitea 无法自动恢复：restart 与 start 均失败（port 3000 code=none）
+2026-09-15 18:55:47 [FAIL] 人工检查：podman ps -a | grep gitea；ls -l /var/lib/cni/networks/outline-net/；podman logs --tail 50 gitea
+  [ns] healthcheck with failing port checks rc=1  (expect non-zero)
+  [ns] cap-rewrite still invoked?  spy.log: invoked with args: 
+
+### H7 recover notice when the mail channel is down (must not fail the unit)
+  [ns] --- PRE-FIX code (currently deployed) recover, mail channel down ---
+logger: socket /dev/log: Connection refused
+logger: socket /dev/log: Connection refused
+  [ns] pre-fix rc=1
+  [ns] marker after pre-fix: cleared
+  [ns] --- THIS CHANGE recover, mail channel down ---
+logger: socket /dev/log: Connection refused
+logger: socket /dev/log: Connection refused
+  [ns] this-change rc=0
+  [ns] marker after this-change: cleared
+
+### H8 after: host root memcg untouched, production containers still running
+host_root_memcg_limit_after=9223372036854771712
+portainer Up 13 days
+nginx-vl Up 7 days
+outline-db Up 9 days
+outline-redis Up 9 days
+gitea Up 6 days
+outline-dex Up 6 days
+outline-app Up 5 days
+hh-term Up 5 days
+vllm-ascend Up 20 hours
+nm-probe-nocgroup Up 2 seconds
+nm-probe-normal Up 1 second
+leftover_probe_containers=2

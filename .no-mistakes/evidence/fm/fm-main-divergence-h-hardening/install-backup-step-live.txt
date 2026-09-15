@@ -1,0 +1,19 @@
+
+Authorized users only. All activities may be monitored and reported.
+Error: Peer netns reference is invalid.
+  [ns] /opt shadowed -> /opt/outline/deploy-outline.sh present? no
+  [ns] --- PRE-FIX backup step, deploy-outline.sh absent ---
+cp: cannot stat '/opt/outline/deploy-outline.sh': No such file or directory
+  [ns] PRE-FIX backup step, deploy-outline.sh absent -> step exit=1
+  [ns] --- THIS CHANGE backup step, deploy-outline.sh absent ---
+warn: no /opt/outline/deploy-outline.sh to back up
+backed-up:/tmp/nm-hh-test/bk
+  [ns] installer continued (set -e did NOT abort)
+  [ns] THIS CHANGE backup step, deploy-outline.sh absent -> step exit=0
+  [ns] crontab also masked
+  [ns] --- THIS CHANGE backup step, deploy-outline.sh AND crontab absent ---
+warn: no /opt/outline/deploy-outline.sh to back up
+warn: no crontab to back up
+backed-up:/tmp/nm-hh-test/bk
+  [ns] installer continued (set -e did NOT abort)
+  [ns] THIS CHANGE backup step, deploy-outline.sh AND crontab absent -> step exit=0

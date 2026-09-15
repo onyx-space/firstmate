@@ -1,0 +1,16 @@
+### baseline: tracked documentation-audiences consumer on this branch
+$ bin/fm-doc-audience-check.sh
+fm-doc-audience-check: ok surfaces=101 local_links=407
+exit=0
+
+### existing targeted test
+$ bash tests/fm-documentation-audiences.test.sh
+ok - documentation inventory classifies every maintained prose surface exactly once
+ok - classification, setup routing, and maintained-prose scope fail safely
+ok - required documentation owner pointers cannot silently disappear
+ok - local links resolve while dates, versions, commands, and incident prose remain semantically reviewed
+
+### adversarial: inventory copy with the new experiments/h-hardening/README.md entry removed
+$ bin/fm-doc-audience-check.sh --inventory /tmp/nm-hh/no-h-hardening.json
+fm-doc-audience-check: unclassified: experiments/h-hardening/README.md
+exit=1
