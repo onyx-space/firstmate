@@ -958,6 +958,82 @@ test_ce_workflow_boundary_section() {
   pass "fm-brief.sh: worker briefs carry the CE workflow boundary section"
 }
 
+# Shared predicate for the remote repository authority section: does <brief> carry
+# its heading and the three load-bearing constraints?
+# Kept separate so the same check runs green on a real scaffold and red on a brief
+# with the section stripped - that negative control is what proves the assertions
+# below bite, rather than passing on unrelated brief text.
+brief_has_remote_authority_section() {
+  local brief=$1
+  grep -qF -- '# Remote repository authority' "$brief" || return 1
+  # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+  grep -qF -- 'the `origin` remote as this home registered it' "$brief" || return 1
+  grep -qF -- "needs the captain's explicit consent first" "$brief" || return 1
+  grep -qF -- 'do not open the PR' "$brief" || return 1
+  return 0
+}
+
+# The captain's remote-operation boundary (2026-09-15): a worker opens its PR on
+# the clone's own fork, and an upstream or third-party repository needs explicit
+# consent first. The incident behind it was a worker opening its PR directly on
+# `kunchenguid/no-mistakes` because that clone's `origin` was the upstream, so the
+# brief must also send the worker to a decision instead of a PR when it finds that
+# same shape. The brief is the only surface every worker reads, which is why the
+# contract lives there rather than relying on firstmate restating it per dispatch.
+test_remote_repository_authority_section() {
+  local home id mode brief stripped parent
+  home="$TMP_ROOT/remote-authority"
+  mkdir -p "$home/data"
+  for mode in no-mistakes direct-PR local-only; do
+    id="brief-remote-$mode"
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" >/dev/null 2>&1 \
+      || fail "$mode: scaffold failed"
+    brief="$home/data/$id/brief.md"
+    brief_has_remote_authority_section "$brief" \
+      || fail "$mode brief is missing the remote repository authority section or one of its constraints"
+    assert_grep 'onyx-space/<name>' "$brief" "$mode brief lost the default own-fork PR target"
+    assert_grep 'needs-decision [key=remote-upstream-access]' "$brief" \
+      "$mode brief lost the upstream-consent decision route"
+    assert_grep 'needs-decision [key=remote-origin-upstream]' "$brief" \
+      "$mode brief lost the upstream-origin stop route"
+    for parent in 'kunchenguid/' 'EveryInc/' 'tt-a1i/' 'cli/cli' 'herdrdev/herdr'; do
+      assert_grep "$parent" "$brief" "$mode brief lost third-party parent $parent"
+    done
+  done
+
+  # Negative control for the shared predicate: stripping the section out of a real
+  # scaffold must turn the check red.
+  brief="$home/data/brief-remote-no-mistakes/brief.md"
+  stripped="$home/data/brief-remote-stripped.md"
+  awk '/^# Remote repository authority$/{skip=1} /^# /{if (skip && $0 != "# Remote repository authority") skip=0} !skip' \
+    "$brief" > "$stripped"
+  assert_no_grep '# Remote repository authority' "$stripped" \
+    "strip control did not remove the remote authority section"
+  brief_has_remote_authority_section "$stripped" \
+    && fail "remote authority predicate stayed green on a brief with the section stripped"
+
+  # local-only opens no PR, so the section stays but adds one line naming the
+  # target rules a PR-less task cannot use.
+  brief="$home/data/brief-remote-local-only/brief.md"
+  # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+  assert_grep 'This task is `local-only`, so it opens no PR at all' "$brief" \
+    "local-only brief lost the PR-less carve-out in the remote authority section"
+
+  # The scout contract carries it too; the secondmate charter is not a worker
+  # brief and must not.
+  id="brief-remote-scout"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --scout >/dev/null 2>&1 \
+    || fail "scout: scaffold failed"
+  brief_has_remote_authority_section "$home/data/$id/brief.md" \
+    || fail "scout brief is missing the remote repository authority section"
+  FM_SECONDMATE_CHARTER='Supervise assigned work.' \
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-remote-sm --secondmate --no-projects >/dev/null 2>&1 \
+    || fail "secondmate: scaffold failed"
+  assert_no_grep '# Remote repository authority' "$home/data/brief-remote-sm/brief.md" \
+    "secondmate charter must not carry the worker remote authority section"
+  pass "fm-brief.sh: worker briefs carry the remote repository authority section"
+}
+
 # The captain's PR-language discipline (2026-09-11) must reach every worker that
 # can open a pull request, and its full format is owned by the separately
 # installed `pr-description` skill. Six PR-opening tasks in one week still shipped
@@ -1259,6 +1335,7 @@ test_secondmate_directory_paths_are_absolute_and_output_is_stable
 test_pause_verb_override_renders_all_brief_scaffolds
 test_scout_and_secondmate_load_decision_hold_policy
 test_ce_workflow_boundary_section
+test_remote_repository_authority_section
 test_pr_description_discipline_section
 test_tool_call_timeout_discipline_section
 test_artifact_placement_contract
