@@ -64,7 +64,11 @@ while read -r name limit; do
   fi
 
   bytes=$(to_bytes "$limit")
-  cg="/sys/fs/cgroup/memory$(podman inspect "$name" --format '{{.State.CgroupPath}}' 2>/dev/null)"
+  cgp=$(podman inspect "$name" --format '{{.State.CgroupPath}}' 2>/dev/null)
+  if [ -z "$cgp" ]; then
+    echo "[FAIL] $name: 取不到容器 cgroup 路径（容器可能刚被删除/重建）；跳过，不写宿主根 cgroup"; rc=1; continue
+  fi
+  cg="/sys/fs/cgroup/memory$cgp"
   if [ ! -d "$cg" ]; then echo "[FAIL] $name: cgroup 未找到（$cg）"; rc=1; continue; fi
 
   if ! echo "$bytes" > "$cg/memory.limit_in_bytes" 2>/dev/null; then
