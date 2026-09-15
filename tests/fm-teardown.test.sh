@@ -3672,13 +3672,16 @@ EOF
 # With <identity> empty the owner records no pid-identity, which is the shape
 # every lock created before identity recording has - including the one that was
 # still wedging this fleet's own teardown when the fix was written.
-plant_recycled_pid_lock() {  # <case-dir> <live-pid> <identity|->
-  local case_dir=$1 live_pid=$2 identity=$3 owner
+# <age> is backdate to stamp the record as old, or fresh to leave it at now.
+plant_recycled_pid_lock() {  # <case-dir> <live-pid> <identity|-> <fresh|backdate>
+  local case_dir=$1 live_pid=$2 identity=$3 age=$4 owner
   owner="$case_dir/state/.meta-task-x1.lock.owner.FIELD01"
   mkdir "$owner"
   printf '%s\n' "$live_pid" > "$owner/pid"
   [ "$identity" = - ] || printf '%s\n' "$identity" > "$owner/pid-identity"
   ln -s "$owner" "$case_dir/state/.meta-task-x1.lock"
+  [ "$age" = backdate ] && touch -t 202001010000 "$owner" "$owner/pid"
+  return 0
 }
 
 # A recycled-pid owner that carries its identity is PROVEN stale, so teardown
@@ -3693,7 +3696,7 @@ test_recycled_pid_record_lock_self_heals() {
   local live_pid
   sleep 300 &
   live_pid=$!
-  plant_recycled_pid_lock "$case_dir" "$live_pid" 'proc-starttime=1 cmdline-hex=00'
+  plant_recycled_pid_lock "$case_dir" "$live_pid" 'proc-starttime=1 cmdline-hex=00' fresh
 
   rc=0
   run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
@@ -3707,18 +3710,41 @@ test_recycled_pid_record_lock_self_heals() {
   pass "a recycled-pid record lock is reclaimed and teardown completes"
 }
 
-# The same shape without a recorded identity cannot be proven stale from the
-# record, so teardown must refuse at its bound with the evidence a human needs
-# to decide - never silently steal a lock, and never hang. This is the exact
-# state the fleet's own nm-document-step-json-shape record lock was left in.
-test_legacy_recycled_pid_record_lock_refuses_with_evidence() {
-  local case_dir rc
-  case_dir=$(make_case record-lock-legacy)
+# The legacy shape WITH the proof: the record predates the process that now
+# answers to its pid, so the pid was recycled and the lock is reclaimable. The
+# fleet's own stale nm-document-step-json-shape lock is exactly this shape, and
+# teardown must finish its work rather than stopping at a report.
+test_legacy_recycled_pid_record_lock_self_heals_when_provable() {
+  local case_dir rc live_pid
+  case_dir=$(make_case record-lock-legacy-provable)
   write_meta "$case_dir" local-only ship
-  local live_pid
+  wt_commit "$case_dir" "fix the thing"
+  add_fork_with_pushed_branch "$case_dir"
   sleep 300 &
   live_pid=$!
-  plant_recycled_pid_lock "$case_dir" "$live_pid" -
+  plant_recycled_pid_lock "$case_dir" "$live_pid" - backdate
+
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  kill "$live_pid" 2>/dev/null || true
+  wait "$live_pid" 2>/dev/null || true
+
+  expect_code 0 "$rc" "record-lock-legacy-provable: teardown must reclaim it and finish"
+  assert_absent "$case_dir/state/.meta-task-x1.lock" \
+    "record-lock-legacy-provable: the stale record lock survived a successful teardown"
+  pass "a legacy record outlived by its recycled pid is reclaimed and teardown completes"
+}
+
+# Without that proof - here the live process began no later than the record -
+# teardown must refuse at its bound with the evidence a human needs to decide,
+# never silently steal a lock and never hang.
+test_legacy_recycled_pid_record_lock_refuses_when_unprovable() {
+  local case_dir rc live_pid
+  case_dir=$(make_case record-lock-legacy-unprovable)
+  write_meta "$case_dir" local-only ship
+  sleep 300 &
+  live_pid=$!
+  plant_recycled_pid_lock "$case_dir" "$live_pid" - fresh
 
   rc=0
   FM_LOCK_ACQUIRE_WAIT_SECS=1 \
@@ -3726,17 +3752,17 @@ test_legacy_recycled_pid_record_lock_refuses_with_evidence() {
   kill "$live_pid" 2>/dev/null || true
   wait "$live_pid" 2>/dev/null || true
 
-  expect_code 124 "$rc" "record-lock-legacy: teardown must refuse at its lock deadline"
+  expect_code 124 "$rc" "record-lock-legacy-unprovable: teardown must refuse at its lock deadline"
   assert_grep "could not acquire" "$case_dir/stderr" \
-    "record-lock-legacy: the refusal did not name the lock"
+    "record-lock-legacy-unprovable: the refusal did not name the lock"
   assert_grep "held by live pid $live_pid" "$case_dir/stderr" \
-    "record-lock-legacy: the refusal did not name the holder"
+    "record-lock-legacy-unprovable: the refusal did not name the holder"
   assert_grep "records no owner identity" "$case_dir/stderr" \
-    "record-lock-legacy: the refusal did not say why the holder cannot be confirmed"
+    "record-lock-legacy-unprovable: the refusal did not say why the holder cannot be confirmed"
   assert_present "$case_dir/state/.meta-task-x1.lock" \
-    "record-lock-legacy: an unprovable lock was removed instead of reported"
+    "record-lock-legacy-unprovable: an unprovable lock was removed instead of reported"
   assert_absent "$case_dir/state/.control-task-x1.lock" \
-    "record-lock-legacy: the refused teardown leaked its task control lock"
+    "record-lock-legacy-unprovable: the refused teardown leaked its task control lock"
   pass "an unprovable legacy record lock refuses with holder evidence, and nothing is stolen"
 }
 
@@ -3787,7 +3813,8 @@ test_held_record_lock_refuses_instead_of_wedging() {
 test_local_only_fork_remote_allows
 test_held_record_lock_refuses_instead_of_wedging
 test_recycled_pid_record_lock_self_heals
-test_legacy_recycled_pid_record_lock_refuses_with_evidence
+test_legacy_recycled_pid_record_lock_self_heals_when_provable
+test_legacy_recycled_pid_record_lock_refuses_when_unprovable
 test_teardown_closes_the_backlog_item_itself
 test_teardown_manual_backend_leaves_the_backlog_to_the_operator
 test_local_only_truly_unpushed_refuses

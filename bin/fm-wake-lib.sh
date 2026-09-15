@@ -640,26 +640,96 @@ fm_pid_start_stamp() {
   esac
 }
 
-# fm_lock_owner_recycled <lockdir> <pid>: true only with PROOF that a live <pid>
-# is a recycled pid rather than this lock's owner. The owner directory records
-# its creator's pid-identity (fm_lock_prepare_owner), and a live pid whose start
-# time no longer matches that record cannot be the process that took the lock.
-# Missing, empty, or currently unreadable identity evidence is never proof: such
-# a pid stays a live holder, so an unproven reclaim can never break mutual
-# exclusion. A false positive here would hand one lock to two owners, so every
-# unsure answer must land on "still held".
+# fm_pid_elapsed_seconds <pid>: the process's elapsed lifetime in seconds, from
+# ps' portable etime field ([[dd-]hh:]mm:ss). Prints nothing and fails when ps
+# cannot render it, so no caller ever compares against a guess.
 #
-# This is the same abandonment rule the supervision locks already apply
-# (fm_autoarm_claim_abandoned): a recorded pid-identity that no longer matches
-# its live pid is pid reuse after the holder was killed.
+fm_pid_elapsed_seconds() {
+  local pid=$1 raw days=0 rest hours minutes seconds
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  raw=$(LC_ALL=C ps -p "$pid" -o etime= 2>/dev/null | tr -d '[:space:]') || return 1
+  [ -n "$raw" ] || return 1
+  case "$raw" in
+    *-*) days=${raw%%-*}; rest=${raw#*-} ;;
+    *) rest=$raw ;;
+  esac
+  case "$days" in ''|*[!0-9]*) return 1 ;; esac
+  case "$rest" in *:*) ;; *) return 1 ;; esac
+  # Two fields are MM:SS and three are HH:MM:SS; shift the short form up.
+  IFS=: read -r hours minutes seconds <<< "$rest"
+  if [ -z "$seconds" ]; then seconds=$minutes; minutes=$hours; hours=0; fi
+  case "$hours" in ''|*[!0-9]*) return 1 ;; esac
+  case "$minutes" in ''|*[!0-9]*) return 1 ;; esac
+  case "$seconds" in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s\n' "$((10#$days * 86400 + 10#$hours * 3600 + 10#$minutes * 60 + 10#$seconds))"
+}
+
+# Whole-second rounding guard for the record-age proof below. ps renders an
+# elapsed lifetime in whole seconds and stat renders a record's mtime in whole
+# seconds, so a genuine owner's start can otherwise appear up to a second after
+# its own record. Anything inside the guard counts as no proof and keeps the
+# lock held; it is a rounding allowance, never a staleness heuristic.
+FM_LOCK_OWNER_START_GRACE="${FM_LOCK_OWNER_START_GRACE:-2}"
+
+# fm_lock_owner_pid_started_after <lockdir> <pid>: true only with PROOF that the
+# process answering to <pid> now began AFTER this owner record was written, which
+# means it cannot be the process that wrote it - the record's pid was recycled.
+# This is the proof available for records that carry no pid-identity (every lock
+# created before identity recording existed), and it needs only what the host
+# already has: the holder's elapsed lifetime and the record's own mtime. No new
+# record format, and no comparison the host cannot make: an unreadable etime,
+# mtime, or clock answer is no proof and leaves the lock held.
+#
+fm_lock_owner_pid_started_after() {
+  local lockdir=$1 pid=$2 owner mtime elapsed now grace started
+  # The record is the owner directory, not the lock path: a symlink-form lock's
+  # own mtime is when the link was published, while the record's age lives on the
+  # directory it points at.
+  if [ -L "$lockdir" ]; then
+    owner=$(fm_lock_link_owner "$lockdir" 2>/dev/null) || return 1
+  else
+    owner=$lockdir
+  fi
+  mtime=$(fm_path_mtime "$owner") || return 1
+  case "$mtime" in ''|*[!0-9]*) return 1 ;; esac
+  elapsed=$(fm_pid_elapsed_seconds "$pid") || return 1
+  [ -n "$elapsed" ] || return 1
+  now=$(date +%s) || return 1
+  case "$now" in ''|*[!0-9]*) return 1 ;; esac
+  grace=$FM_LOCK_OWNER_START_GRACE
+  case "$grace" in ''|*[!0-9]*) grace=2 ;; esac
+  started=$((now - elapsed))
+  [ "$started" -gt $((mtime + grace)) ]
+}
+
+# fm_lock_owner_recycled <lockdir> <pid>: true only with PROOF that a live <pid>
+# is a recycled pid rather than this lock's owner, so a caller may reclaim the
+# lock. Two proofs exist, and each is used only for the record shape that can
+# carry it:
+#
+#   - a recorded pid-identity whose start stamp the live pid no longer answers
+#     to (the exact rule, available for every lock created since identity
+#     recording, and the same abandonment rule the supervision locks apply in
+#     fm_autoarm_claim_abandoned);
+#   - a record with no identity at all, whose record the live pid's process
+#     provably started after (fm_lock_owner_pid_started_after) - the legacy
+#     shape, including the fleet's own stale nm-document-step-json-shape lock.
+#
+# Missing, empty, or currently unreadable evidence is NEVER proof: such a pid
+# stays a live holder. A false positive here would hand one lock to two owners,
+# so every unsure answer must land on "still held".
 #
 fm_lock_owner_recycled() {
   local lockdir=$1 pid=$2 recorded current recorded_stamp current_stamp
   recorded=$(cat "$lockdir/pid-identity" 2>/dev/null || true)
-  recorded_stamp=$(fm_pid_start_stamp "$recorded") || return 1
-  current=$(fm_pid_identity "$pid" 2>/dev/null) || return 1
-  current_stamp=$(fm_pid_start_stamp "$current") || return 1
-  [ "$current_stamp" != "$recorded_stamp" ]
+  if [ -n "$recorded" ]; then
+    recorded_stamp=$(fm_pid_start_stamp "$recorded") || return 1
+    current=$(fm_pid_identity "$pid" 2>/dev/null) || return 1
+    current_stamp=$(fm_pid_start_stamp "$current") || return 1
+    [ "$current_stamp" != "$recorded_stamp" ]
+    return
+  fi
+  fm_lock_owner_pid_started_after "$lockdir" "$pid"
 }
 
 FM_RECOVERY_MARKER_TOKEN=
@@ -1139,14 +1209,16 @@ fm_lock_wait_refusal() {
         if [ -n "$(cat "$lockdir/pid-identity" 2>/dev/null || true)" ]; then
           printf 'error:   that process is the lock owner: wait for it to finish, or investigate and stop it if it is wedged. Do not remove the lock while it runs.\n' >&2
         else
-          # Legacy lock: no identity was recorded, so a recycled pid cannot be
-          # proven from the record alone. Print the one comparison that decides
-          # it - when the lock was created versus when this pid started - and
-          # leave the call to the operator instead of acting on a wall clock.
+          # Legacy lock: no identity was recorded, so the only proof available is
+          # the record-age rule, and this holder failed it - it began no later
+          # than the record did, so it may be the real owner. Print the two
+          # timestamps that decide it and leave the call to the operator rather
+          # than acting on a guess.
           started=$(ps -p "$pid" -o lstart= 2>/dev/null | head -n 1 || true)
-          printf 'error:   this lock records no owner identity (it predates identity recording), so that pid cannot be confirmed as its owner\n' >&2
-          printf 'error:   lock created %ss ago; pid %s started %s - if the real holder died and this pid was reused, inspect and remove the stale lock (%s and its %s.owner.* directory), otherwise wait for it or stop it\n' \
-            "$age" "$pid" "${started:-start time unavailable}" "$lockdir" "$lockdir" >&2
+          printf 'error:   this lock records no owner identity (it predates identity recording), and pid %s started %s, which is not after the record (age %ss), so pid reuse is not proven\n' \
+            "$pid" "${started:-start time unavailable}" "$age" >&2
+          printf 'error:   wait for it to finish, or investigate and stop it if it is wedged; if you can confirm that pid was reused, remove the stale lock (%s and its %s.owner.* directory)\n' \
+            "$lockdir" "$lockdir" >&2
         fi
       fi
       ;;
@@ -1180,6 +1252,19 @@ _fm_lock_acquire_wait_handoff() {  # <lockdir> <caller-pid> [seconds]
     || [ "$(cat "$ownerdir/pid" 2>/dev/null || true)" != "$caller_pid" ]; then
     fm_lock_release "$lockdir"
     return 1
+  fi
+  # The identity record must describe the pid beside it. Left as the helper's own
+  # identity it would name a process that has almost certainly exited, so the
+  # next acquirer would prove "pid reuse" against the live caller and steal a
+  # lock a live owner still holds - the mutual-exclusion break this record
+  # exists to prevent. When the caller's identity cannot be read, drop the record
+  # instead of keeping a wrong one: the lock then falls back to the record-age
+  # rule, which is a proof rather than a mismatch.
+  back=$(fm_pid_identity "$caller_pid" 2>/dev/null || true)
+  if [ -n "$back" ] && printf '%s\n' "$back" > "$ownerdir/pid-identity" 2>/dev/null; then
+    :
+  else
+    rm -f "$ownerdir/pid-identity" 2>/dev/null || true
   fi
   trap - TERM INT
 }

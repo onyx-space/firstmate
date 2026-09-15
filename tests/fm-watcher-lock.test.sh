@@ -482,6 +482,117 @@ test_lock_live_owner_without_identity_is_not_reclaimed() {
   pass "a live holder with no recorded identity is still never reclaimed"
 }
 
+# The legacy shape: a record written before identity recording existed, whose
+# pid the kernel recycled to a process that started long afterwards. That process
+# provably cannot be the writer, so the lock is reclaimable without any new
+# record format - and without stealing anything from a live owner.
+test_lock_legacy_recycled_pid_owner_is_reclaimed() {
+  local dir state lockdir owner live out rc
+  dir=$(make_case lock-legacy-recycled)
+  state="$dir/state"
+  lockdir="$state/.contend.lock"
+  owner="$lockdir.owner.LEGACY"
+  sleep 300 &
+  live=$!
+  mkdir "$owner"
+  printf '%s\n' "$live" > "$owner/pid"
+  ln -s "$owner" "$lockdir"
+  # The record predates the live process by years, which is the whole proof.
+  touch -t 202001010000 "$owner" "$owner/pid"
+  rc=0
+  out=$(FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    fm_lock_try_acquire "$2" || exit 7
+    printf "pid=%s\n" "$(cat "$2/pid")"
+  ' _ "$LIB" "$lockdir") || rc=$?
+  expect_code 0 "$rc" "a legacy record outlived by its recycled pid must be reclaimed"
+  case "$out" in
+    *"pid=$live") fail "legacy recycled-pid lock was not taken over: $out" ;; esac
+  is_live_non_zombie "$live" || fail "legacy reclaim signalled the unrelated process"
+  kill "$live" 2>/dev/null || true
+  wait "$live" 2>/dev/null || true
+  pass "a legacy record whose pid started later is reclaimed as pid reuse"
+}
+
+# The reclaim path must still serialize: a proven-stale record is a race between
+# every waiter, and exactly one of them may end up owning it.
+test_lock_legacy_stale_reclaim_single_winner_under_concurrency() {
+  local dir state lockdir owner live marker i pids pid wins
+  dir=$(make_case lock-legacy-concurrency)
+  state="$dir/state"
+  lockdir="$state/.contend.lock"
+  owner="$lockdir.owner.LEGACY"
+  marker="$dir/wins"
+  sleep 300 &
+  live=$!
+  mkdir "$owner"
+  printf '%s\n' "$live" > "$owner/pid"
+  ln -s "$owner" "$lockdir"
+  touch -t 202001010000 "$owner" "$owner/pid"
+  : > "$marker"
+  pids=
+  i=1
+  while [ "$i" -le 40 ]; do
+    FM_STATE_OVERRIDE="$state" bash -c '
+      . "$1"
+      if fm_lock_try_acquire "$2"; then
+        printf "%s\n" "${BASHPID:-$$}" >> "$3"
+        sleep 1
+      fi
+    ' _ "$LIB" "$lockdir" "$marker" &
+    pids="$pids $!"
+    i=$((i + 1))
+  done
+  for pid in $pids; do
+    wait "$pid" 2>/dev/null || true
+  done
+  wins=$(awk 'NF { c++ } END { print c + 0 }' "$marker")
+  kill "$live" 2>/dev/null || true
+  wait "$live" 2>/dev/null || true
+  [ "$wins" -eq 1 ] || fail "expected exactly one legacy stale-lock stealer, got $wins"
+  pass "concurrent legacy stale-lock reclaim still yields exactly one winner"
+}
+
+# A bounded handoff moves the lock record to the waiting caller. The identity
+# beside that pid has to move with it: left as the helper's own identity, the
+# next acquirer would read the live caller's lock as a recycled pid and take a
+# lock a live owner still holds.
+test_lock_handoff_identity_follows_the_caller() {
+  local dir state lockdir ready release other_pid caller_out rc
+  dir=$(make_case lock-handoff-identity)
+  state="$dir/state"
+  lockdir="$state/.contend.lock"
+  ready="$dir/other.ready"
+  release="$dir/other.release"
+  FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    fm_lock_acquire_wait "$2" || exit 10
+    printf "ready\n" > "$3"
+    sleep 2
+    fm_lock_release "$2"
+  ' _ "$LIB" "$lockdir" "$ready" &
+  other_pid=$!
+  while [ ! -s "$ready" ]; do sleep 0.05; done
+  rc=0
+  caller_out=$(FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    fm_lock_acquire_wait_bounded "$2" 20 || exit 11
+    me=${BASHPID:-$$}
+    [ "$(cat "$2/pid")" = "$me" ] || { echo "handoff-pid-mismatch"; exit 12; }
+    if fm_pid_alive "$me" && ! fm_lock_owner_recycled "$2" "$me"; then
+      echo held-correctly
+    else
+      echo STOLEN-BY-RECYCLED-CHECK
+    fi
+  ' _ "$LIB" "$lockdir") || rc=$?
+  kill "$other_pid" 2>/dev/null || true
+  wait "$other_pid" 2>/dev/null || true
+  expect_code 0 "$rc" "a bounded handoff must leave a usable lock record"
+  [ "$caller_out" = held-correctly ] \
+    || fail "a handed-off lock looks recycled to the next acquirer: $caller_out"
+  pass "a handed-off lock's identity names the caller, not the helper"
+}
+
 # A holder that execs into another program after taking the lock keeps its pid
 # and its start time but changes its command line. That is not pid reuse, and
 # reading it as reuse would steal the lock from a live owner - the failure this
@@ -1266,6 +1377,9 @@ test_lock_late_claim_loses_after_recreate
 test_lock_paused_mid_acquire_claim_fails_during_steal
 test_lock_recycled_pid_owner_is_reclaimed
 test_lock_live_owner_without_identity_is_not_reclaimed
+test_lock_legacy_recycled_pid_owner_is_reclaimed
+test_lock_legacy_stale_reclaim_single_winner_under_concurrency
+test_lock_handoff_identity_follows_the_caller
 test_lock_exec_after_acquire_is_not_reuse
 test_lock_wait_refuses_at_its_deadline
 test_watch_restart_rejects_reused_pid
