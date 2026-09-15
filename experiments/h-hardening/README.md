@@ -23,7 +23,7 @@
 
 | 路径 | 部署到 h 机 | 作用 |
 |---|---|---|
-| `h/container-healthcheck.service` | `/etc/systemd/system/` | 检查 oneshot：显式 PATH + `OnFailure=` + 两个 `ExecStartPost` |
+| `h/container-healthcheck.service` | `/etc/systemd/system/` | 检查 oneshot：显式 PATH + `OnFailure=` + 脚本末尾重写上限 + `ExecStartPost` 发恢复通知 |
 | `h/container-healthcheck.timer` | `/etc/systemd/system/` | 每小时；`Persistent=true` |
 | `h/container-healthcheck-alert.service` | `/etc/systemd/system/` | 检查失败时由 systemd 拉起 |
 | `h/h-healthcheck-notify.sh` | `/usr/local/bin/` | 告警出口：journal + 标记 + 邮件（冷却 / 恢复 / 自测前缀） |

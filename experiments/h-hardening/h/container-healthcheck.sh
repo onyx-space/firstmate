@@ -58,4 +58,8 @@ rc=0
 check_port 60920 outline-app || rc=1
 check_port 60921 outline-dex || rc=1
 check_port 3000 gitea || rc=1
+
+# 上限重写放在这里而不是单元的 ExecStartPost：ExecStart 非 0 时 ExecStartPost 一律不执行，
+# 而「有容器刚被 restart 过」正是 cgroup 上限被重建丢掉、最需要补的时刻。
+/usr/local/bin/container-mem-limits.sh || rc=1
 exit "$rc"

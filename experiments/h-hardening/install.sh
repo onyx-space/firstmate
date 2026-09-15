@@ -12,7 +12,7 @@ REMOTE=h
 TS=$(date +%Y%m%d-%H%M%S)
 BK=/root/h-hardening-backup-$TS
 
-ssh "$REMOTE" "mkdir -p $BK && cp -a /usr/local/bin/container-healthcheck.sh $BK/ 2>/dev/null; cp -a /root/container_healthcheck.sh $BK/root-container_healthcheck.sh 2>/dev/null; cp -a /opt/outline/deploy-outline.sh $BK/ && crontab -l > $BK/crontab.bak && echo backed-up:$BK"
+ssh "$REMOTE" "mkdir -p $BK && cp -a /usr/local/bin/container-healthcheck.sh $BK/ 2>/dev/null; cp -a /root/container_healthcheck.sh $BK/root-container_healthcheck.sh 2>/dev/null; cp -a /opt/outline/deploy-outline.sh $BK/ 2>/dev/null || echo 'warn: no /opt/outline/deploy-outline.sh to back up'; crontab -l > $BK/crontab.bak 2>/dev/null || echo 'warn: no crontab to back up'; echo backed-up:$BK"
 
 scp -q "$SRC/container-healthcheck.sh"    "$REMOTE:/usr/local/bin/container-healthcheck.sh"
 scp -q "$SRC/deploy-outline.sh"        "$REMOTE:/opt/outline/deploy-outline.sh"

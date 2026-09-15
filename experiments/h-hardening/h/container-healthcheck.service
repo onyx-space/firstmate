@@ -14,13 +14,10 @@ Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 #    放在 /root 下标签是 admin_home_t，SELinux Enforcing 会拒绝 init_t 执行它，
 #    单元直接 203/EXEC 失败 —— 见 2026-09-14 实测（report.md「① 的第一个坑」）。
 ExecStart=/usr/local/bin/container-healthcheck.sh
-# 顺序要紧：内存上限先重写，再发恢复通知。
-#   a) podman 4.9.4 的 `podman update --memory` 不回写容器 config，容器重启后 cgroup 上限会
-#      静默丢失（实测已证），所以每小时重写一次。见 container-mem-limits.sh 头注释。
-#   b) 两行 ExecStartPost 是顺序执行且**首个失败则不跑后面的**（实测 systemd 255）：
-#      上限没落地时单元就失败 → recover 不发，不会出现“假恢复”。
-ExecStartPost=/usr/local/bin/container-mem-limits.sh
-# 检查通过时走到这里：只有在存在未结失败标记时才发恢复通知。
+# 内存上限在脚本末尾无条件重写（不挂 ExecStartPost：ExecStart 非 0 时它不执行，
+# 而刚被 restart 过的容器正是上限被 cgroup 重建丢掉、最需要补的时刻）。
+# 这里只在检查通过时发恢复通知：上限没落地 → 脚本非 0 → 单元失败 → recover 不发，
+# 不会出现“假恢复”。见 container-mem-limits.sh 头注释。
 ExecStartPost=/usr/local/bin/h-healthcheck-notify.sh recover
 TimeoutStartSec=120
 # 保持旧 cron 的日志契约：检查输出继续写 /var/log/container-healthcheck.log

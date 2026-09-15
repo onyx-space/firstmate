@@ -10,7 +10,8 @@
 #         所以容器一重启，cgroup 按旧 config 重建 → 上限静默消失。
 #
 # 因此上限表放在这里（唯一声明源），由本脚本写进 cgroup，并且**每小时重写一次**
-# （container-healthcheck.timer 同时激活本脚本的 service），把重启后丢掉的上限补回来。
+# （container-healthcheck.timer → container-healthcheck.service，脚本末尾调用本脚本），
+# 把重启后丢掉的上限补回来。
 # 开机也跑（container-mem-limits.service，After=podman-restart.service）。
 #
 # 用法：container-mem-limits.sh                   全表执行

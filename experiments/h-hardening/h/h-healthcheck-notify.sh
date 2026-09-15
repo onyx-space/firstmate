@@ -15,8 +15,10 @@
 # 所有 cron 的 MAILTO=root 告警（本健康检查、backup-snapshots.sh）**全部静默丢弃**。
 # 只写标记文件等于没人知道。
 #
-# 邮件失败不吞掉第 1/2 层：脚本对邮件失败返回非 0，systemd 会把本单元标 failed，
+# 邮件失败不吞掉第 1/2 层：fail 模式对邮件失败返回非 0，systemd 会把本单元标 failed，
 # 于是 `systemctl --failed` 会同时列出「检查失败」与「告警通道坏」，不会静默。
+# recover 模式的恢复信只是通知：投递失败记 warning 并返回 0，否则 OnFailure 会把一次
+# 通过的检查报成故障，还会重新写回刚清掉的失败标记。
 set -uo pipefail
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -58,7 +60,7 @@ $detail
 "
   rc=$?
   [ $rc -eq 0 ] || logger -t container-healthcheck -p daemon.warning "recover mail NOT delivered (ssh/163mail rc=$rc)"
-  exit $rc
+  exit 0
   ;;
 fail|*)
   printf '%s %s 容器维护检查无法自动恢复\n' "$now_h" "$HOST" >> "$MARK" 2>/dev/null || true

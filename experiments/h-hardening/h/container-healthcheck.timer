@@ -4,7 +4,7 @@ Description=Run the podman container health check hourly
 [Timer]
 # systemd 255 的 [Timer] Unit= **不是列表**（后值覆盖前值，实测）：
 # 一个 timer 只能带一个 unit。内存上限的重跑因此放在
-# container-healthcheck.service 的 ExecStartPost 里（见该单元）。
+# container-healthcheck.service 的 ExecStart 里（检查脚本末尾，见该单元）。
 Unit=container-healthcheck.service
 OnCalendar=hourly
 # Persistent=true：机器关机/休眠期间错过的整点，开机后补跑一次，
