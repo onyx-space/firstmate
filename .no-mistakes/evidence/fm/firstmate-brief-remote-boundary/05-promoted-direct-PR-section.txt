@@ -1,0 +1,10 @@
+### promoted scout -> mode=direct-PR: delivered remote authority section
+# Remote repository authority
+This is the standing boundary for every remote operation, and it overrides anything else in this brief or a loaded skill that points at a different target.
+- Default PR target: this clone's own fork - the `origin` remote as this home registered it, which for the captain's projects is `onyx-space/<name>`.
+  Push your `fm/<task-id>` branch there and open the PR there.
+- Upstream and third-party repositories are not yours to act on: the parent this project was forked from, and any repository you do not own, such as `kunchenguid/*`, `EveryInc/*`, `tt-a1i/*`, `cli/cli`, or `herdrdev/herdr`.
+  Pushing, opening a PR, commenting on an issue or PR, or merging there needs the captain's explicit consent first: append `needs-decision [key=remote-upstream-access]: <the exact operation and repository>` and stop.
+- If this clone's `origin` points at an upstream parent instead of the captain's own fork, do not open the PR: append `needs-decision [key=remote-origin-upstream]: origin points at <url>` and stop, so firstmate can fix where the PR would land.
+
+# PR description

@@ -1,0 +1,41 @@
+PASS  no-mistakes: section has own-fork target onyx-space/<name>
+PASS  no-mistakes: section orders push+PR to own fork
+PASS  no-mistakes: section requires captain consent for upstream
+PASS  no-mistakes: section stops when origin points at upstream parent
+PASS  no-mistakes: section needs-decision remote-origin-upstream route present
+PASS  no-mistakes: section lists third-party parents
+PASS  direct-PR: section has own-fork target
+PASS  direct-PR: section orders push+PR to own fork
+PASS  direct-PR: section requires captain consent for upstream
+PASS  direct-PR: section stops when origin points at upstream parent
+PASS  local-only: section keeps upstream consent boundary
+PASS  local-only: section keeps origin-upstream stop
+PASS  local-only: section does NOT order push+PR
+PASS  local-only: section does NOT name own-fork PR target
+PASS  local-only: no stale push/PR carve-out bullet remains
+PASS  scout: section keeps upstream consent boundary
+PASS  scout: section keeps origin-upstream stop
+PASS  scout: section does NOT order push+PR
+PASS  scout: section does NOT name own-fork PR target
+PASS  scout: section does NOT carry a remote-operation needs-decision route
+PASS  promoted(no-mistakes): worker receives a remote authority section
+PASS  promoted(no-mistakes): worker loses the scout-time no-push/no-PR sentence
+PASS  promoted(no-mistakes): worker keeps upstream consent boundary
+PASS  promoted(no-mistakes): worker keeps origin-upstream stop
+PASS  promoted(no-mistakes): worker receives own-fork push/PR order
+PASS  promoted(no-mistakes): worker receives own-fork target
+PASS  promoted(direct-PR): worker receives a remote authority section
+PASS  promoted(direct-PR): worker loses the scout-time no-push/no-PR sentence
+PASS  promoted(direct-PR): worker keeps upstream consent boundary
+PASS  promoted(direct-PR): worker keeps origin-upstream stop
+PASS  promoted(direct-PR): worker receives own-fork push/PR order
+PASS  promoted(direct-PR): worker receives own-fork target
+PASS  promoted(local-only): worker receives a remote authority section
+PASS  promoted(local-only): worker loses the scout-time no-push/no-PR sentence
+PASS  promoted(local-only): worker keeps upstream consent boundary
+PASS  promoted(local-only): worker keeps origin-upstream stop
+PASS  promoted(local-only): NO push/PR order for a no-PR contract
+PASS  secondmate charter: no remote authority section
+PASS  owner refuses an unknown role (rc=1)
+
+passed=39 failed=0

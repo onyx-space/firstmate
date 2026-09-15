@@ -1,0 +1,17 @@
+Round-1 regression: a scout promoted into a PR-opening mode kept the scout-time
+"pushes to no remote and opens no PR" contract (or, after the role-render fix,
+received no ship-time remote-authority section at all), while its ship contract
+required it to open a PR.
+
+RED - pre-fix code (commit b40e3a2, extracted with `git archive` to /tmp):
+  propagated scout -> real bin/fm-promote.sh --mode no-mistakes
+  `grep -c '# Remote repository authority' ship-instructions.md`  => 0
+  => the round-1 assertion (promoted worker receives a remote authority section)
+     is RED, because promotion never re-rendered the block.
+
+GREEN - fixed code (commit 8b7a037, this worktree), same real drive:
+  promoted(no-mistakes): worker receives a remote authority section  => PASS
+  promoted(no-mistakes): worker loses the scout-time no-push/no-PR sentence => PASS
+  promoted(no-mistakes): worker receives own-fork push/PR order      => PASS
+  promoted(direct-PR):   same three checks                           => PASS
+  promoted(local-only):  boundary kept, NO push/PR order             => PASS

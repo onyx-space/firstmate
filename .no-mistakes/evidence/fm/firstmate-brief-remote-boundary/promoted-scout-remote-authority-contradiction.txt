@@ -1,0 +1,34 @@
+# Promoted scout vs. its new ship contract (target commit b40e3a2)
+# reproduced by: scaffold a scout brief with bin/fm-brief.sh --scout, fill ## Captain's intent /
+# ## Firstmate spec, write state/<id>.meta (window=/kind=scout/worktree=), then run
+# bin/fm-promote.sh <id> --mode <mode> --yolo on  — the brief is never re-rendered by promotion.
+
+################ promoted scout -> mode=no-mistakes ################
+--- original brief.md, # Remote repository authority ---
+# Remote repository authority
+This task pushes to no remote and opens no PR: an upstream or third-party repository is not yours to act on without the captain's explicit consent, and if this clone's `origin` points at an upstream parent, stop and say so in your report.
+
+--- ship-instructions.md, delivery lines ---
+31:Delivery contract: mode=no-mistakes
+32:**Completion for mode=no-mistakes is a PR the no-mistakes pipeline pushed and opened, never a commit.**
+
+################ promoted scout -> mode=direct-PR ################
+--- original brief.md, # Remote repository authority ---
+# Remote repository authority
+This task pushes to no remote and opens no PR: an upstream or third-party repository is not yours to act on without the captain's explicit consent, and if this clone's `origin` points at an upstream parent, stop and say so in your report.
+
+--- ship-instructions.md, delivery lines ---
+29:Delivery contract: mode=direct-PR
+32:When it is implemented and committed, push your branch and open a PR with `gh-axi`, then append `done: PR {url}` to the status file and stop.
+
+################ promoted scout -> mode=local-only ################
+--- original brief.md, # Remote repository authority ---
+# Remote repository authority
+This task pushes to no remote and opens no PR: an upstream or third-party repository is not yours to act on without the captain's explicit consent, and if this clone's `origin` points at an upstream parent, stop and say so in your report.
+
+--- ship-instructions.md, delivery lines ---
+19:Delivery contract: mode=local-only
+21:The task is complete only when committed on your branch `fm/scout-local-only`. Do NOT push, do NOT open a PR, do NOT merge.
+
+### control: the same promotion at the pre-change base commit (f5c8dbf) ###
+base scout brief '# Remote repository authority' heading count: 0
