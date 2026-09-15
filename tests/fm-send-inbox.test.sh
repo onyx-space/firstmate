@@ -338,6 +338,41 @@ test_unwritable_inbox_fails_loudly() {
   pass "fm-send inbox: an unwritable record is a loud local failure that leaves no false expectation"
 }
 
+# The lock a wedged lifecycle action holds while it spins on its own task record
+# is the supervision lease's command lock: in a Pi supervision context EVERY
+# lifecycle action that touches leases - a steer included - queues behind it. Bit
+# for bit, that is the field symptom: a steer that never returned and never
+# created the target inbox. It must refuse at its bound instead.
+test_lease_lock_contention_refuses_bounded() {
+  local dir err rc holder marker lock i
+  dir=$(setup_case lease-lock); err="$dir/send.err"
+  marker="$dir/lease-lock-held"
+  lock="$dir/home/state/.fm-lease-command.lock"
+  bash -c '
+    . "$1"
+    fm_lock_acquire_wait "$2" || exit 10
+    touch "$3"
+    sleep 30
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$lock" "$marker" &
+  holder=$!
+  i=0
+  while [ ! -e "$marker" ] && [ "$i" -lt 100 ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+  [ -e "$marker" ] || { kill "$holder" 2>/dev/null; fail "the lease command lock holder did not start"; }
+  run_send "$dir" "$err" PI_CODING_AGENT=true FM_SUPERVISION_ACTOR=main \
+    FM_LOCK_ACQUIRE_WAIT_SECS=1 -- t1 "must not hang"; rc=$?
+  kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+  expect_code 124 "$rc" "a steer behind a held lease lock must refuse at its bound"
+  assert_absent "$dir/home/state/t1.inbox" "a refused steer must not enqueue a record"
+  assert_contains "$(cat "$err")" "could not acquire" \
+    "the refusal should name the lock it could not take"
+  assert_contains "$(cat "$err")" "held by live pid" \
+    "the refusal should name the holder"
+  pass "fm-send: a steer behind a held lease command lock refuses bounded without enqueue"
+}
+
 test_text_steer_rides_inbox
 test_multiline_steer_is_legal
 test_resend_enqueues_new_sequence
@@ -349,4 +384,5 @@ test_key_path_never_touches_inbox
 test_secondmate_marker_and_enqueue_delivery
 test_post_enqueue_bookkeeping_failure_is_not_retryable
 test_meta_lock_contention_fails_bounded
+test_lease_lock_contention_refuses_bounded
 test_unwritable_inbox_fails_loudly

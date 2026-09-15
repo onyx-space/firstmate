@@ -424,6 +424,146 @@ test_lock_paused_mid_acquire_claim_fails_during_steal() {
   pass "paused mid-acquire claimant backs off to active stealer"
 }
 
+# The field signature this regression exists for: a holder is killed, its pid is
+# recycled by an unrelated long-lived process, and the lock - whose recorded pid
+# therefore looks alive - can never be reclaimed by liveness alone. Every waiter
+# then spins forever. The recorded pid-identity is what proves reuse.
+test_lock_recycled_pid_owner_is_reclaimed() {
+  local dir state lockdir live out rc
+  dir=$(make_case lock-recycled-pid)
+  state="$dir/state"
+  lockdir="$state/.contend.lock"
+  sleep 300 &
+  live=$!
+  mkdir "$lockdir"
+  printf '%s\n' "$live" > "$lockdir/pid"
+  # An identity no live process can answer to: the recorded owner is provably not
+  # this pid any more.
+  printf '%s\n' 'proc-starttime=1 cmdline-hex=00' > "$lockdir/pid-identity"
+  rc=0
+  out=$(FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    fm_lock_try_acquire "$2" || exit 7
+    printf "recovered=%s pid=%s\n" "$FM_LOCK_RECOVERED_PID" "$(cat "$2/pid")"
+  ' _ "$LIB" "$lockdir") || rc=$?
+  expect_code 0 "$rc" "a recycled-pid stale lock must be reclaimed, not waited on"
+  case "$out" in
+    *"recovered=$live"*) ;;
+    *) fail "reclaim did not report the recycled owner: $out" ;;
+  esac
+  case "$out" in
+    *"pid=$live") fail "recycled-pid lock was not taken over: $out" ;; esac
+  is_live_non_zombie "$live" || fail "reclaiming a recycled pid signalled the unrelated process"
+  kill "$live" 2>/dev/null || true
+  wait "$live" 2>/dev/null || true
+  pass "a live pid whose recorded identity changed is reclaimed as pid reuse"
+}
+
+# The safety direction of the same rule: without identity evidence there is no
+# proof of reuse, so a live pid stays a live holder. A false reclaim here would
+# hand one lock to two owners.
+test_lock_live_owner_without_identity_is_not_reclaimed() {
+  local dir state lockdir live out
+  dir=$(make_case lock-live-no-identity)
+  state="$dir/state"
+  lockdir="$state/.contend.lock"
+  sleep 300 &
+  live=$!
+  mkdir "$lockdir"
+  printf '%s\n' "$live" > "$lockdir/pid"
+  out=$(FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    if fm_lock_try_acquire "$2"; then echo acquired; else echo held; fi
+  ' _ "$LIB" "$lockdir")
+  [ "$out" = held ] || fail "an unproven live holder must keep the lock: $out"
+  [ "$(cat "$lockdir/pid")" = "$live" ] || fail "the live owner's lock record changed"
+  kill "$live" 2>/dev/null || true
+  wait "$live" 2>/dev/null || true
+  pass "a live holder with no recorded identity is still never reclaimed"
+}
+
+# A holder that execs into another program after taking the lock keeps its pid
+# and its start time but changes its command line. That is not pid reuse, and
+# reading it as reuse would steal the lock from a live owner - the failure this
+# whole rule is supposed to prevent - so the proof compares start times only.
+test_lock_exec_after_acquire_is_not_reuse() {
+  local dir state lockdir holder i out
+  dir=$(make_case lock-exec-holder)
+  state="$dir/state"
+  lockdir="$state/.contend.lock"
+  FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    fm_lock_acquire_wait "$2" || exit 10
+    exec sleep 30
+  ' _ "$LIB" "$lockdir" &
+  holder=$!
+  i=0
+  while [ "$i" -lt 100 ] && ! ps -p "$holder" -o command= 2>/dev/null | grep -q '^sleep 30'; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+  if ! ps -p "$holder" -o command= 2>/dev/null | grep -q '^sleep 30'; then
+    kill "$holder" 2>/dev/null || true
+    fail "the fixture holder never exec'd into sleep"
+  fi
+  out=$(FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    if fm_lock_try_acquire "$2"; then echo acquired; else echo held; fi
+  ' _ "$LIB" "$lockdir")
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  [ "$out" = held ] || fail "an exec'd live holder lost its lock: $out"
+  pass "a lock holder that exec'd another program is not mistaken for pid reuse"
+}
+
+# Bounded wait: a genuine live holder no longer wedges the caller. The waiter
+# refuses at its deadline with a diagnostic naming the holder, exits 124, and has
+# not taken the lock it refused to wait for.
+test_lock_wait_refuses_at_its_deadline() {
+  local dir state lockdir err holder release holder_pid lock_pid held_pid rc i start waited
+  dir=$(make_case lock-wait-deadline)
+  state="$dir/state"
+  lockdir="$state/.contend.lock"
+  err="$dir/wait.err"
+  holder="$dir/holder.ready"
+  release="$dir/release-holder"
+  FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    fm_lock_acquire_wait "$2" || exit 10
+    printf "%s\n" "${BASHPID:-$$}" > "$3"
+    while [ ! -e "$4" ]; do sleep 0.05; done
+    fm_lock_release "$2"
+  ' _ "$LIB" "$lockdir" "$holder" "$release" &
+  holder_pid=$!
+  i=0
+  while [ "$i" -lt 100 ] && [ ! -s "$holder" ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+  [ -s "$holder" ] || {
+    kill "$holder_pid" 2>/dev/null || true
+    fail "the fixture never took the contended lock"
+  }
+  lock_pid=$(cat "$lockdir/pid")
+  start=$(date +%s)
+  rc=0
+  FM_STATE_OVERRIDE="$state" FM_LOCK_ACQUIRE_WAIT_SECS=1 bash -c '
+    . "$1"
+    fm_lock_acquire_wait "$2"
+  ' _ "$LIB" "$lockdir" 2> "$err" || rc=$?
+  waited=$(( $(date +%s) - start ))
+  held_pid=$(cat "$lockdir/pid" 2>/dev/null || true)
+  : > "$release"
+  wait "$holder_pid" 2>/dev/null || true
+  expect_code 124 "$rc" "a held lock must make the waiter refuse at its deadline"
+  [ "$waited" -ge 1 ] || fail "the waiter refused before its deadline (${waited}s)"
+  [ "$waited" -lt 60 ] || fail "the wait was not bounded (${waited}s)"
+  assert_grep "$lockdir" "$err" "the refusal did not name the lock"
+  assert_grep "held by live pid $lock_pid" "$err" "the refusal did not name the holder"
+  assert_equals "$lock_pid" "$held_pid" "a refused waiter must not have taken the lock"
+  pass "a live-held lock is refused (exit 124, holder named) instead of wedging the waiter"
+}
+
 test_watch_restart_rejects_reused_pid() {
   local dir state fakebin out live pid i
   dir=$(make_case restart-reused-pid)
@@ -1124,6 +1264,10 @@ test_lock_does_not_steal_live_lock
 test_lock_empty_pid_uses_minimum_grace
 test_lock_late_claim_loses_after_recreate
 test_lock_paused_mid_acquire_claim_fails_during_steal
+test_lock_recycled_pid_owner_is_reclaimed
+test_lock_live_owner_without_identity_is_not_reclaimed
+test_lock_exec_after_acquire_is_not_reuse
+test_lock_wait_refuses_at_its_deadline
 test_watch_restart_rejects_reused_pid
 test_watch_restart_attaches_to_healthy_peer
 test_watcher_self_evicts_on_lock_takeover
