@@ -1,0 +1,22 @@
+WORK=/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T//fm-teardown-reclaim.WZA7wT
+############ CASE T1: provable recycled pid -> teardown must reclaim and proceed
+rc=1 elapsed=0
+REFUSED: task task-x1 has a missing, empty, or ambiguous worktree identity; preserving task state.
+lock pid after: <gone>
+lock still present: no
+control lock leaked: no
+unrelated pid 97114 alive: yes
+
+############ CASE T3: legacy identity-less record with a DEAD pid -> teardown must reclaim it
+rc=1 elapsed=0
+REFUSED: task task-x1 has a missing, empty, or ambiguous worktree identity; preserving task state.
+lock still present: no
+control lock leaked: no
+
+############ CASE T2: matching identity, live owner -> teardown must refuse bounded, never steal
+rc=124 elapsed=3
+error: could not acquire /var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T//fm-teardown-reclaim.WZA7wT/t-held/home/state/.meta-task-x1.lock within 2s; refusing instead of waiting indefinitely
+error:   held by live pid 97747 (sleep 300) for at least 3s
+error:   that process is the lock owner: wait for it to finish, or investigate and stop it if it is wedged. Do not remove the lock while it runs.
+lock pid after: 97747
+unrelated pid 97747 alive: yes

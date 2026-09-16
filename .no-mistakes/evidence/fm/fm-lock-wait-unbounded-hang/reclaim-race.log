@@ -1,0 +1,5 @@
+acquirers=8 winners=1
+winner pids: 21032 
+unrelated pid 21022 alive: yes
+lock record pid: <gone>
+RESULT: single owner preserved

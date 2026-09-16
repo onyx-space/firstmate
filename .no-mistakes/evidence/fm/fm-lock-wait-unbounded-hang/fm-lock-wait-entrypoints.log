@@ -1,0 +1,8 @@
+ok - teardown record lock held / base: HANG recorded - killed by its 8s watchdog after 8s
+ok - teardown behind a held record lock: base HANGs (killed at 8s), this build refuses in 2s
+ok - send behind a held lease lock / base: HANG recorded - killed by its 8s watchdog after 8s
+ok - steer behind a held lease lock: base HANGs (killed at 8s), this build refuses in 3s
+ok - teardown record lock recycled / base: HANG recorded - killed by its 8s watchdog after 8s
+ok - teardown behind an unprovable recycled-pid record lock: base HANGs (killed at 8s), this build refuses in 2s
+ok - send behind a proven-stale lease lock / base: HANG recorded - killed by its 8s watchdog after 8s
+ok - steer behind an unprovable recycled-pid lease lock: base HANGs (killed at 8s), this build refuses in 2s

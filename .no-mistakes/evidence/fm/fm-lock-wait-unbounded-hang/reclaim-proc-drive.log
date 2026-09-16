@@ -1,0 +1,20 @@
+WORK=/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T//fm-reclaim-drive.nLK99l
+############ CASE R1: renewable proof present -> must reclaim and send
+live pid: 23831
+identity under synthetic proc root: proc-starttime=7777 cmdline-hex=736c6565700033303000
+identity under the native host (no /proc): Wed Sep 16 09:47:13 2026     sleep 300
+rc=0 elapsed=3
+lock pid after: <gone>
+inbox record created: yes
+planted stale owner dir survived: no
+unrelated pid 23831 alive: yes
+
+############ CASE R2: same host, record matches the live pid -> must refuse, never steal
+record: proc-starttime=7777 cmdline-hex=736c6565700033303000
+rc=124 elapsed=2
+error: could not acquire /var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T//fm-reclaim-drive.nLK99l/no-reclaim/home/state/.fm-lease-command.lock within 2s; refusing instead of waiting indefinitely
+error:   held by live pid 24808 (sleep 300) for at least 2s
+error:   that process is the lock owner: wait for it to finish, or investigate and stop it if it is wedged. Do not remove the lock while it runs.
+lock pid after: 24808
+inbox record created: no
+unrelated pid 24808 alive: yes
