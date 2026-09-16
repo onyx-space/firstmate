@@ -446,11 +446,14 @@ test_lock_paused_mid_acquire_claim_fails_during_steal() {
 # The field signature this regression exists for: a holder is killed, its pid is
 # recycled by an unrelated long-lived process, and the lock - whose recorded pid
 # therefore looks alive - can never be reclaimed by liveness alone. Every waiter
-# then spins forever. A recorded identity is one proof of reuse; this case pins
-# the outcome on every host, so it backdates the record as well and lets whichever
-# proof the host can actually make decide.
+# then spins forever. The one proof that authorizes a reclaim is a recorded
+# pid-identity whose start stamp the live pid no longer answers to, and that
+# comparison needs the SAME reader-independent form on both sides. This case
+# plants the record form and asserts what the host can actually prove: reclaim
+# where it can render that comparison itself, and a lock that stays held where it
+# cannot.
 test_lock_recycled_pid_owner_is_reclaimed() {
-  local dir state lockdir live out rc
+  local dir state lockdir live out
   dir=$(make_case lock-recycled-pid)
   state="$dir/state"
   lockdir="$state/.contend.lock"
@@ -458,33 +461,41 @@ test_lock_recycled_pid_owner_is_reclaimed() {
   live=$!
   mkdir "$lockdir"
   printf '%s\n' "$live" > "$lockdir/pid"
-  # An identity no live process can answer to, on a record the live process also
-  # provably started after.
+  # An identity no live process can answer to.
   printf '%s\n' 'proc-starttime=1 cmdline-hex=00' > "$lockdir/pid-identity"
-  touch -t 202001010000 "$lockdir" "$lockdir/pid" "$lockdir/pid-identity"
-  rc=0
   out=$(FM_STATE_OVERRIDE="$state" bash -c '
     . "$1"
-    fm_lock_try_acquire "$2" || exit 7
-    printf "recovered=%s pid=%s\n" "$FM_LOCK_RECOVERED_PID" "$(cat "$2/pid")"
-  ' _ "$LIB" "$lockdir") || rc=$?
-  expect_code 0 "$rc" "a recycled-pid stale lock must be reclaimed, not waited on"
+    if fm_lock_try_acquire "$2"; then
+      printf "recovered=%s pid=%s\n" "$FM_LOCK_RECOVERED_PID" "$(cat "$2/pid")"
+    else
+      printf "held=%s pid=%s\n" "${FM_LOCK_HELD_PID:-}" "$(cat "$2/pid")"
+    fi
+  ' _ "$LIB" "$lockdir")
   case "$out" in
-    *"recovered=$live"*) ;;
-    *) fail "reclaim did not report the recycled owner: $out" ;;
+    *"recovered=$live"*)
+      case "$out" in
+        *"pid=$live"*) fail "recycled-pid lock was not taken over: $out" ;;
+      esac
+      is_live_non_zombie "$live" || fail "reclaiming a recycled pid signalled the unrelated process"
+      pass "a live pid whose recorded identity changed is reclaimed as pid reuse"
+      ;;
+    *)
+      # This host cannot render the same reader-independent form to compare
+      # against, so reuse is unproven and the live pid keeps the lock.
+      [ "$out" = "held=$live pid=$live" ] \
+        || fail "a stamp this host cannot compare must not reclaim: $out"
+      is_live_non_zombie "$live" || fail "the refusal signalled the unrelated process"
+      pass "a recorded stamp this host cannot render is not proof of pid reuse"
+      ;;
   esac
-  case "$out" in
-    *"pid=$live") fail "recycled-pid lock was not taken over: $out" ;; esac
-  is_live_non_zombie "$live" || fail "reclaiming a recycled pid signalled the unrelated process"
   kill "$live" 2>/dev/null || true
   wait "$live" 2>/dev/null || true
-  pass "a live pid whose recorded identity changed is reclaimed as pid reuse"
 }
 
 # The identity proof's own mechanism. Only the /proc form ("... cmdline-hex=...")
 # is a property of the process rather than of the process reading it, so only that
-# form may be compared; where the host renders identity from ps instead, the
-# record-age proof carries reuse and this case says so rather than passing
+# form may be compared; on a host that renders identity from ps there is no
+# comparable stamp at all, so this case reports the skip rather than passing
 # vacuously.
 test_lock_reader_independent_stamp_mismatch_is_proof() {
   local dir state lockdir live real out rc
@@ -518,14 +529,14 @@ test_lock_reader_independent_stamp_mismatch_is_proof() {
     *)
       kill "$live" 2>/dev/null || true
       wait "$live" 2>/dev/null || true
-      pass "skipped - this host renders process identity from ps, so reuse rides the record-age proof"
+      pass "skipped - this host renders process identity from ps, so no comparable stamp exists"
       ;;
   esac
 }
 
 # The hazard that rule exists for: a ps-rendered stamp is not a property of the
-# process, so a mismatch in that form must never authorize a reclaim. The record
-# here is fresh, so no other proof can fire either - the lock must stay held.
+# process, so a mismatch in that form must never authorize a reclaim. There is no
+# other proof to fire either, so the lock must stay held.
 test_lock_render_dependent_stamp_is_not_proof() {
   local dir state lockdir live out
   dir=$(make_case lock-render-stamp)
@@ -570,13 +581,16 @@ test_lock_live_owner_without_identity_is_not_reclaimed() {
   pass "a live holder with no recorded identity is still never reclaimed"
 }
 
-# The legacy shape: a record written before identity recording existed, whose
-# pid the kernel recycled to a process that started long afterwards. That process
-# provably cannot be the writer, so the lock is reclaimable without any new
-# record format - and without stealing anything from a live owner.
-test_lock_legacy_recycled_pid_owner_is_reclaimed() {
-  local dir state lockdir owner live out rc
-  dir=$(make_case lock-legacy-recycled)
+# The clock-domain hazard: a record old enough that a start time recomputed from
+# ps' etime in the reader's current wall-clock domain lands after it. That
+# arithmetic moves under a host clock step (NTP, resume-from-suspend, WSL2 btime
+# drift), so it is not a property of the process and cannot prove reuse. With no
+# reader-independent identity there is no proof at all: the live pid keeps the
+# lock, and a waiter refuses at its bound rather than handing one lock to two
+# owners on a guess.
+test_lock_legacy_record_age_is_not_proof() {
+  local dir state lockdir owner live out
+  dir=$(make_case lock-legacy-age)
   state="$dir/state"
   lockdir="$state/.contend.lock"
   owner="$lockdir.owner.LEGACY"
@@ -585,74 +599,19 @@ test_lock_legacy_recycled_pid_owner_is_reclaimed() {
   mkdir "$owner"
   printf '%s\n' "$live" > "$owner/pid"
   ln -s "$owner" "$lockdir"
-  # The record predates the live process by years, which is the whole proof.
+  # Years older than the live process: the shape an etime-based rule reads as
+  # pid reuse.
   touch -t 202001010000 "$owner" "$owner/pid"
-  rc=0
   out=$(FM_STATE_OVERRIDE="$state" bash -c '
     . "$1"
-    fm_lock_try_acquire "$2" || exit 7
-    printf "pid=%s\n" "$(cat "$2/pid")"
-  ' _ "$LIB" "$lockdir") || rc=$?
-  expect_code 0 "$rc" "a legacy record outlived by its recycled pid must be reclaimed"
-  case "$out" in
-    *"pid=$live") fail "legacy recycled-pid lock was not taken over: $out" ;; esac
-  is_live_non_zombie "$live" || fail "legacy reclaim signalled the unrelated process"
+    if fm_lock_try_acquire "$2"; then echo acquired; else echo held; fi
+  ' _ "$LIB" "$lockdir")
+  [ "$out" = held ] || fail "a record's age alone must not reclaim a live holder: $out"
+  [ "$(cat "$owner/pid")" = "$live" ] || fail "the live owner's lock record changed"
+  is_live_non_zombie "$live" || fail "the refusal signalled the unrelated process"
   kill "$live" 2>/dev/null || true
   wait "$live" 2>/dev/null || true
-  pass "a legacy record whose pid started later is reclaimed as pid reuse"
-}
-
-# The reclaim path must still serialize: a proven-stale record is a race between
-# every waiter, and exactly one of them may end up owning it.
-test_lock_legacy_stale_reclaim_single_winner_under_concurrency() {
-  local dir state lockdir owner live marker release i pids winner pid wins
-  dir=$(make_case lock-legacy-concurrency)
-  state="$dir/state"
-  lockdir="$state/.contend.lock"
-  owner="$lockdir.owner.LEGACY"
-  marker="$dir/wins"
-  release="$dir/release"
-  sleep 300 &
-  live=$!
-  mkdir "$owner"
-  printf '%s\n' "$live" > "$owner/pid"
-  ln -s "$owner" "$lockdir"
-  touch -t 202001010000 "$owner" "$owner/pid"
-  : > "$marker"
-  pids=
-  i=1
-  while [ "$i" -le 40 ]; do
-    FM_STATE_OVERRIDE="$state" bash -c '
-      . "$1"
-      if fm_lock_try_acquire "$2"; then
-        printf "%s\n" "${BASHPID:-$$}" >> "$3"
-        i=0
-        while [ ! -e "$4" ] && [ "$i" -lt 400 ]; do sleep 0.05; i=$((i + 1)); done
-        fm_lock_release "$2"
-      fi
-    ' _ "$LIB" "$lockdir" "$marker" "$release" &
-    pids="$pids $!"
-    i=$((i + 1))
-  done
-  # Same discipline as the live-holder case above: no attempt may land after the
-  # winner releases, so the assertion never depends on shell start order.
-  i=0
-  while [ "$i" -lt 200 ] && [ ! -s "$marker" ]; do
-    sleep 0.05
-    i=$((i + 1))
-  done
-  winner=$(head -n 1 "$marker" 2>/dev/null || true)
-  for pid in $pids; do
-    [ "$pid" = "$winner" ] && continue
-    wait "$pid" 2>/dev/null || true
-  done
-  : > "$release"
-  [ -z "$winner" ] || wait "$winner" 2>/dev/null || true
-  wins=$(awk 'NF { c++ } END { print c + 0 }' "$marker")
-  kill "$live" 2>/dev/null || true
-  wait "$live" 2>/dev/null || true
-  [ "$wins" -eq 1 ] || fail "expected exactly one legacy stale-lock stealer, got $wins"
-  pass "concurrent legacy stale-lock reclaim still yields exactly one winner"
+  pass "a legacy record's age alone is never proof of pid reuse"
 }
 
 # A bounded handoff moves the lock record to the waiting caller. The identity
@@ -1481,8 +1440,7 @@ test_lock_recycled_pid_owner_is_reclaimed
 test_lock_live_owner_without_identity_is_not_reclaimed
 test_lock_reader_independent_stamp_mismatch_is_proof
 test_lock_render_dependent_stamp_is_not_proof
-test_lock_legacy_recycled_pid_owner_is_reclaimed
-test_lock_legacy_stale_reclaim_single_winner_under_concurrency
+test_lock_legacy_record_age_is_not_proof
 test_lock_handoff_identity_follows_the_caller
 test_lock_exec_after_acquire_is_not_reuse
 test_lock_wait_refuses_at_its_deadline

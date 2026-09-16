@@ -14,10 +14,10 @@
 #
 # Case shape, all four two-sided:
 #
-#   teardown / record lock held ...... base hangs, this build refuses loudly
-#   teardown / record lock recycled .. base hangs, this build proceeds past it
+#   teardown / record lock recycled .. base hangs, this build reclaims where the
+#                                      host can prove reuse, else refuses bounded
 #   send / lease command lock held ... base hangs, this build refuses loudly
-#   send / lease command lock recycled  base hangs, this build completes the send
+#   send / lease command lock recycled  base hangs, this build sends or refuses
 #
 # "base" is the lock library at this branch's fork point, which is the pre-fix
 # library while the branch is unmerged (FM_LOCK_WAIT_BASE_REF overrides the ref).
@@ -27,7 +27,8 @@
 #
 # The full-fixture sibling lives in tests/fm-teardown.test.sh, whose
 # test_recycled_pid_record_lock_self_heals walks a real isolated worktree through
-# a completed teardown (exit 0) on the same reclaim path.
+# the same reclaim path (a completed teardown where the host can prove reuse, a
+# bounded refusal where it cannot).
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -123,15 +124,29 @@ release_lock_holder() {  # <case-dir> <holder-pid>
 }
 
 # Plant the field's stale shape: a lock record whose pid is ALIVE because the
-# kernel recycled it to an unrelated process, on a record old enough that the
-# process provably started after it.
+# kernel recycled it to an unrelated process. A reclaim is authorized only by a
+# reader-independent identity stamp (the /proc form), so where the host can render
+# one the record carries a start field no live process answers to; where it cannot
+# - Darwin, BSD - the record is identity-less and the entry point must refuse at
+# its bound instead of hanging. Echoes the host's expectation: reclaim | refuse.
 plant_recycled_lock() {  # <lock-path> <live-pid>
-  local lock=$1 live=$2 owner="$1.owner.FIXTURE"
+  local lock=$1 live=$2 owner="$1.owner.FIXTURE" real
   mkdir "$owner"
   printf '%s\n' "$live" > "$owner/pid"
   ln -s "$owner" "$lock"
-  # 2020 predates the live process and any clock this suite runs under.
-  touch -t 202001010000 "$owner" "$owner/pid"
+  real=
+  if [ -r "/proc/$live/stat" ] && [ -r "/proc/$live/cmdline" ]; then
+    real=$(bash -c '. "$1"; fm_pid_identity "$2"' _ "$ROOT/bin/fm-wake-lib.sh" "$live" 2>/dev/null || true)
+  fi
+  case "$real" in
+    *' cmdline-hex='*)
+      # Tamper only the numeric start field, so the record differs from the live
+      # pid in exactly the field the reuse proof compares.
+      printf '%s\n' "${real%%=*}=1 cmdline-hex=00" > "$owner/pid-identity"
+      printf 'reclaim\n'
+      ;;
+    *) printf 'refuse\n' ;;
+  esac
 }
 
 # Run one entry point under the hard bound. Echoes three lines: rc, elapsed, and
@@ -211,11 +226,11 @@ test_teardown_record_lock_held() {
 }
 
 test_teardown_record_lock_recycled() {
-  local dir base live rc elapsed out owner_pid
+  local dir base live rc elapsed out owner_pid expectation
   dir=$(make_entry_case teardown-lock-recycled)
   sleep 300 &
   live=$!
-  plant_recycled_lock "$dir/home/state/.meta-task-x1.lock" "$live"
+  expectation=$(plant_recycled_lock "$dir/home/state/.meta-task-x1.lock" "$live")
 
   base=$(base_bin_root "$dir") || {
     kill "$live" 2>/dev/null || true
@@ -233,13 +248,24 @@ test_teardown_record_lock_recycled() {
   wait "$live" 2>/dev/null || true
   [ "$elapsed" -lt "$HEAD_BOUND" ] \
     || fail "teardown record lock recycled / this build: still running when the ${HEAD_BOUND}s watchdog fired"
-  assert_not_contains "$out" "could not acquire" \
-    "teardown record lock recycled / this build: refused instead of reclaiming the proven-stale owner"
-  assert_not_equals "$live" "$owner_pid" \
-    "teardown record lock recycled / this build: the recycled-pid lock was not reclaimed"
-  assert_contains "$out" "worktree identity" \
-    "teardown record lock recycled / this build: teardown never got past the record lock"
-  pass "teardown behind a proven-stale record lock: base HANGs (killed at ${BASE_BOUND}s), this build reclaims and proceeds in ${elapsed}s"
+  if [ "$expectation" = reclaim ]; then
+    assert_not_contains "$out" "could not acquire" \
+      "teardown record lock recycled / this build: refused instead of reclaiming the proven-stale owner"
+    assert_not_equals "$live" "$owner_pid" \
+      "teardown record lock recycled / this build: the recycled-pid lock was not reclaimed"
+    assert_contains "$out" "worktree identity" \
+      "teardown record lock recycled / this build: teardown never got past the record lock"
+    pass "teardown behind a proven-stale record lock: base HANGs (killed at ${BASE_BOUND}s), this build reclaims and proceeds in ${elapsed}s"
+  else
+    expect_code 124 "$rc" "teardown record lock recycled / this build: an unprovable pid must refuse at the bound"
+    assert_contains "$out" "could not acquire" \
+      "teardown record lock recycled / this build: the refusal did not name the lock it could not take"
+    assert_contains "$out" "records no owner identity" \
+      "teardown record lock recycled / this build: the refusal did not report the missing identity proof"
+    assert_equals "$live" "$owner_pid" \
+      "teardown record lock recycled / this build: an unprovable live pid lost its lock"
+    pass "teardown behind an unprovable recycled-pid record lock: base HANGs (killed at ${BASE_BOUND}s), this build refuses in ${elapsed}s"
+  fi
 }
 
 test_send_lease_lock_held() {
@@ -271,11 +297,11 @@ test_send_lease_lock_held() {
 }
 
 test_send_lease_lock_recycled() {
-  local dir base live rc elapsed out
+  local dir base live rc elapsed out expectation
   dir=$(make_entry_case send-lease-recycled)
   sleep 300 &
   live=$!
-  plant_recycled_lock "$dir/home/state/.fm-lease-command.lock" "$live"
+  expectation=$(plant_recycled_lock "$dir/home/state/.fm-lease-command.lock" "$live")
 
   base=$(base_bin_root "$dir") || {
     kill "$live" 2>/dev/null || true
@@ -290,12 +316,21 @@ test_send_lease_lock_recycled() {
   out=$(cat "$dir/last.out")
   kill "$live" 2>/dev/null || true
   wait "$live" 2>/dev/null || true
-  expect_code 0 "$rc" "send behind a proven-stale lease lock / this build must reclaim it and send"
   [ "$elapsed" -lt "$HEAD_BOUND" ] \
     || fail "send behind a proven-stale lease lock / this build: still running when the ${HEAD_BOUND}s watchdog fired"
-  assert_present "$dir/home/state/task-x1.inbox" \
-    "send behind a proven-stale lease lock / this build: the steer was reported sent with no inbox record"
-  pass "steer behind a proven-stale lease lock: base HANGs (killed at ${BASE_BOUND}s), this build sends and exits 0 in ${elapsed}s"
+  if [ "$expectation" = reclaim ]; then
+    expect_code 0 "$rc" "send behind a proven-stale lease lock / this build must reclaim it and send"
+    assert_present "$dir/home/state/task-x1.inbox" \
+      "send behind a proven-stale lease lock / this build: the steer was reported sent with no inbox record"
+    pass "steer behind a proven-stale lease lock: base HANGs (killed at ${BASE_BOUND}s), this build sends and exits 0 in ${elapsed}s"
+  else
+    expect_code 124 "$rc" "send behind a proven-stale lease lock / this build: an unprovable pid must refuse at the bound"
+    assert_contains "$out" "could not acquire" \
+      "send behind a proven-stale lease lock / this build: the refusal did not name the lock it could not take"
+    assert_absent "$dir/home/state/task-x1.inbox" \
+      "send behind a proven-stale lease lock / this build: a refused steer still created an inbox"
+    pass "steer behind an unprovable recycled-pid lease lock: base HANGs (killed at ${BASE_BOUND}s), this build refuses in ${elapsed}s"
+  fi
 }
 
 test_teardown_record_lock_held
