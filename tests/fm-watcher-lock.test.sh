@@ -736,6 +736,39 @@ test_lock_wait_refuses_at_its_deadline() {
   pass "a live-held lock is refused (exit 124, holder named) instead of wedging the waiter"
 }
 
+# A refusal must not report an owner it cannot verify. A record whose identity
+# form this process cannot compare is unverifiable in exactly the same way a
+# record with no identity is, so the diagnostic has to say so and route the
+# decision to the operator instead of naming the live pid as the confirmed owner
+# - that pid may be an unrelated process the kernel handed a recycled pid to.
+test_lock_refusal_names_an_unverifiable_identity() {
+  local dir state lockdir live err rc
+  dir=$(make_case lock-refusal-unverifiable)
+  state="$dir/state"
+  lockdir="$state/.contend.lock"
+  err="$dir/wait.err"
+  sleep 300 &
+  live=$!
+  mkdir "$lockdir"
+  printf '%s\n' "$live" > "$lockdir/pid"
+  printf '%s\n' 'Tue Jan  1 00:00:00 2019 some other command' > "$lockdir/pid-identity"
+  rc=0
+  FM_STATE_OVERRIDE="$state" FM_LOCK_ACQUIRE_WAIT_SECS=1 bash -c '
+    . "$1"
+    fm_lock_acquire_wait "$2"
+  ' _ "$LIB" "$lockdir" 2> "$err" || rc=$?
+  kill "$live" 2>/dev/null || true
+  wait "$live" 2>/dev/null || true
+  expect_code 124 "$rc" "an unverifiable owner identity must refuse at the bound"
+  assert_grep "held by live pid $live" "$err" "the refusal did not name the holder"
+  assert_grep "cannot compare across readers" "$err" \
+    "the refusal did not report that the recorded identity cannot be compared"
+  assert_no_grep "that process is the lock owner" "$err" \
+    "the refusal named an unverifiable holder as the confirmed owner"
+  [ "$(cat "$lockdir/pid")" = "$live" ] || fail "a refused waiter took the lock"
+  pass "an unverifiable identity is refused and reported as unproven, not as the owner"
+}
+
 test_watch_restart_rejects_reused_pid() {
   local dir state fakebin out live pid i
   dir=$(make_case restart-reused-pid)
@@ -1444,6 +1477,7 @@ test_lock_legacy_record_age_is_not_proof
 test_lock_handoff_identity_follows_the_caller
 test_lock_exec_after_acquire_is_not_reuse
 test_lock_wait_refuses_at_its_deadline
+test_lock_refusal_names_an_unverifiable_identity
 test_watch_restart_rejects_reused_pid
 test_watch_restart_attaches_to_healthy_peer
 test_watcher_self_evicts_on_lock_takeover

@@ -1141,7 +1141,7 @@ fm_lock_acquire_wait() {
 # suppresses the refusal itself.
 #
 fm_lock_wait_refusal() {
-  local lockdir=$1 seconds=$2 pid cmd age started
+  local lockdir=$1 seconds=$2 pid cmd age started recorded current recorded_stamp current_stamp
   pid=$(cat "$lockdir/pid" 2>/dev/null || true)
   age=$(fm_path_age "$lockdir")
   printf 'error: could not acquire %s within %ss; refusing instead of waiting indefinitely\n' \
@@ -1162,18 +1162,29 @@ fm_lock_wait_refusal() {
       else
         printf 'error:   held by live pid %s (%s) for at least %ss\n' \
           "$pid" "${cmd:-command unavailable}" "$age" >&2
-        if [ -n "$(cat "$lockdir/pid-identity" 2>/dev/null || true)" ]; then
+        recorded=$(cat "$lockdir/pid-identity" 2>/dev/null || true)
+        current=$(fm_pid_identity "$pid" 2>/dev/null || true)
+        recorded_stamp=$(fm_pid_start_stamp "$recorded" 2>/dev/null || true)
+        current_stamp=$(fm_pid_start_stamp "$current" 2>/dev/null || true)
+        if [ -n "$recorded_stamp" ] && [ "$recorded_stamp" = "$current_stamp" ]; then
           printf 'error:   that process is the lock owner: wait for it to finish, or investigate and stop it if it is wedged. Do not remove the lock while it runs.\n' >&2
         else
-          # Legacy lock: no reader-independent identity was recorded, so pid
-          # reuse cannot be proven here - and the holder's own start time is
-          # rendered by ps in this process's clock domain, which a clock step can
-          # move. Print it as context and leave the call to the operator rather
-          # than acting on a guess.
+          # Ownership is unverifiable here: the record carries no identity this
+          # process can compare, so pid reuse cannot be proven. The holder's own
+          # start time is rendered by ps in this process's clock domain, which a
+          # clock step can move - context for the operator, not proof.
+          if [ -n "$recorded" ]; then
+            printf 'error:   this lock records an owner identity this host cannot compare across readers (%s), so pid reuse cannot be proven\n' \
+              "$recorded" >&2
+          elif fm_pid_identity_reader_independent_available "$pid"; then
+            printf 'error:   this lock records no owner identity (it predates identity recording), so pid reuse cannot be proven\n' >&2
+          else
+            printf 'error:   this lock records no owner identity (this host renders process identity from ps, which is not comparable across readers), so pid reuse cannot be proven\n' >&2
+          fi
           started=$(ps -p "$pid" -o lstart= 2>/dev/null | head -n 1 || true)
-          printf 'error:   this lock records no owner identity (it predates identity recording), so pid reuse cannot be proven (pid %s started %s, lock age %ss)\n' \
+          printf 'error:   pid %s started %s (lock age %ss); wait for it to finish, or investigate and stop it if it is wedged\n' \
             "$pid" "${started:-start time unavailable}" "$age" >&2
-          printf 'error:   wait for it to finish, or investigate and stop it if it is wedged; if you can confirm that pid was reused, remove the stale lock (%s and its %s.owner.* directory)\n' \
+          printf 'error:   if you can confirm that pid was reused, remove the stale lock (%s and its %s.owner.* directory)\n' \
             "$lockdir" "$lockdir" >&2
         fi
       fi
