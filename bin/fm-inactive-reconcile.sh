@@ -228,15 +228,10 @@ mark_reported() { # <record>
   mv -f "$record" "$reported"
 }
 
-queue_key_exists() { # <key>
-  local key=$1 queued
-  queued=$(fm_wake_queued_keys check 2>/dev/null || true)
-  printf '%s\n' "$queued" | grep -Fx -- "$key" >/dev/null 2>&1
-}
-
 publish_actionable() { # <key> <payload>
-  local key=$1 payload=$2
-  queue_key_exists "$key" && return 1
+  local key=$1 payload=$2 queued
+  queued=$(fm_wake_queued_keys check) || return 2
+  printf '%s\n' "$queued" | grep -Fx -- "$key" >/dev/null 2>&1 && return 1
   fm_wake_append check "$key" "$payload" || return 2
   printf 'actionable: %s\n' "$payload"
 }
