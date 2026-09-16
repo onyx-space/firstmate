@@ -1,0 +1,23 @@
+started 4 workers: 58594 58596 58597 58599
+live worker processes: 1 of 4
+worker.pid=58594  worker.lock/pid=58594
+staged job job-mQvkiN
+caller rc=0
+result bytes=29028
+VERDICT: full document delivered intact (byte-identical to source)
+--- worker stderr diagnostics ---
+w2: mkdir: /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-drive.VPcfFu/state: File exists
+remote-job-worker: remote job state root is unsafe
+w3: mkdir: /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-drive.VPcfFu/state: File exists
+remote-job-worker: remote job state root is unsafe
+w4: mkdir: /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-drive.VPcfFu/state: File exists
+remote-job-worker: remote job state root is unsafe
+--- w1..w4 stderr (kept) ---
+w1.err: 
+w2.err: mkdir: /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-drive.VPcfFu/state: File exists
+remote-job-worker: remote job state root is unsafe
+w3.err: mkdir: /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-drive.VPcfFu/state: File exists
+remote-job-worker: remote job state root is unsafe
+w4.err: mkdir: /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-drive.VPcfFu/state: File exists
+remote-job-worker: remote job state root is unsafe
+publish-failure lines: 0

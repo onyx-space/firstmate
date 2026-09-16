@@ -1,0 +1,17 @@
+started 4 workers: 53329 53330 53331 53332
+live worker processes: 1 of 4
+worker.pid=53330  worker.lock/pid=53330
+staged job job-NZfVZK
+caller rc=0
+result bytes=29028
+VERDICT: full document delivered intact (byte-identical to source)
+--- worker stderr diagnostics ---
+w1: remote-job-worker: /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-drive.HaWVh4/state/worker.lock is held by pid 53330 (recorded identity: none); this host cannot prove that pid gone, so the record is left in place. If pid 53330 is not serving this queue, remove /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-drive.HaWVh4/state/worker.lock by hand.
+w3: remote-job-worker: /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-drive.HaWVh4/state/worker.lock is held by pid 53330 (recorded identity: none); this host cannot prove that pid gone, so the record is left in place. If pid 53330 is not serving this queue, remove /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-drive.HaWVh4/state/worker.lock by hand.
+w4: remote-job-worker: /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-drive.HaWVh4/state/worker.lock is held by pid 53330 (recorded identity: none); this host cannot prove that pid gone, so the record is left in place. If pid 53330 is not serving this queue, remove /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-drive.HaWVh4/state/worker.lock by hand.
+--- w1..w4 stderr (kept) ---
+w1.err: remote-job-worker: /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-drive.HaWVh4/state/worker.lock is held by pid 53330 (recorded identity: none); this host cannot prove that pid gone, so the record is left in place. If pid 53330 is not serving this queue, remove /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-drive.HaWVh4/state/worker.lock by hand.
+w2.err: 
+w3.err: remote-job-worker: /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-drive.HaWVh4/state/worker.lock is held by pid 53330 (recorded identity: none); this host cannot prove that pid gone, so the record is left in place. If pid 53330 is not serving this queue, remove /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-drive.HaWVh4/state/worker.lock by hand.
+w4.err: remote-job-worker: /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-drive.HaWVh4/state/worker.lock is held by pid 53330 (recorded identity: none); this host cannot prove that pid gone, so the record is left in place. If pid 53330 is not serving this queue, remove /private/var/folders/jq/t9r90khx6kzcw250jx08lw1r0000gn/T/fm-drive.HaWVh4/state/worker.lock by hand.
+publish-failure lines: 0
