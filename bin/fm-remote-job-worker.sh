@@ -205,7 +205,17 @@ worker_lock_record_status() { # <lock-dir>
   pid=$(fm_remote_job_read_single_line "$lock/pid" 64 2>/dev/null || true)
   case "$pid" in ''|*[!0-9]*) pid= ;; esac
   if [ -z "$pid" ] || [ "$pid" -le 1 ]; then
-    worker_path_recent "$lock" && return 2
+    # A pid record that is present but unreadable is bounded by its own mtime:
+    # every contender stages and removes its identity records inside this
+    # directory before it consults this verdict, which refreshes the
+    # directory's mtime on each attempt and would hold the record for good. A
+    # directory with no pid record at all is still its creator's, so only that
+    # one is bounded by the directory's own age.
+    if [ -e "$lock/pid" ] || [ -L "$lock/pid" ]; then
+      worker_path_recent "$lock/pid" && return 2
+    else
+      worker_path_recent "$lock" && return 2
+    fi
     return 1
   fi
   kill -0 "$pid" 2>/dev/null || return 1
