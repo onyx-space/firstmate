@@ -46,16 +46,19 @@ git -C "$REMOTE_ROOT" config user.name Test
 git -C "$REMOTE_ROOT" add AGENTS.md bin
 git -C "$REMOTE_ROOT" commit -qm 'remote job fixture'
 
+# Each worker is its own process group, so cleanup reaches the lane children as
+# well: a lane that outlives its worker keeps writing into the fixture and makes
+# the fixture removal race its own output.
 cleanup_single_owner_fixture() {
   local pid
   for pid in "${STARTED_PIDS[@]:-}"; do
     [ -n "$pid" ] || continue
     kill -CONT "$pid" 2>/dev/null || true
-    kill -TERM "$pid" 2>/dev/null || true
+    kill -TERM -- "-$pid" 2>/dev/null || true
   done
   for pid in "${STARTED_PIDS[@]:-}"; do
     [ -n "$pid" ] || continue
-    kill -KILL "$pid" 2>/dev/null || true
+    kill -KILL -- "-$pid" 2>/dev/null || true
   done
   fm_test_cleanup
 }
@@ -71,11 +74,13 @@ export FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux
 start_serve() {
   local tag=$1 root=$2 prefix=${3:-} pid launch_path=$PATH
   [ -z "$prefix" ] || launch_path="$prefix:$PATH"
+  set -m
   HOME="$ACCOUNT_HOME" PATH="$launch_path" FM_ROOT_OVERRIDE="$REMOTE_ROOT" \
     FM_REMOTE_JOB_STATE_ROOT="$root" FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux \
     "$REMOTE_ROOT/bin/fm-remote-job-worker.sh" --serve \
     > "$TMP_ROOT/$tag.out" 2> "$TMP_ROOT/$tag.err" &
   pid=$!
+  set +m
   STARTED_PIDS+=("$pid")
   printf '%s\n' "$pid"
 }
