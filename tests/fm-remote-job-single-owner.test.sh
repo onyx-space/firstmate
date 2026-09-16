@@ -192,12 +192,14 @@ pass "a live owner keeps the queue against a replacement's staleness guess"
 # on its own half-written claim. The fresh claim must hold the job until the
 # grace passes, and an aged one must still be recovered.
 CLAIM_JOB_EFFECT="$TMP_ROOT/claim-job"
+kill -STOP "$OWNER" || fail "the claim fixture could not pause the serving owner"
 fm_remote_job_stage "$ACCOUNT_HOME" "$REMOTE_ROOT" "$REMOTE_HOME" \
   fm-record-job.sh 0 "$CLAIM_JOB_EFFECT" < /dev/null > /dev/null \
   || fail "$FM_REMOTE_JOB_ERROR"
 CLAIM_JOB_ID=$FM_REMOTE_JOB_ID
 CLAIM_JOB_DIR="$STATE_ROOT/jobs/$CLAIM_JOB_ID"
 mkdir "$CLAIM_JOB_DIR/.claim"
+kill -CONT "$OWNER"
 sleep 1
 assert_present "$CLAIM_JOB_DIR/.claim" "a sibling erased a claim that was still being published"
 assert_absent "$CLAIM_JOB_EFFECT" "a job was run while a sibling's in-flight claim still held it"
@@ -214,6 +216,7 @@ fm_remote_job_reap "$ACCOUNT_HOME" "$CLAIM_JOB_ID" || true
 # publisher can be behind it, so the claim has to be recovered instead of
 # holding the job, and its home, for good.
 EMPTY_CLAIM_EFFECT="$TMP_ROOT/empty-claim-job"
+kill -STOP "$OWNER" || fail "the unreadable-claim fixture could not pause the serving owner"
 fm_remote_job_stage "$ACCOUNT_HOME" "$REMOTE_ROOT" "$REMOTE_HOME" \
   fm-record-job.sh 0 "$EMPTY_CLAIM_EFFECT" < /dev/null > /dev/null \
   || fail "$FM_REMOTE_JOB_ERROR"
@@ -223,6 +226,7 @@ mkdir "$EMPTY_CLAIM_JOB_DIR/.claim"
 : > "$EMPTY_CLAIM_JOB_DIR/.claim/owner"
 chmod 700 "$EMPTY_CLAIM_JOB_DIR/.claim"
 chmod 600 "$EMPTY_CLAIM_JOB_DIR/.claim/owner"
+kill -CONT "$OWNER"
 sleep 1
 assert_present "$EMPTY_CLAIM_JOB_DIR/.claim/owner" \
   "a fresh unreadable claim record was recovered while it was still in flight"
