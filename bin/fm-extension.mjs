@@ -68,7 +68,6 @@ import {
   readdir,
   realpath,
   rename,
-  rmdir,
   rm,
   unlink,
   writeFile,
@@ -2058,8 +2057,14 @@ async function releaseLifecycleLock() {
   await assertLifecycleLockOwned();
   const { lockPath, ownerPath } = activeLifecycleLock;
   await unlink(lockPath);
-  await unlink(path.join(ownerPath, "pid"));
-  await rmdir(ownerPath);
+  // The owner directory carries the lock protocol's full record set, not just
+  // the pid the node side reads: on a host with a reader-independent identity
+  // (Linux /proc) the acquiring shell also writes pid-identity there, so an
+  // rmdir after removing only "pid" fails ENOTEMPTY and leaves the lock behind.
+  // The directory is this acquisition's own mktemp under the lock's parent, and
+  // assertLifecycleLockOwned has already verified it is a private directory we
+  // own, so removing it wholesale is the same operation the shell's discard does.
+  await rm(ownerPath, { recursive: true, force: true });
   activeLifecycleLock = null;
 }
 
