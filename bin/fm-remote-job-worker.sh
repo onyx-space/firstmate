@@ -86,6 +86,7 @@ WORKER_LANE_HOMES=()
 WORKER_LANE_PIDS=()
 WORKER_LANE_STARTS=()
 WORKER_LANE_JOBS=()
+WORKER_HELD_JOB_REPORTS=
 
 worker_error() { printf 'remote-job-worker: %s\n' "$1" >&2; }
 
@@ -559,6 +560,16 @@ worker_signal_recorded_execution() { # <job-dir> process|group <signal> <pid>
   local job=$1 kind=$2 signal=$3 pid=$4 identity_status
   if [ "$kind" = process ]; then
     worker_supervisor_identity_status "$job" "$pid" || return 0
+    # A signal may reach the recorded supervisor only when the claim it
+    # belongs to has no live owner: the supervisor is the lane that claimed
+    # the job, and a lane that still owns its claim is a sibling's or an
+    # orphan's live executor whose result is about to land. The reclaim path
+    # proves that first; it is repeated here so no caller can signal a live
+    # owner whose claim only looked dead earlier.
+    if [ "$(fm_remote_job_read_single_line "$job/.claim/owner" 64 2>/dev/null || true)" = "$pid" ] \
+      && ! worker_claim_owner_provably_dead "$job"; then
+      return 0
+    fi
   else
     worker_group_identity_status "$job" "$pid"
     identity_status=$?
@@ -677,7 +688,7 @@ worker_exit_cleanup() {
 # and a loser must never delete a winner's claim, which is how two executors
 # erased each other's records and left neither able to publish a result.
 worker_claim() { # <job-dir>
-  local job=$1 claim pid start stamp loop_pid loop_stamp start_tmp stamp_tmp loop_tmp loop_stamp_tmp
+  local job=$1 claim pid start stamp start_tmp stamp_tmp
   claim="$job/.claim"
   if ! (umask 077; mkdir "$claim") 2>/dev/null; then
     [ -d "$claim" ] && [ ! -L "$claim" ] || return 1
@@ -685,100 +696,63 @@ worker_claim() { # <job-dir>
   pid=${BASHPID:-$$}
   start=$(fm_remote_job_process_start "$pid") || return 1
   stamp=$(fm_remote_job_process_identity "$pid" 2>/dev/null || true)
-  # The lane records the serving loop that started it, which is the owner whose
-  # death a replacement has to prove before it may stop this job: a lane can
-  # outlive its loop, and its pid being alive says nothing about supervision.
-  loop_pid=${PPID:-}
-  case "$loop_pid" in ''|*[!0-9]*) loop_pid= ;; esac
-  [ -z "$loop_pid" ] || [ "$loop_pid" -gt 1 ] || loop_pid=
-  loop_stamp=
-  [ -z "$loop_pid" ] || loop_stamp=$(fm_remote_job_process_identity "$loop_pid" 2>/dev/null || true)
   start_tmp=$(umask 077; mktemp "$claim/.owner_start.XXXXXX") || return 1
   stamp_tmp=$(worker_stage_identity_record "$claim" .owner_identity "$stamp")
-  loop_tmp=$(worker_stage_identity_record "$claim" .owner_loop "$loop_pid")
-  loop_stamp_tmp=$(worker_stage_identity_record "$claim" .owner_loop_identity "$loop_stamp")
   if ! printf '%s\n' "$start" > "$start_tmp" || ! chmod 600 "$start_tmp"; then
     rm -f -- "$start_tmp"
     [ -z "$stamp_tmp" ] || rm -f -- "$stamp_tmp"
-    [ -z "$loop_tmp" ] || rm -f -- "$loop_tmp"
-    [ -z "$loop_stamp_tmp" ] || rm -f -- "$loop_stamp_tmp"
     return 1
   fi
   if ! ( set -C; printf '%s\n' "$pid" > "$claim/owner" ) 2>/dev/null; then
     rm -f -- "$start_tmp"
     [ -z "$stamp_tmp" ] || rm -f -- "$stamp_tmp"
-    [ -z "$loop_tmp" ] || rm -f -- "$loop_tmp"
-    [ -z "$loop_stamp_tmp" ] || rm -f -- "$loop_stamp_tmp"
     return 1
   fi
   chmod 600 "$claim/owner" 2>/dev/null || true
   worker_publish_staged_record "$stamp_tmp" "$claim/owner_identity"
-  worker_publish_staged_record "$loop_tmp" "$claim/owner_loop"
-  worker_publish_staged_record "$loop_stamp_tmp" "$claim/owner_loop_identity"
   if ! mv -f -- "$start_tmp" "$claim/owner_start" 2>/dev/null; then
     rm -f -- "$start_tmp"
     [ "$(fm_remote_job_read_single_line "$claim/owner" 64 2>/dev/null || true)" = "$pid" ] \
-      && rm -f -- "$claim/owner" "$claim/owner_identity" "$claim/owner_loop" \
-        "$claim/owner_loop_identity" 2>/dev/null
+      && rm -f -- "$claim/owner" "$claim/owner_identity" 2>/dev/null
     return 1
   fi
   [ "$(fm_remote_job_read_single_line "$claim/owner" 64 2>/dev/null || true)" = "$pid" ] || return 1
   return 0
 }
 
-worker_claim_owner_alive() { # <job-dir>
-  local job=$1 claim="$1/.claim" owner pid recorded_identity actual_identity
-  [ -d "$claim" ] && [ ! -L "$claim" ] || return 1
+# Whether the running job's claim owner is provably gone, and the one place that
+# decides it: worker_claim_owner_alive is its negation, so the two verdicts can
+# never disagree. Only reader-independent evidence counts - a dead pid, or a
+# recorded /proc stamp a live pid no longer answers to. A record that has not
+# landed yet, or a live pid whose stamp it cannot disprove, is never proof: such
+# a claim stays its owner's, because stopping a live sibling's command publishes
+# the caller-visible 'stopped before this job completed' over a result that was
+# about to land, while a held claim only costs a retry. Whether the loop that
+# started the lane is still alive says nothing here: a lane outlives its loop,
+# and the lane is the process that publishes.
+worker_claim_owner_provably_dead() { # <job-dir>
+  local claim="$1/.claim" owner pid recorded_identity actual_identity
+  [ -d "$claim" ] && [ ! -L "$claim" ] || return 0
   owner="$claim/owner"
   if ! fm_remote_job_regular_bounded "$owner" 64; then
     # A claim is published owner-first, so a record that is absent or not yet
-    # readable is a claim in flight, not an abandoned one. Reading it as dead
-    # was how a second worker erased a live sibling's claim and left neither
-    # able to publish: the sibling then failed on its own half-written record.
-    # Past the grace the record never arrived, which is a real crashed claim.
-    worker_path_recent "$claim" && return 0
-    return 1
+    # readable is a claimant still publishing; only past the grace is it a
+    # crashed one that no process can be the owner of.
+    worker_path_recent "$claim" && return 1
+    return 0
   fi
   pid=$(tr -d '\n' < "$owner")
   case "$pid" in ''|*[!0-9]*) return 1 ;; esac
-  kill -0 "$pid" 2>/dev/null || return 1
-  # Only the reader-independent stamp can disprove a live pid. Where it is
-  # absent the record cannot say anything about reuse, so a live pid stays the
-  # owner: a stolen claim is a lost publication, and a held one costs a retry.
-  recorded_identity=$(fm_remote_job_read_single_line "$claim/owner_identity" 64 2>/dev/null || true)
-  [ -n "$recorded_identity" ] || return 0
-  actual_identity=$(fm_remote_job_process_identity "$pid" 2>/dev/null || true)
-  [ -n "$actual_identity" ] || return 0
-  [ "$recorded_identity" = "$actual_identity" ]
-}
-
-# Whether the running job's execution is provably abandoned. A lane can outlive
-# the serving loop that started it, so its own pid being alive is not proof that
-# anyone still supervises the job; the claim also names that loop, and the job
-# is abandoned when a dead pid, a reused pid, or a gone loop proves it. Every
-# unsure answer is "not abandoned": stopping a live sibling's command publishes
-# the caller-visible 'stopped before this job completed' over a result that was
-# about to land.
-worker_claim_owner_provably_dead() { # <job-dir>
-  local claim="$1/.claim" pid loop_pid recorded_identity actual_identity
-  [ -d "$claim" ] && [ ! -L "$claim" ] || return 0
-  pid=$(fm_remote_job_read_single_line "$claim/owner" 64 2>/dev/null || true)
-  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
   kill -0 "$pid" 2>/dev/null || return 0
   recorded_identity=$(fm_remote_job_read_single_line "$claim/owner_identity" 64 2>/dev/null || true)
-  if [ -n "$recorded_identity" ]; then
-    actual_identity=$(fm_remote_job_process_identity "$pid" 2>/dev/null || true)
-    [ -n "$actual_identity" ] || return 1
-    [ "$actual_identity" != "$recorded_identity" ] && return 0
-  fi
-  loop_pid=$(fm_remote_job_read_single_line "$claim/owner_loop" 64 2>/dev/null || true)
-  case "$loop_pid" in ''|*[!0-9]*) return 1 ;; esac
-  kill -0 "$loop_pid" 2>/dev/null || return 0
-  recorded_identity=$(fm_remote_job_read_single_line "$claim/owner_loop_identity" 64 2>/dev/null || true)
   [ -n "$recorded_identity" ] || return 1
-  actual_identity=$(fm_remote_job_process_identity "$loop_pid" 2>/dev/null || true)
+  actual_identity=$(fm_remote_job_process_identity "$pid" 2>/dev/null || true)
   [ -n "$actual_identity" ] || return 1
   [ "$actual_identity" != "$recorded_identity" ]
+}
+
+worker_claim_owner_alive() { # <job-dir>
+  ! worker_claim_owner_provably_dead "$1"
 }
 
 worker_clear_dead_claim() { # <job-dir>
@@ -791,19 +765,35 @@ worker_clear_dead_claim() { # <job-dir>
   rmdir "$claim"
 }
 
+# Job ids this loop has already reported as held by a live claim owner: the
+# loop polls every FM_REMOTE_JOB_POLL_SECONDS, and a job that runs for minutes
+# would otherwise repeat the same line for its whole runtime.
+worker_report_held_job() { # <job-dir>
+  local id=${1##*/} owner
+  case " $WORKER_HELD_JOB_REPORTS " in
+    *" $id "*) return 0 ;;
+  esac
+  WORKER_HELD_JOB_REPORTS="$WORKER_HELD_JOB_REPORTS $id"
+  [ "${#WORKER_HELD_JOB_REPORTS}" -le 4096 ] || WORKER_HELD_JOB_REPORTS=" $id"
+  owner=$(fm_remote_job_read_single_line "$1/.claim/owner" 64 2>/dev/null || true)
+  worker_error "leaving job $id to its claim owner${owner:+ (pid $owner)}: that owner is alive, so it publishes its own result"
+}
+
 # Reclaim a running job this serving loop does not own, but only once its claim
 # owner is provably gone: a record left by a crashed lane, whether its command
 # died with it or survived it. The recorded execution is stopped - a surviving
-# foreign lane is not supervised by any owner and a second lane for its home
-# must never start beside it - and the record publishes unknown completion,
-# exactly as a crashed single-process worker's job always has. A claim whose
-# owner is alive, or whose death cannot be proven, is left untouched: a live
-# sibling's lane is not a crash, and its result must land.
+# lane whose owner is gone is supervised by nobody - and the record publishes
+# unknown completion, exactly as a crashed single-process worker's job always
+# has. A claim whose owner is alive, or whose death cannot be proven, is left
+# untouched: a live sibling's lane is not a crash, and its result must land.
+#
+# Returns non-zero when it left the job alone, so the caller can keep that job's
+# home to itself until the live owner publishes.
 worker_reclaim_running_job() { # <job-dir>
   local job=$1 file state
   if ! worker_claim_owner_provably_dead "$job"; then
-    worker_error "not reclaiming ${job##*/}: its claim owner is still alive or cannot be proven gone"
-    return 0
+    worker_report_held_job "$job"
+    return 1
   fi
   worker_stop_recorded_execution "$job" || return 1
   state=$(fm_remote_job_read_state "$job" 2>/dev/null) || return 1
@@ -1292,7 +1282,13 @@ worker_process_once() { # <account-home>
         candidates="$candidates$seq"$'\t'"$id"$'\t'"$home"$'\n'
         ;;
       running)
-        worker_lane_owns_job "$job" || worker_reclaim_running_job "$job" || true
+        if worker_lane_owns_job "$job"; then continue; fi
+        if worker_reclaim_running_job "$job"; then continue; fi
+        # A live owner is still running this job: it publishes its own result,
+        # and until it does its home stays reserved so no second lane for that
+        # home can start beside it.
+        home=$(worker_read_text "$job" home 8192 2>/dev/null || true)
+        [ -n "$home" ] && reserved_homes+=("$home")
         continue
         ;;
       *) continue ;;

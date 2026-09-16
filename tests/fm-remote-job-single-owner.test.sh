@@ -256,10 +256,6 @@ for log in "$TMP_ROOT"/stale-*.err; do
 done
 [ -f "$STALE_STATE/worker.ready" ] \
   || fail "the winner of a stale-record displacement never became ready"
-for leftover in "$STALE_STATE"/worker.lock.reclaim.*; do
-  [ -e "$leftover" ] || [ -L "$leftover" ] || continue
-  fail "a displacement vacated the lock path instead of removing the dead record in place"
-done
 assert_absent "$STALE_STATE/worker.lock/.reclaim" \
   "a reclaim left its own gate behind in the lock it removed"
 pass "replacements racing one stale record leave exactly one owner"
@@ -302,30 +298,27 @@ pass "a live pid the record cannot disprove is held, not displaced"
 
 # --- a live sibling's running job is never reclaimed ------------------------
 #
-# A claim names both the lane that executes the job and the serving loop that
-# started it. A replacement that cannot prove that loop gone leaves the job
-# alone, even when the rendered owner identity disagrees with the live lane:
-# killing it discards a result that was about to land and publishes the
-# caller-visible 'stopped before this job completed'.
-LIVE_STATE="$TMP_ROOT/live-loop-state"
-LIVE_JOB="$LIVE_STATE/jobs/job-liveloop"
+# The claim's owner is the lane that executes the job and publishes it, so a
+# replacement must leave the job alone for as long as that owner is alive, even
+# when the rendered owner identity disagrees with the live lane: killing it
+# discards a result that was about to land and publishes the caller-visible
+# 'stopped before this job completed'.
+LIVE_STATE="$TMP_ROOT/live-owner-state"
+LIVE_JOB="$LIVE_STATE/jobs/job-liveowner"
 mkdir -p "$LIVE_JOB/.claim" "$LIVE_STATE/logs"
 sleep 20 &
 LIVE_LANE_PID=$!
-sleep 20 &
-LIVE_LOOP_PID=$!
 printf 'running\n' > "$LIVE_JOB/state"
 printf '%s\n' "$LIVE_LANE_PID" > "$LIVE_JOB/.claim/owner"
 printf 'rendered-elsewhere\n' > "$LIVE_JOB/.claim/owner_start"
-printf '%s\n' "$LIVE_LOOP_PID" > "$LIVE_JOB/.claim/owner_loop"
 : > "$LIVE_JOB/stdout"
 : > "$LIVE_JOB/stderr"
 chmod 700 "$LIVE_JOB" "$LIVE_JOB/.claim"
 chmod 600 "$LIVE_JOB/state" "$LIVE_JOB/.claim/owner" "$LIVE_JOB/.claim/owner_start" \
-  "$LIVE_JOB/.claim/owner_loop" "$LIVE_JOB/stdout" "$LIVE_JOB/stderr"
-start_serve live-loop "$LIVE_STATE"
+  "$LIVE_JOB/stdout" "$LIVE_JOB/stderr"
+start_serve live-owner "$LIVE_STATE"
 for _ in $(seq 1 200); do
-  grep -Fq 'not reclaiming' "$TMP_ROOT/live-loop.err" 2>/dev/null && break
+  grep -Fq 'leaving job' "$TMP_ROOT/live-owner.err" 2>/dev/null && break
   sleep 0.05
 done
 [ "$(cat "$LIVE_JOB/state")" = running ] \
@@ -334,12 +327,10 @@ assert_absent "$LIVE_JOB/exit" "a live sibling's running job published a result"
 [ "$(cat "$LIVE_JOB/.claim/owner")" = "$LIVE_LANE_PID" ] \
   || fail "a live sibling's claim was erased"
 kill -0 "$LIVE_LANE_PID" 2>/dev/null || fail "a live sibling's lane was signalled"
-kill -0 "$LIVE_LOOP_PID" 2>/dev/null || fail "a live sibling's serving loop was signalled"
-assert_grep 'not reclaiming' "$TMP_ROOT/live-loop.err" \
-  "the replacement did not report the reclaim it refused: $(cat "$TMP_ROOT/live-loop.err")"
-kill "$LIVE_LANE_PID" "$LIVE_LOOP_PID" 2>/dev/null || true
+assert_grep 'leaving job' "$TMP_ROOT/live-owner.err" \
+  "the replacement did not report the reclaim it refused: $(cat "$TMP_ROOT/live-owner.err")"
+kill "$LIVE_LANE_PID" 2>/dev/null || true
 wait "$LIVE_LANE_PID" 2>/dev/null || true
-wait "$LIVE_LOOP_PID" 2>/dev/null || true
 pass "a running job whose claim owner is alive is left to publish its result"
 
 # Every worker this case started must be gone once its group is signalled. The

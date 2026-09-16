@@ -11,8 +11,8 @@
 # (NUL-delimited), stdin, seq, stdout, stderr, queue_deadline, timeout, and
 # state; deadline and exit are added as execution advances, cancel is an
 # optional caller-cancellation marker, and .claim may hold owner, owner_identity,
-# owner_loop, owner_loop_identity, owner_start, supervisor, supervisor_start,
-# group, group_start, and armed records while work executes.
+# owner_start, supervisor, supervisor_start, group, group_start, and armed
+# records while work executes.
 # Stage writes state=queued last. seq is a queue-wide monotonic staging
 # sequence reserved atomically by its persistent .seq-claims directory; the
 # counter is only a forward-moving allocation hint. If the bounded hint walk
@@ -467,13 +467,12 @@ fm_remote_job_regular_bounded() { # <file> <max-bytes>
 fm_remote_job_remove_claim_records() { # <claim-dir>
   local claim=$1 file
   [ -d "$claim" ] && [ ! -L "$claim" ] || return 1
-  for file in "$claim"/owner "$claim"/owner_identity "$claim"/owner_loop \
-    "$claim"/owner_loop_identity "$claim"/owner_start "$claim"/supervisor \
-    "$claim"/supervisor_start "$claim"/group "$claim"/group_start "$claim"/armed \
-    "$claim"/.owner.* "$claim"/.owner_identity.* "$claim"/.owner_loop.* \
-    "$claim"/.owner_loop_identity.* "$claim"/.owner_start.* "$claim"/.supervisor.* \
-    "$claim"/.supervisor_start.* "$claim"/.group.* "$claim"/.group_start.* \
-    "$claim"/.armed.*; do
+  for file in "$claim"/owner "$claim"/owner_identity "$claim"/owner_start \
+    "$claim"/supervisor "$claim"/supervisor_start "$claim"/group \
+    "$claim"/group_start "$claim"/armed \
+    "$claim"/.owner.* "$claim"/.owner_identity.* "$claim"/.owner_start.* \
+    "$claim"/.supervisor.* "$claim"/.supervisor_start.* "$claim"/.group.* \
+    "$claim"/.group_start.* "$claim"/.armed.*; do
     [ -e "$file" ] || [ -L "$file" ] || continue
     fm_remote_job_regular_bounded "$file" 256 || return 1
     rm -f -- "$file" || return 1
