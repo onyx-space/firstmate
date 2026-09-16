@@ -251,15 +251,18 @@ worker_lock_owner_status() { # <account-home>
 # winner works only inside the directory it now owns. The taken directory is
 # re-verified before anything in it is removed, so a live owner that published
 # between the judgment and the rename gets its directory handed straight back.
-worker_reclaim_lock() { # <lock-dir>
+worker_reclaim_lock() { # <lock-dir>; 0 = the path is free, 1 = nothing was freed
   local lock=$1 taken
   taken="$lock.reclaim.${BASHPID:-$$}"
   [ -d "$lock" ] && [ ! -L "$lock" ] || return 0
-  [ ! -e "$taken" ] && [ ! -L "$taken" ] || return 0
-  mv -- "$lock" "$taken" 2>/dev/null || return 0
+  [ ! -e "$taken" ] && [ ! -L "$taken" ] || return 1
+  mv -- "$lock" "$taken" 2>/dev/null || return 1
   worker_lock_record_status "$taken"
   case "$?" in
-    1) rm -rf -- "$taken" 2>/dev/null || true ;;
+    1)
+      rm -rf -- "$taken" 2>/dev/null || true
+      return 0
+      ;;
     *)
       # A live or still-publishing owner had the path: put the directory back
       # rather than deleting it, and only while the path is still free. `mv`
@@ -270,9 +273,9 @@ worker_reclaim_lock() { # <lock-dir>
       if [ ! -e "$lock" ] && [ ! -L "$lock" ]; then
         mv -- "$taken" "$lock" 2>/dev/null || true
       fi
+      return 1
       ;;
   esac
-  return 0
 }
 
 worker_quarantined_execution_stopped() { # <account-home>
@@ -331,7 +334,13 @@ worker_acquire_lock() {
         continue
         ;;
     esac
-    worker_reclaim_lock "$WORKER_LOCK" || return 1
+    # A reclaim that could not free the path leaves the same dead record in
+    # place, so it is a failed attempt rather than a success: re-entering the
+    # loop would re-read that record and spin without ever reaching the bound.
+    if ! worker_reclaim_lock "$WORKER_LOCK"; then
+      attempt=$((attempt + 1))
+      sleep 0.1
+    fi
   done
   worker_lock_owner_status "$account_home"
   case "$?" in
