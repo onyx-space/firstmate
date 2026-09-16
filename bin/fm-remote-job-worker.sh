@@ -190,7 +190,7 @@ worker_path_recent() { # <path>
 }
 
 # Whether the worker lock's recorded owner still exists: 0 = a live process
-# whose start identity matches the record, 1 = provably gone (a dead pid, a
+# whose recorded start and command match it, 1 = provably gone (a dead pid, a
 # reused pid, or nothing published past the grace window), 2 = indeterminate
 # because the record is unreadable or still being published.
 #
@@ -200,7 +200,7 @@ worker_path_recent() { # <path>
 # a replacement; both then served the same queue, raced the same job records,
 # and neither could publish a result.
 worker_lock_record_status() { # <lock-dir>
-  local lock=$1 pid recorded_start actual_start
+  local lock=$1 pid recorded_start actual_start recorded_command actual_command
   [ -d "$lock" ] && [ ! -L "$lock" ] || return 1
   pid=$(fm_remote_job_read_single_line "$lock/pid" 64 2>/dev/null || true)
   case "$pid" in ''|*[!0-9]*) pid= ;; esac
@@ -222,8 +222,19 @@ worker_lock_record_status() { # <lock-dir>
   fi
   actual_start=$(fm_remote_job_process_start "$pid" 2>/dev/null || true)
   [ -n "$actual_start" ] || return 2
-  [ "$recorded_start" = "$actual_start" ] && return 0
-  return 1
+  [ "$recorded_start" = "$actual_start" ] || return 1
+  # A start rendering has one-second resolution, so a pid reused within that
+  # second answers this record identically and a replacement would wait out a
+  # live impostor. The command the owner recorded is the other half of the
+  # identity and, unlike a start time, is read as the process's own argv rather
+  # than recomputed from the clock: a readable mismatch proves this pid is not
+  # the owner, while a command record that cannot be read stays an owner and is
+  # never displaced on a guess.
+  recorded_command=$(fm_remote_job_read_single_line "$lock/command" 8192 2>/dev/null || true)
+  [ -n "$recorded_command" ] || return 2
+  actual_command=$(fm_remote_job_process_command "$pid" 2>/dev/null || true)
+  [ -n "$actual_command" ] || return 2
+  [ "$recorded_command" = "$actual_command" ]
 }
 
 worker_lock_owner_status() { # <account-home>
@@ -251,9 +262,14 @@ worker_reclaim_lock() { # <lock-dir>
     1) rm -rf -- "$taken" 2>/dev/null || true ;;
     *)
       # A live or still-publishing owner had the path: put the directory back
-      # rather than deleting it. If a new owner took the path in the meantime
-      # the taken directory is left beside it and is never consulted again.
-      mv -- "$taken" "$lock" 2>/dev/null || rm -rf -- "$taken" 2>/dev/null || true
+      # rather than deleting it, and only while the path is still free. `mv`
+      # into an existing directory moves the taken directory inside it, so an
+      # unguarded restore would park the record under another owner's lock and
+      # keep that lock from ever being removed. A taken directory left beside a
+      # retaken path is never deleted either: its owner may still be serving.
+      if [ ! -e "$lock" ] && [ ! -L "$lock" ]; then
+        mv -- "$taken" "$lock" 2>/dev/null || true
+      fi
       ;;
   esac
   return 0
@@ -1197,25 +1213,6 @@ main() {
   done
 }
 
-worker_supervisor_cleanup_dead_child() { # <account-home> <pid>
-  local account_home=$1 pid=$2 lock recorded pid_file ready identity
-  fm_remote_job_prepare_state "$account_home" || return 1
-  lock=$(fm_remote_job_worker_lock_path)
-  [ -d "$lock" ] && [ ! -L "$lock" ] || return 1
-  [ ! -e "$lock/quarantine" ] && [ ! -L "$lock/quarantine" ] || return 1
-  recorded=$(fm_remote_job_read_single_line "$lock/pid" 64) || return 1
-  [ "$recorded" = "$pid" ] || return 1
-  pid_file=$(fm_remote_job_worker_pid_path)
-  ready=$(fm_remote_job_worker_ready_path)
-  identity=$(fm_remote_job_worker_identity_path)
-  [ ! -L "$pid_file" ] && rm -f -- "$pid_file" || return 1
-  [ ! -L "$ready" ] && rm -f -- "$ready" || return 1
-  [ ! -L "$identity" ] && rm -f -- "$identity" || return 1
-  [ ! -L "$lock/start" ] && [ ! -L "$lock/command" ] || return 1
-  rm -f -- "$lock/pid" "$lock/start" "$lock/command" || return 1
-  rmdir "$lock"
-}
-
 worker_supervisor_shutdown() {
   local pid=${WORKER_SUPERVISED_PID:-}
   trap - HUP INT TERM
@@ -1251,7 +1248,6 @@ worker_supervise_linux() {
       WORKER_SUPERVISED_PID=
       return 75
     fi
-    worker_supervisor_cleanup_dead_child "$account_home" "$WORKER_SUPERVISED_PID" || true
     WORKER_SUPERVISED_PID=
     restarts=$((restarts + 1))
     if [ "$restarts" -ge "$FM_REMOTE_JOB_SUPERVISOR_MAX_RESTARTS" ]; then
