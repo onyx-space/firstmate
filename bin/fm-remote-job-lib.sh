@@ -10,9 +10,9 @@
 # A published job directory is mode 0700 and contains root, home, argv
 # (NUL-delimited), stdin, seq, stdout, stderr, queue_deadline, timeout, and
 # state; deadline and exit are added as execution advances, cancel is an
-# optional caller-cancellation marker, and .claim may hold owner, owner_start,
-# supervisor, supervisor_start, group, group_start, and armed records while
-# work executes.
+# optional caller-cancellation marker, and .claim may hold owner, owner_identity,
+# owner_loop, owner_loop_identity, owner_start, supervisor, supervisor_start,
+# group, group_start, and armed records while work executes.
 # Stage writes state=queued last. seq is a queue-wide monotonic staging
 # sequence reserved atomically by its persistent .seq-claims directory; the
 # counter is only a forward-moving allocation hint. If the bounded hint walk
@@ -467,9 +467,11 @@ fm_remote_job_regular_bounded() { # <file> <max-bytes>
 fm_remote_job_remove_claim_records() { # <claim-dir>
   local claim=$1 file
   [ -d "$claim" ] && [ ! -L "$claim" ] || return 1
-  for file in "$claim"/owner "$claim"/owner_start "$claim"/supervisor \
+  for file in "$claim"/owner "$claim"/owner_identity "$claim"/owner_loop \
+    "$claim"/owner_loop_identity "$claim"/owner_start "$claim"/supervisor \
     "$claim"/supervisor_start "$claim"/group "$claim"/group_start "$claim"/armed \
-    "$claim"/.owner.* "$claim"/.owner_start.* "$claim"/.supervisor.* \
+    "$claim"/.owner.* "$claim"/.owner_identity.* "$claim"/.owner_loop.* \
+    "$claim"/.owner_loop_identity.* "$claim"/.owner_start.* "$claim"/.supervisor.* \
     "$claim"/.supervisor_start.* "$claim"/.group.* "$claim"/.group_start.* \
     "$claim"/.armed.*; do
     [ -e "$file" ] || [ -L "$file" ] || continue
@@ -910,6 +912,11 @@ fm_remote_job_worker_lock_path() { printf '%s\n' "$FM_REMOTE_JOB_STATE/worker.lo
 # the rendering here is what makes a record comparison meaningful: an ambient
 # LC_ALL or COLUMNS difference used to make the same live process read as a
 # different one, and a worker that trusted that verdict evicted a live owner.
+# A rendered comparison still only ever confirms an owner: its text is derived
+# from the reader's clock domain, so it never proves that a different process
+# holds the pid. fm_remote_job_process_identity is the stamp that does, and the
+# worker lock is displaced only on that stamp or on a dead pid.
+#
 fm_remote_job_process_start() {
   local pid=$1 ps_bin value
   if [ -x /bin/ps ]; then ps_bin=/bin/ps; elif [ -x /usr/bin/ps ]; then ps_bin=/usr/bin/ps; else return 1; fi
@@ -926,6 +933,36 @@ fm_remote_job_process_command() {
   [ -n "$value" ] || return 1
   case "$value" in *$'\n'*|*$'\r'*) return 1 ;; esac
   printf '%s\n' "$value"
+}
+
+# A process identity that does not depend on who reads it: the kernel's own
+# start time, /proc stat field 22 (clock ticks since boot). Unlike a rendered
+# ps start time it does not move under a clock step, so a mismatch is a property
+# of the process and is the only evidence that may prove a pid was reused.
+# Prints nothing where that interface does not exist (Darwin, BSD), where pid
+# reuse cannot be proven at all.
+#
+# The command line is deliberately not part of this stamp: a process that execs
+# keeps its pid and start time but changes its command, so the command is not an
+# identity. A caller that already has one may consult
+# fm_remote_job_process_command separately to confirm an owner, never to prove
+# one gone.
+#
+# FM_PROC_ROOT_OVERRIDE redirects the read at a fixture, the same knob the rest
+# of the repo's identity helpers honor.
+#
+fm_remote_job_process_identity() { # <pid>
+  local pid=$1 proc_root stat_line starttime
+  local -a stat_fields
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc}
+  [ -r "$proc_root/$pid/stat" ] || return 1
+  stat_line=$(cat "$proc_root/$pid/stat" 2>/dev/null) || return 1
+  read -r -a stat_fields <<< "${stat_line##*)}"
+  [ "${#stat_fields[@]}" -ge 20 ] || return 1
+  starttime=${stat_fields[19]}
+  case "$starttime" in ''|*[!0-9]*) return 1 ;; esac
+  printf 'starttime=%s\n' "$starttime"
 }
 
 fm_remote_job_process_pgid() { # <pid>

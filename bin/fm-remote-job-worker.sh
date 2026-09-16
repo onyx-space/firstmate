@@ -25,14 +25,20 @@
 # Exactly one serving loop may own a state root: two of them race the same job
 # records, clear each other's claims, and neither publishes a result, which the
 # caller reads as its finished job having stopped. Ownership is one directory
-# under the state root holding the owner's pid and start identity, and only
-# proof that the recorded owner is gone may displace it. A readiness heartbeat
-# proves only that the loop is responsive, never that it has exited, so it never
-# decides ownership; a record that is unreadable or still being published is
-# held for FM_REMOTE_JOB_RECORD_GRACE_SECONDS rather than reclaimed. The same
-# proof rule covers a job claim: a claim whose owner record has not landed yet
-# belongs to a claimant that is still publishing, so a sibling executor holds
-# off instead of erasing it.
+# under the state root holding the owner's pid, its reader-independent /proc
+# start stamp, and the rendered start and command it published. Only proof that
+# the recorded owner is gone may displace it, and only a dead pid or that stamp
+# is such proof: a rendered ps start or command is recomputed through the
+# reading process's clock domain, so it can disagree with the record about a
+# live owner and never decides the disposition. A record whose live pid no
+# stamp disproves is held, not displaced, and reported as unverifiable. A
+# readiness heartbeat proves only that the loop is responsive, never that it has
+# exited, so it never decides ownership; a record that is unreadable or still
+# being published is held for FM_REMOTE_JOB_RECORD_GRACE_SECONDS rather than
+# reclaimed. The same proof rule covers a job claim: a claim whose owner record
+# has not landed yet belongs to a claimant that is still publishing, so a
+# sibling executor holds off instead of erasing it, and a running job is
+# reclaimed only once its claim owner is provably gone.
 #
 # The worker is abandoned when its configured FM_ROOT stops being a genuine
 # Firstmate checkout - the state a pruned no-mistakes gate worktree, a returned
@@ -120,6 +126,28 @@ worker_publish_identity() {
   mv -f -- "$tmp" "$identity_file"
 }
 
+# Stage a one-line record that sharpens an ownership identity, and print the
+# staged pathname. Prints nothing when the content is unavailable or cannot be
+# written, because these records are never the ownership decision itself: a
+# host that cannot render one still publishes the record it belongs to, and a
+# reader treats its absence as unproven rather than as a fact.
+worker_stage_identity_record() { # <dir> <prefix> <content>
+  local dir=$1 prefix=$2 content=$3 tmp
+  [ -n "$content" ] || return 0
+  tmp=$(umask 077; mktemp "$dir/$prefix.XXXXXX" 2>/dev/null) || return 0
+  if ! printf '%s\n' "$content" > "$tmp" || ! chmod 600 "$tmp"; then
+    rm -f -- "$tmp"
+    return 0
+  fi
+  printf '%s\n' "$tmp"
+}
+
+# Move a staged identity record into place, or drop it when the move fails.
+worker_publish_staged_record() { # <staged-path> <final-path>
+  [ -n "$1" ] || return 0
+  mv -f -- "$1" "$2" 2>/dev/null || rm -f -- "$1"
+}
+
 # Take ownership of the lock directory by creating its pid record exclusively.
 #
 # The pid record, not the directory, is the ownership decision. Creating the
@@ -132,23 +160,28 @@ worker_publish_identity() {
 # moved in only after the claim succeeds, so a loser never writes into, or
 # deletes from, the winner's record.
 worker_publish_lock_owner() {
-  local pid start command start_tmp command_tmp
+  local pid start command stamp start_tmp command_tmp stamp_tmp
   pid=${BASHPID:-$$}
   start=$(fm_remote_job_process_start "$pid") || return 1
   command=$(fm_remote_job_process_command "$pid") || return 1
+  stamp=$(fm_remote_job_process_identity "$pid" 2>/dev/null || true)
   start_tmp=$(umask 077; mktemp "$WORKER_LOCK/.start.XXXXXX") || return 1
   command_tmp=$(umask 077; mktemp "$WORKER_LOCK/.command.XXXXXX") || { rm -f -- "$start_tmp"; return 1; }
+  stamp_tmp=$(worker_stage_identity_record "$WORKER_LOCK" .pid-identity "$stamp")
   if ! printf '%s\n' "$start" > "$start_tmp" \
     || ! printf '%s\n' "$command" > "$command_tmp" \
     || ! chmod 600 "$start_tmp" "$command_tmp"; then
     rm -f -- "$start_tmp" "$command_tmp"
+    [ -z "$stamp_tmp" ] || rm -f -- "$stamp_tmp"
     return 1
   fi
   if ! ( set -C; printf '%s\n' "$pid" > "$WORKER_LOCK/pid" ) 2>/dev/null; then
     rm -f -- "$start_tmp" "$command_tmp"
+    [ -z "$stamp_tmp" ] || rm -f -- "$stamp_tmp"
     return 1
   fi
   chmod 600 "$WORKER_LOCK/pid" 2>/dev/null || true
+  worker_publish_staged_record "$stamp_tmp" "$WORKER_LOCK/pid-identity"
   mv -f -- "$command_tmp" "$WORKER_LOCK/command" 2>/dev/null || rm -f -- "$command_tmp"
   # The identity record must land: a serving owner whose start record is missing
   # could not be told apart from a publisher that died half way, and the record
@@ -176,10 +209,10 @@ worker_release_published_pid() {
 
 # A directory younger than this bound may still be a record being published by
 # its creator, so its missing or half-written contents are never read as an
-# abandoned one. Publishing a record takes one exclusive create plus two
+# abandoned one. Publishing a record takes one exclusive create plus a few
 # renames, so the window is milliseconds and the bound only has to cover a slow
-# filesystem.
-FM_REMOTE_JOB_RECORD_GRACE_SECONDS=$(worker_bounded_setting "${FM_REMOTE_JOB_RECORD_GRACE_SECONDS:-}" 10)
+# filesystem. It is a fixed property of the record protocol, not a setting.
+FM_REMOTE_JOB_RECORD_GRACE_SECONDS=10
 
 worker_path_recent() { # <path>
   local mtime now
@@ -189,18 +222,22 @@ worker_path_recent() { # <path>
   [ $((now - mtime)) -le "$FM_REMOTE_JOB_RECORD_GRACE_SECONDS" ]
 }
 
-# Whether the worker lock's recorded owner still exists: 0 = a live process
-# whose recorded start and command match it, 1 = provably gone (a dead pid, a
-# reused pid, or nothing published past the grace window), 2 = indeterminate
-# because the record is unreadable or still being published.
+# Whether the worker lock's recorded owner still exists: 0 = a live process the
+# recorded stamp confirms, 1 = provably gone (a dead pid, or a live pid that
+# stamp disproves), 2 = indeterminate because the record is unreadable or still
+# being published, 3 = held because the record cannot be verified and cannot be
+# displaced here.
 #
-# Only proof of death may displace an owner. The previous revision decided on a
-# fresh-heartbeat probe instead, so a live worker whose serving loop stalled or
-# whose heartbeat read as stale had its lock directory deleted underneath it by
-# a replacement; both then served the same queue, raced the same job records,
-# and neither could publish a result.
+# Only reader-independent proof of death may displace an owner. The previous
+# revision decided on a fresh-heartbeat probe instead, so a live worker whose
+# serving loop stalled or whose heartbeat read as stale had its lock directory
+# deleted underneath it by a replacement; both then served the same queue,
+# raced the same job records, and neither could publish a result. Deciding on a
+# rendered ps start or command is the same mistake in another form: that text
+# is recomputed from the reading process's timezone and clock domain, so a
+# reader can disagree with the record about a live owner and displace it.
 worker_lock_record_status() { # <lock-dir>
-  local lock=$1 pid recorded_start actual_start recorded_command actual_command
+  local lock=$1 pid recorded_identity actual_identity
   [ -d "$lock" ] && [ ! -L "$lock" ] || return 1
   pid=$(fm_remote_job_read_single_line "$lock/pid" 64 2>/dev/null || true)
   case "$pid" in ''|*[!0-9]*) pid= ;; esac
@@ -219,32 +256,17 @@ worker_lock_record_status() { # <lock-dir>
     return 1
   fi
   kill -0 "$pid" 2>/dev/null || return 1
-  recorded_start=$(fm_remote_job_read_single_line "$lock/start" 256 2>/dev/null || true)
-  if [ -z "$recorded_start" ]; then
-    # The pid record is published first, so a start record that has not arrived
-    # yet is a publish in flight. The bound is the pid record's own age, not
-    # forever: past it the publisher died between its two records, and a record
-    # whose identity never arrived can never be the owner this state root is
-    # waiting for. Treating it as indeterminate without that bound wedged the
-    # queue whenever a killed publisher's pid was later reused.
-    worker_path_recent "$lock/pid" && return 2
-    return 1
-  fi
-  actual_start=$(fm_remote_job_process_start "$pid" 2>/dev/null || true)
-  [ -n "$actual_start" ] || return 2
-  [ "$recorded_start" = "$actual_start" ] || return 1
-  # A start rendering has one-second resolution, so a pid reused within that
-  # second answers this record identically and a replacement would wait out a
-  # live impostor. The command the owner recorded is the other half of the
-  # identity and, unlike a start time, is read as the process's own argv rather
-  # than recomputed from the clock: a readable mismatch proves this pid is not
-  # the owner, while a command record that cannot be read stays an owner and is
-  # never displaced on a guess.
-  recorded_command=$(fm_remote_job_read_single_line "$lock/command" 8192 2>/dev/null || true)
-  [ -n "$recorded_command" ] || return 2
-  actual_command=$(fm_remote_job_process_command "$pid" 2>/dev/null || true)
-  [ -n "$actual_command" ] || return 2
-  [ "$recorded_command" = "$actual_command" ]
+  # The reader-independent stamp is the only evidence that may prove this pid
+  # is not the recorded owner. Nothing else in the record can: a rendered start
+  # or command is recomputed from the reading process's clock domain, so it can
+  # disagree with the record about a live owner, and a record that has no stamp
+  # is held rather than displaced on a guess.
+  recorded_identity=$(fm_remote_job_read_single_line "$lock/pid-identity" 64 2>/dev/null || true)
+  [ -n "$recorded_identity" ] || return 3
+  actual_identity=$(fm_remote_job_process_identity "$pid" 2>/dev/null || true)
+  [ -n "$actual_identity" ] || return 3
+  [ "$recorded_identity" = "$actual_identity" ] && return 0
+  return 1
 }
 
 worker_lock_owner_status() { # <account-home>
@@ -343,6 +365,13 @@ worker_acquire_lock() {
         sleep 0.1
         continue
         ;;
+      3)
+        # The record names a live pid this host cannot verify and cannot
+        # disprove. Refusing here is the bounded answer: yield the queue to it
+        # and say why, so an operator can act, instead of guessing it gone.
+        worker_error "worker ownership is held by pid $(fm_remote_job_read_single_line "$WORKER_LOCK/pid" 64 2>/dev/null) whose identity cannot be verified here; refusing to displace it"
+        return 2
+        ;;
     esac
     # A reclaim that could not free the path leaves the same dead record in
     # place, so it is a failed attempt rather than a success: re-entering the
@@ -354,7 +383,7 @@ worker_acquire_lock() {
   done
   worker_lock_owner_status "$account_home"
   case "$?" in
-    0|2) return 2 ;;
+    0|2|3) return 2 ;;
   esac
   return 1
 }
@@ -378,8 +407,9 @@ worker_cleanup() {
   [ "$WORKER_LOCK_HELD" -eq 1 ] && [ "$WORKER_RELEASE_OWNERSHIP" -eq 1 ] || return 0
   owner_pid=$(fm_remote_job_read_single_line "$WORKER_LOCK/pid" 64 2>/dev/null || true)
   if [ -z "$owner_pid" ]; then
-    [ ! -L "$WORKER_LOCK/start" ] && [ ! -L "$WORKER_LOCK/command" ] &&
-      rm -f -- "$WORKER_LOCK/start" "$WORKER_LOCK/command" 2>/dev/null || true
+    [ ! -L "$WORKER_LOCK/pid-identity" ] &&
+      [ ! -L "$WORKER_LOCK/start" ] && [ ! -L "$WORKER_LOCK/command" ] &&
+      rm -f -- "$WORKER_LOCK/pid-identity" "$WORKER_LOCK/start" "$WORKER_LOCK/command" 2>/dev/null || true
     rmdir "$WORKER_LOCK" 2>/dev/null || true
     WORKER_LOCK_HELD=0
     return 0
@@ -391,7 +421,7 @@ worker_cleanup() {
   [ ! -L "$pid_file" ] && rm -f -- "$pid_file" 2>/dev/null || true
   [ ! -L "$ready" ] && rm -f -- "$ready" 2>/dev/null || true
   [ ! -L "$identity" ] && rm -f -- "$identity" 2>/dev/null || true
-  rm -f -- "$WORKER_LOCK/pid" "$WORKER_LOCK/start" "$WORKER_LOCK/command" 2>/dev/null || true
+  rm -f -- "$WORKER_LOCK/pid" "$WORKER_LOCK/pid-identity" "$WORKER_LOCK/start" "$WORKER_LOCK/command" 2>/dev/null || true
   rmdir "$WORKER_LOCK" 2>/dev/null || true
   WORKER_LOCK_HELD=0
 }
@@ -608,27 +638,49 @@ worker_exit_cleanup() {
 # and a loser must never delete a winner's claim, which is how two executors
 # erased each other's records and left neither able to publish a result.
 worker_claim() { # <job-dir>
-  local job=$1 claim pid start start_tmp
+  local job=$1 claim pid start stamp loop_pid loop_stamp start_tmp stamp_tmp loop_tmp loop_stamp_tmp
   claim="$job/.claim"
   if ! (umask 077; mkdir "$claim") 2>/dev/null; then
     [ -d "$claim" ] && [ ! -L "$claim" ] || return 1
   fi
   pid=${BASHPID:-$$}
   start=$(fm_remote_job_process_start "$pid") || return 1
+  stamp=$(fm_remote_job_process_identity "$pid" 2>/dev/null || true)
+  # The lane records the serving loop that started it, which is the owner whose
+  # death a replacement has to prove before it may stop this job: a lane can
+  # outlive its loop, and its pid being alive says nothing about supervision.
+  loop_pid=${PPID:-}
+  case "$loop_pid" in ''|*[!0-9]*) loop_pid= ;; esac
+  [ -z "$loop_pid" ] || [ "$loop_pid" -gt 1 ] || loop_pid=
+  loop_stamp=
+  [ -z "$loop_pid" ] || loop_stamp=$(fm_remote_job_process_identity "$loop_pid" 2>/dev/null || true)
   start_tmp=$(umask 077; mktemp "$claim/.owner_start.XXXXXX") || return 1
+  stamp_tmp=$(worker_stage_identity_record "$claim" .owner_identity "$stamp")
+  loop_tmp=$(worker_stage_identity_record "$claim" .owner_loop "$loop_pid")
+  loop_stamp_tmp=$(worker_stage_identity_record "$claim" .owner_loop_identity "$loop_stamp")
   if ! printf '%s\n' "$start" > "$start_tmp" || ! chmod 600 "$start_tmp"; then
     rm -f -- "$start_tmp"
+    [ -z "$stamp_tmp" ] || rm -f -- "$stamp_tmp"
+    [ -z "$loop_tmp" ] || rm -f -- "$loop_tmp"
+    [ -z "$loop_stamp_tmp" ] || rm -f -- "$loop_stamp_tmp"
     return 1
   fi
   if ! ( set -C; printf '%s\n' "$pid" > "$claim/owner" ) 2>/dev/null; then
     rm -f -- "$start_tmp"
+    [ -z "$stamp_tmp" ] || rm -f -- "$stamp_tmp"
+    [ -z "$loop_tmp" ] || rm -f -- "$loop_tmp"
+    [ -z "$loop_stamp_tmp" ] || rm -f -- "$loop_stamp_tmp"
     return 1
   fi
   chmod 600 "$claim/owner" 2>/dev/null || true
+  worker_publish_staged_record "$stamp_tmp" "$claim/owner_identity"
+  worker_publish_staged_record "$loop_tmp" "$claim/owner_loop"
+  worker_publish_staged_record "$loop_stamp_tmp" "$claim/owner_loop_identity"
   if ! mv -f -- "$start_tmp" "$claim/owner_start" 2>/dev/null; then
     rm -f -- "$start_tmp"
     [ "$(fm_remote_job_read_single_line "$claim/owner" 64 2>/dev/null || true)" = "$pid" ] \
-      && rm -f -- "$claim/owner" 2>/dev/null
+      && rm -f -- "$claim/owner" "$claim/owner_identity" "$claim/owner_loop" \
+        "$claim/owner_loop_identity" 2>/dev/null
     return 1
   fi
   [ "$(fm_remote_job_read_single_line "$claim/owner" 64 2>/dev/null || true)" = "$pid" ] || return 1
@@ -636,7 +688,7 @@ worker_claim() { # <job-dir>
 }
 
 worker_claim_owner_alive() { # <job-dir>
-  local job=$1 claim="$1/.claim" owner pid recorded_start actual_start
+  local job=$1 claim="$1/.claim" owner pid recorded_identity actual_identity
   [ -d "$claim" ] && [ ! -L "$claim" ] || return 1
   owner="$claim/owner"
   if ! fm_remote_job_regular_bounded "$owner" 64; then
@@ -650,16 +702,44 @@ worker_claim_owner_alive() { # <job-dir>
   fi
   pid=$(tr -d '\n' < "$owner")
   case "$pid" in ''|*[!0-9]*) return 1 ;; esac
-  if [ -e "$claim/owner_start" ] || [ -L "$claim/owner_start" ]; then
-    recorded_start=$(fm_remote_job_read_single_line "$claim/owner_start" 256 2>/dev/null) || return 0
-    actual_start=$(fm_remote_job_process_start "$pid" 2>/dev/null) || {
-      kill -0 "$pid" 2>/dev/null && return 0
-      return 1
-    }
-    [ "$recorded_start" = "$actual_start" ]
-    return
+  kill -0 "$pid" 2>/dev/null || return 1
+  # Only the reader-independent stamp can disprove a live pid. Where it is
+  # absent the record cannot say anything about reuse, so a live pid stays the
+  # owner: a stolen claim is a lost publication, and a held one costs a retry.
+  recorded_identity=$(fm_remote_job_read_single_line "$claim/owner_identity" 64 2>/dev/null || true)
+  [ -n "$recorded_identity" ] || return 0
+  actual_identity=$(fm_remote_job_process_identity "$pid" 2>/dev/null || true)
+  [ -n "$actual_identity" ] || return 0
+  [ "$recorded_identity" = "$actual_identity" ]
+}
+
+# Whether the running job's execution is provably abandoned. A lane can outlive
+# the serving loop that started it, so its own pid being alive is not proof that
+# anyone still supervises the job; the claim also names that loop, and the job
+# is abandoned when a dead pid, a reused pid, or a gone loop proves it. Every
+# unsure answer is "not abandoned": stopping a live sibling's command publishes
+# the caller-visible 'stopped before this job completed' over a result that was
+# about to land.
+worker_claim_owner_provably_dead() { # <job-dir>
+  local claim="$1/.claim" pid loop_pid recorded_identity actual_identity
+  [ -d "$claim" ] && [ ! -L "$claim" ] || return 0
+  pid=$(fm_remote_job_read_single_line "$claim/owner" 64 2>/dev/null || true)
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  kill -0 "$pid" 2>/dev/null || return 0
+  recorded_identity=$(fm_remote_job_read_single_line "$claim/owner_identity" 64 2>/dev/null || true)
+  if [ -n "$recorded_identity" ]; then
+    actual_identity=$(fm_remote_job_process_identity "$pid" 2>/dev/null || true)
+    [ -n "$actual_identity" ] || return 1
+    [ "$actual_identity" != "$recorded_identity" ] && return 0
   fi
-  kill -0 "$pid" 2>/dev/null
+  loop_pid=$(fm_remote_job_read_single_line "$claim/owner_loop" 64 2>/dev/null || true)
+  case "$loop_pid" in ''|*[!0-9]*) return 1 ;; esac
+  kill -0 "$loop_pid" 2>/dev/null || return 0
+  recorded_identity=$(fm_remote_job_read_single_line "$claim/owner_loop_identity" 64 2>/dev/null || true)
+  [ -n "$recorded_identity" ] || return 1
+  actual_identity=$(fm_remote_job_process_identity "$loop_pid" 2>/dev/null || true)
+  [ -n "$actual_identity" ] || return 1
+  [ "$actual_identity" != "$recorded_identity" ]
 }
 
 worker_clear_dead_claim() { # <job-dir>
@@ -672,14 +752,20 @@ worker_clear_dead_claim() { # <job-dir>
   rmdir "$claim"
 }
 
-# Reclaim a running job this serving loop does not own: a record left by a
-# crashed worker, whether its lane process died with it or survived it. The
-# recorded execution is stopped either way - a surviving foreign lane is not
-# supervised by any owner and a second lane for its home must never start
-# beside it - and the record publishes unknown completion, exactly as a
-# crashed single-process worker's job always has.
+# Reclaim a running job this serving loop does not own, but only once its claim
+# owner is provably gone: a record left by a crashed lane, whether its command
+# died with it or survived it. The recorded execution is stopped - a surviving
+# foreign lane is not supervised by any owner and a second lane for its home
+# must never start beside it - and the record publishes unknown completion,
+# exactly as a crashed single-process worker's job always has. A claim whose
+# owner is alive, or whose death cannot be proven, is left untouched: a live
+# sibling's lane is not a crash, and its result must land.
 worker_reclaim_running_job() { # <job-dir>
   local job=$1 file state
+  if ! worker_claim_owner_provably_dead "$job"; then
+    worker_error "not reclaiming ${job##*/}: its claim owner is still alive or cannot be proven gone"
+    return 0
+  fi
   worker_stop_recorded_execution "$job" || return 1
   state=$(fm_remote_job_read_state "$job" 2>/dev/null) || return 1
   worker_clear_dead_claim "$job" || return 1

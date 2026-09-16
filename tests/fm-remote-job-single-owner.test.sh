@@ -258,6 +258,82 @@ done
   || fail "the winner of a stale-record displacement never became ready"
 pass "replacements racing one stale record leave exactly one owner"
 
+# --- a live pid the record cannot disprove is never displaced ---------------
+#
+# A record whose live pid the reader-independent stamp cannot disprove is held,
+# not reclaimed, even when its rendered start and command disagree with the live
+# process: that text is recomputed from the reader's clock domain, so it can
+# describe a live owner wrongly. The record must survive untouched, the process
+# answering the pid must not be signalled, and the loop must report why it
+# refused instead of quietly yielding.
+REFUSE_STATE="$TMP_ROOT/refuse-state"
+mkdir -p "$REFUSE_STATE/worker.lock"
+sleep 20 &
+REFUSED_PID=$!
+printf '%s\n' "$REFUSED_PID" > "$REFUSE_STATE/worker.lock/pid"
+printf 'rendered-elsewhere\n' > "$REFUSE_STATE/worker.lock/start"
+printf 'rendered-elsewhere\n' > "$REFUSE_STATE/worker.lock/command"
+chmod 700 "$REFUSE_STATE/worker.lock"
+chmod 600 "$REFUSE_STATE/worker.lock/pid" "$REFUSE_STATE/worker.lock/start" \
+  "$REFUSE_STATE/worker.lock/command"
+start_serve refuse "$REFUSE_STATE"
+for _ in $(seq 1 200); do
+  grep -Fq 'cannot be verified' "$TMP_ROOT/refuse.err" 2>/dev/null && break
+  sleep 0.05
+done
+[ "$(cat "$REFUSE_STATE/worker.lock/pid")" = "$REFUSED_PID" ] \
+  || fail "a live pid the record could not disprove was displaced"
+[ "$(cat "$REFUSE_STATE/worker.lock/start")" = 'rendered-elsewhere' ] \
+  || fail "a refusal rewrote the record it refused to displace"
+kill -0 "$REFUSED_PID" 2>/dev/null || fail "the process answering the recorded pid was signalled"
+assert_grep 'cannot be verified' "$TMP_ROOT/refuse.err" \
+  "the refusing worker did not report why it refused: $(cat "$TMP_ROOT/refuse.err")"
+kill "$REFUSED_PID" 2>/dev/null || true
+wait "$REFUSED_PID" 2>/dev/null || true
+pass "a live pid the record cannot disprove is held, not displaced"
+
+# --- a live sibling's running job is never reclaimed ------------------------
+#
+# A claim names both the lane that executes the job and the serving loop that
+# started it. A replacement that cannot prove that loop gone leaves the job
+# alone, even when the rendered owner identity disagrees with the live lane:
+# killing it discards a result that was about to land and publishes the
+# caller-visible 'stopped before this job completed'.
+LIVE_STATE="$TMP_ROOT/live-loop-state"
+LIVE_JOB="$LIVE_STATE/jobs/job-liveloop"
+mkdir -p "$LIVE_JOB/.claim" "$LIVE_STATE/logs"
+sleep 20 &
+LIVE_LANE_PID=$!
+sleep 20 &
+LIVE_LOOP_PID=$!
+printf 'running\n' > "$LIVE_JOB/state"
+printf '%s\n' "$LIVE_LANE_PID" > "$LIVE_JOB/.claim/owner"
+printf 'rendered-elsewhere\n' > "$LIVE_JOB/.claim/owner_start"
+printf '%s\n' "$LIVE_LOOP_PID" > "$LIVE_JOB/.claim/owner_loop"
+: > "$LIVE_JOB/stdout"
+: > "$LIVE_JOB/stderr"
+chmod 700 "$LIVE_JOB" "$LIVE_JOB/.claim"
+chmod 600 "$LIVE_JOB/state" "$LIVE_JOB/.claim/owner" "$LIVE_JOB/.claim/owner_start" \
+  "$LIVE_JOB/.claim/owner_loop" "$LIVE_JOB/stdout" "$LIVE_JOB/stderr"
+start_serve live-loop "$LIVE_STATE"
+for _ in $(seq 1 200); do
+  grep -Fq 'not reclaiming' "$TMP_ROOT/live-loop.err" 2>/dev/null && break
+  sleep 0.05
+done
+[ "$(cat "$LIVE_JOB/state")" = running ] \
+  || fail "a live sibling's running job was reclaimed"
+assert_absent "$LIVE_JOB/exit" "a live sibling's running job published a result"
+[ "$(cat "$LIVE_JOB/.claim/owner")" = "$LIVE_LANE_PID" ] \
+  || fail "a live sibling's claim was erased"
+kill -0 "$LIVE_LANE_PID" 2>/dev/null || fail "a live sibling's lane was signalled"
+kill -0 "$LIVE_LOOP_PID" 2>/dev/null || fail "a live sibling's serving loop was signalled"
+assert_grep 'not reclaiming' "$TMP_ROOT/live-loop.err" \
+  "the replacement did not report the reclaim it refused: $(cat "$TMP_ROOT/live-loop.err")"
+kill "$LIVE_LANE_PID" "$LIVE_LOOP_PID" 2>/dev/null || true
+wait "$LIVE_LANE_PID" 2>/dev/null || true
+wait "$LIVE_LOOP_PID" 2>/dev/null || true
+pass "a running job whose claim owner is alive is left to publish its result"
+
 # Every worker this case started must be gone once its group is signalled. The
 # assertion is what catches a fixture that recorded nothing to clean up.
 stop_started_workers

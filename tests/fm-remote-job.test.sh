@@ -287,15 +287,26 @@ fm_remote_job_ensure_worker "$REMOTE_ROOT" "$ACCOUNT_HOME" || fail "$FM_REMOTE_J
 NEW_WORKER_PID=$(cat "$STATE_ROOT/worker.pid")
 pass "worker identity binds the canonical configured code root"
 
+# A live pid that answers the record's pid but not its reader-independent start
+# stamp is a reused pid. The replacement must reclaim the lock and serve without
+# ever signalling the unrelated process that now holds that pid. The stamp is
+# read from a fixture /proc so the case proves the same thing on a host that has
+# none, and the forged record carries a stamp the fixture contradicts.
 CRASHED_WORKER_PID=$NEW_WORKER_PID
 kill -KILL "$CRASHED_WORKER_PID"
 wait "$CRASHED_WORKER_PID" 2>/dev/null || true
 assert_present "$STATE_ROOT/worker.lock" "an unclean exit did not retain the worker ownership lock"
+REUSE_PROC="$TMP_ROOT/reuse-proc"
 sleep 20 &
 OTHER_PID=$!
+mkdir -p "$REUSE_PROC/$OTHER_PID"
+printf '%s (sleep) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 999999 20 21 22\n' \
+  "$OTHER_PID" > "$REUSE_PROC/$OTHER_PID/stat"
 printf '%s\n' "$OTHER_PID" > "$STATE_ROOT/worker.pid"
 printf '%s\n' "$OTHER_PID" > "$STATE_ROOT/worker.lock/pid"
+printf 'starttime=1\n' > "$STATE_ROOT/worker.lock/pid-identity"
 touch -t 200001010000 "$STATE_ROOT/worker.ready" "$STATE_ROOT/worker.lock"
+export FM_PROC_ROOT_OVERRIDE="$REUSE_PROC"
 fm_remote_job_ensure_worker "$REMOTE_ROOT" "$ACCOUNT_HOME" \
   || fail "$FM_REMOTE_JOB_ERROR"
 kill -0 "$OTHER_PID" 2>/dev/null || fail "stale worker state caused an unrelated process to be signaled"
