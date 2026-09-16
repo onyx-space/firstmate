@@ -381,10 +381,12 @@ fm_remote_job_safe_child_dir() { # <canonical-parent> <single child basename>
   case "$base" in ''|*/*|.|..) return 1 ;; esac
   [ -d "$parent" ] && [ ! -L "$parent" ] || return 1
   candidate="$parent/$base"
-  if [ -e "$candidate" ] || [ -L "$candidate" ]; then
+  # Creation is attempted unconditionally so two callers racing the first
+  # preparation of the queue agree on one directory instead of one of them
+  # failing on the EEXIST its own sibling just created. Every path is then
+  # re-validated against the same contract: a real directory, never a symlink.
+  if ! (umask 077; mkdir "$candidate") 2>/dev/null; then
     [ -d "$candidate" ] && [ ! -L "$candidate" ] || return 1
-  else
-    (umask 077; mkdir "$candidate") || return 1
   fi
   chmod 700 "$candidate" 2>/dev/null || return 1
   physical=$(CDPATH='' cd -- "$candidate" 2>/dev/null && pwd -P) || return 1
@@ -902,10 +904,16 @@ fm_remote_job_worker_ready_path() { printf '%s\n' "$FM_REMOTE_JOB_STATE/worker.r
 fm_remote_job_worker_identity_path() { printf '%s\n' "$FM_REMOTE_JOB_STATE/worker.identity"; }
 fm_remote_job_worker_lock_path() { printf '%s\n' "$FM_REMOTE_JOB_STATE/worker.lock"; }
 
+# The start time and command line are captured and re-read as identity records
+# long after the fact, so both readings must render identically no matter which
+# locale, column width, or environment the reader happens to run under. Pinning
+# the rendering here is what makes a record comparison meaningful: an ambient
+# LC_ALL or COLUMNS difference used to make the same live process read as a
+# different one, and a worker that trusted that verdict evicted a live owner.
 fm_remote_job_process_start() {
   local pid=$1 ps_bin value
   if [ -x /bin/ps ]; then ps_bin=/bin/ps; elif [ -x /usr/bin/ps ]; then ps_bin=/usr/bin/ps; else return 1; fi
-  value=$("$ps_bin" -p "$pid" -o lstart= 2>/dev/null) || return 1
+  value=$(LC_ALL=C "$ps_bin" -p "$pid" -o lstart= 2>/dev/null) || return 1
   [ -n "$value" ] || return 1
   case "$value" in *$'\n'*|*$'\r'*) return 1 ;; esac
   printf '%s\n' "$value"
@@ -914,7 +922,7 @@ fm_remote_job_process_start() {
 fm_remote_job_process_command() {
   local pid=$1 ps_bin value
   if [ -x /bin/ps ]; then ps_bin=/bin/ps; elif [ -x /usr/bin/ps ]; then ps_bin=/usr/bin/ps; else return 1; fi
-  value=$("$ps_bin" -p "$pid" -o command= 2>/dev/null) || return 1
+  value=$(LC_ALL=C COLUMNS=4096 "$ps_bin" -p "$pid" -o command= 2>/dev/null) || return 1
   [ -n "$value" ] || return 1
   case "$value" in *$'\n'*|*$'\r'*) return 1 ;; esac
   printf '%s\n' "$value"
