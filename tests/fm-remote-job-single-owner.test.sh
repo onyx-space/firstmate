@@ -256,6 +256,12 @@ for log in "$TMP_ROOT"/stale-*.err; do
 done
 [ -f "$STALE_STATE/worker.ready" ] \
   || fail "the winner of a stale-record displacement never became ready"
+for leftover in "$STALE_STATE"/worker.lock.reclaim.*; do
+  [ -e "$leftover" ] || [ -L "$leftover" ] || continue
+  fail "a displacement vacated the lock path instead of removing the dead record in place"
+done
+assert_absent "$STALE_STATE/worker.lock/.reclaim" \
+  "a reclaim left its own gate behind in the lock it removed"
 pass "replacements racing one stale record leave exactly one owner"
 
 # --- a live pid the record cannot disprove is never displaced ---------------
@@ -278,7 +284,7 @@ chmod 600 "$REFUSE_STATE/worker.lock/pid" "$REFUSE_STATE/worker.lock/start" \
   "$REFUSE_STATE/worker.lock/command"
 start_serve refuse "$REFUSE_STATE"
 for _ in $(seq 1 200); do
-  grep -Fq 'cannot be verified' "$TMP_ROOT/refuse.err" 2>/dev/null && break
+  grep -Fq 'cannot prove that pid gone' "$TMP_ROOT/refuse.err" 2>/dev/null && break
   sleep 0.05
 done
 [ "$(cat "$REFUSE_STATE/worker.lock/pid")" = "$REFUSED_PID" ] \
@@ -286,8 +292,10 @@ done
 [ "$(cat "$REFUSE_STATE/worker.lock/start")" = 'rendered-elsewhere' ] \
   || fail "a refusal rewrote the record it refused to displace"
 kill -0 "$REFUSED_PID" 2>/dev/null || fail "the process answering the recorded pid was signalled"
-assert_grep 'cannot be verified' "$TMP_ROOT/refuse.err" \
+assert_grep 'cannot prove that pid gone' "$TMP_ROOT/refuse.err" \
   "the refusing worker did not report why it refused: $(cat "$TMP_ROOT/refuse.err")"
+assert_grep "remove $REFUSE_STATE/worker.lock by hand" "$TMP_ROOT/refuse.err" \
+  "the refusal did not name the safe manual recovery: $(cat "$TMP_ROOT/refuse.err")"
 kill "$REFUSED_PID" 2>/dev/null || true
 wait "$REFUSED_PID" 2>/dev/null || true
 pass "a live pid the record cannot disprove is held, not displaced"

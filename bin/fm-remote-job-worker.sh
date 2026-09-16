@@ -276,38 +276,73 @@ worker_lock_owner_status() { # <account-home>
   worker_lock_record_status "$lock"
 }
 
-# Displace an owner already proven gone. Displacement is one atomic rename of
-# the whole lock directory, so exactly one replacement can ever take a given
-# directory and no process can delete a record another one just published: the
-# loser's rename finds nothing to move and leaves everything alone, and the
-# winner works only inside the directory it now owns. The taken directory is
-# re-verified before anything in it is removed, so a live owner that published
-# between the judgment and the rename gets its directory handed straight back.
-worker_reclaim_lock() { # <lock-dir>; 0 = the path is free, 1 = nothing was freed
-  local lock=$1 taken
-  taken="$lock.reclaim.${BASHPID:-$$}"
+# Displace a record already proven gone, in place and one reclaimer at a time.
+#
+# The verdict is taken on the canonical path and nothing is renamed or removed
+# before it proves the owner gone: an exclusively created marker inside the
+# judged directory then decides which contender may act, so a loser never
+# removes a record the winner just published. The marker's holder records its
+# own pid and reader-independent stamp, so a reclaimer killed mid-reclaim is
+# provable and its marker can be taken over instead of wedging the queue.
+#
+# The dead owner's pid record is removed last and deliberately so: a publisher
+# can only create that record once it is gone, so everything a publisher writes
+# lands after this reclaim finished with the directory. A live owner can never
+# be displaced this way - its pid is alive and its stamp matches, which is
+# verdict 0 or 3, and neither reaches this function.
+worker_reclaim_marker_gone() { # <lock-dir>
+  local lock=$1 marker=$1/.reclaim line holder recorded actual
+  line=$(fm_remote_job_read_single_line "$marker" 128 2>/dev/null) || return 1
+  holder=${line%% *}
+  case "$holder" in ''|*[!0-9]*) return 1 ;; esac
+  kill -0 "$holder" 2>/dev/null || return 0
+  recorded=${line#"$holder"}
+  recorded=${recorded# }
+  [ -n "$recorded" ] || return 1
+  actual=$(fm_remote_job_process_identity "$holder" 2>/dev/null || true)
+  [ -n "$actual" ] || return 1
+  [ "$actual" != "$recorded" ]
+}
+
+worker_reclaim_lock() { # <lock-dir>; 0 = the dead record was removed, 1 = nothing was freed
+  local lock=$1 marker=$1/.reclaim stale own
   [ -d "$lock" ] && [ ! -L "$lock" ] || return 0
-  [ ! -e "$taken" ] && [ ! -L "$taken" ] || return 1
-  mv -- "$lock" "$taken" 2>/dev/null || return 1
-  worker_lock_record_status "$taken"
-  case "$?" in
-    1)
-      rm -rf -- "$taken" 2>/dev/null || true
-      return 0
-      ;;
-    *)
-      # A live or still-publishing owner had the path: put the directory back
-      # rather than deleting it, and only while the path is still free. `mv`
-      # into an existing directory moves the taken directory inside it, so an
-      # unguarded restore would park the record under another owner's lock and
-      # keep that lock from ever being removed. A taken directory left beside a
-      # retaken path is never deleted either: its owner may still be serving.
-      if [ ! -e "$lock" ] && [ ! -L "$lock" ]; then
-        mv -- "$taken" "$lock" 2>/dev/null || true
-      fi
-      return 1
-      ;;
-  esac
+  worker_lock_record_status "$lock"
+  [ "$?" -eq 1 ] || return 1
+  own=${BASHPID:-$$}
+  if ! ( umask 077; set -C; printf '%s %s\n' "$own" \
+    "$(fm_remote_job_process_identity "$own" 2>/dev/null || true)" > "$marker" ) 2>/dev/null; then
+    worker_reclaim_marker_gone "$lock" || return 1
+    stale="$marker.$own"
+    mv -- "$marker" "$stale" 2>/dev/null || return 1
+    rm -f -- "$stale" 2>/dev/null || true
+    return 1
+  fi
+  # Re-verify under the marker, still without touching anything: no publisher
+  # can have entered while the recorded pid record was there, so a record that
+  # is still proven gone is the one judged dead.
+  worker_lock_record_status "$lock"
+  if [ "$?" -ne 1 ]; then
+    rm -f -- "$marker" 2>/dev/null || true
+    return 1
+  fi
+  if [ -L "$lock/pid-identity" ] || [ -L "$lock/start" ] || [ -L "$lock/command" ]; then
+    rm -f -- "$marker" 2>/dev/null || true
+    return 1
+  fi
+  if ! rm -f -- "$lock/pid-identity" "$lock/start" "$lock/command"; then
+    rm -f -- "$marker" 2>/dev/null || true
+    return 1
+  fi
+  # A publisher can only create the pid record once it is gone, so nothing it
+  # writes from here on can be removed by this reclaim.
+  if ! rm -f -- "$lock/pid"; then
+    rm -f -- "$marker" 2>/dev/null || true
+    return 1
+  fi
+  rm -f -- "$marker" 2>/dev/null || true
+  rmdir "$lock" 2>/dev/null || true
+  return 0
 }
 
 worker_quarantined_execution_stopped() { # <account-home>
@@ -335,13 +370,13 @@ worker_recover_quarantine() { # <account-home>
 }
 
 worker_acquire_lock() {
-  local account_home=$1 attempt=0
+  local account_home=$1 attempt=0 held recorded
   while [ "$attempt" -lt 150 ]; do
     (umask 077; mkdir "$WORKER_LOCK") 2>/dev/null || true
     # A path that is not a plain directory is a real fault. A path that is
-    # momentarily absent is not: a replacement displaces a stale lock by
-    # renaming the directory away, so the window between that rename and the
-    # winner's own create is ordinary contention, not a broken queue.
+    # momentarily absent is not: a reclaimer removes the record in place, and a
+    # publisher's own create follows it, so a free path is ordinary contention,
+    # not a broken queue.
     [ ! -L "$WORKER_LOCK" ] || return 1
     if [ ! -d "$WORKER_LOCK" ]; then
       [ ! -e "$WORKER_LOCK" ] || return 1
@@ -367,9 +402,12 @@ worker_acquire_lock() {
         ;;
       3)
         # The record names a live pid this host cannot verify and cannot
-        # disprove. Refusing here is the bounded answer: yield the queue to it
-        # and say why, so an operator can act, instead of guessing it gone.
-        worker_error "worker ownership is held by pid $(fm_remote_job_read_single_line "$WORKER_LOCK/pid" 64 2>/dev/null) whose identity cannot be verified here; refusing to displace it"
+        # disprove. Refusing here is the bounded answer: leave the record where
+        # it is, yield the queue, and say what was found so an operator can
+        # act, instead of guessing it gone.
+        held=$(fm_remote_job_read_single_line "$WORKER_LOCK/pid" 64 2>/dev/null || true)
+        recorded=$(fm_remote_job_read_single_line "$WORKER_LOCK/pid-identity" 64 2>/dev/null || true)
+        worker_error "$WORKER_LOCK is held by pid ${held:-unknown} (recorded identity: ${recorded:-none}); this host cannot prove that pid gone, so the record is left in place. If pid ${held:-unknown} is not serving this queue, remove $WORKER_LOCK by hand."
         return 2
         ;;
     esac
@@ -385,6 +423,7 @@ worker_acquire_lock() {
   case "$?" in
     0|2|3) return 2 ;;
   esac
+  worker_error "$WORKER_LOCK records pid $(fm_remote_job_read_single_line "$WORKER_LOCK/pid" 64 2>/dev/null || true) whose owner is proven gone, but the record could not be removed; inspect $WORKER_LOCK before removing it by hand"
   return 1
 }
 
