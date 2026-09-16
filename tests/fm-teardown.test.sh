@@ -3666,7 +3666,151 @@ EOF
   pass "the run abort and the leaked-process reap both complete before the destructive worktree return"
 }
 
+# Plant the field's stale-lock shape at one lock path: a lock symlink into an
+# owner directory whose recorded pid is ALIVE but belongs to an unrelated
+# process, because the real holder was killed and the kernel recycled its pid.
+# With <identity> as - the owner records no pid-identity, which is the shape
+# every lock created before identity recording has - including the one that was
+# still wedging this fleet's own teardown when the fix was written. The record is
+# stamped old to model the field's stale shape.
+plant_recycled_pid_lock() {  # <case-dir> <live-pid> <identity|->
+  local case_dir=$1 live_pid=$2 identity=$3 owner
+  owner="$case_dir/state/.meta-task-x1.lock.owner.FIELD01"
+  mkdir "$owner"
+  printf '%s\n' "$live_pid" > "$owner/pid"
+  [ "$identity" = - ] || printf '%s\n' "$identity" > "$owner/pid-identity"
+  ln -s "$owner" "$case_dir/state/.meta-task-x1.lock"
+  touch -t 202001010000 "$owner" "$owner/pid"
+  return 0
+}
+
+# A recycled-pid owner is reclaimable only where the host can render a
+# reader-independent identity stamp for the live pid and the record disagrees
+# with it; where it cannot - Darwin, BSD - there is no proof at all. Teardown must
+# either reclaim and finish the cleanup it was asked for, or refuse at its bound
+# with the evidence a human needs. It must never hang and never steal the lock
+# from the live process.
+test_recycled_pid_record_lock_self_heals() {
+  local case_dir rc live_pid identity
+  case_dir=$(make_case record-lock-recycled)
+  write_meta "$case_dir" local-only ship
+  wt_commit "$case_dir" "fix the thing"
+  add_fork_with_pushed_branch "$case_dir"
+  sleep 300 &
+  live_pid=$!
+  identity=$(bash -c '. "$1"; fm_pid_identity "$2"' _ "$ROOT/bin/fm-wake-lib.sh" "$live_pid" 2>/dev/null || true)
+  case "$identity" in
+    *' cmdline-hex='*) identity="${identity%%=*}=1 cmdline-hex=00" ;;
+    *) identity=- ;;
+  esac
+  plant_recycled_pid_lock "$case_dir" "$live_pid" "$identity"
+
+  rc=0
+  FM_LOCK_ACQUIRE_WAIT_SECS=1 \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  kill "$live_pid" 2>/dev/null || true
+  wait "$live_pid" 2>/dev/null || true
+
+  if [ "$identity" = - ]; then
+    expect_code 124 "$rc" "record-lock-recycled: teardown must refuse at its lock deadline without an identity proof"
+    assert_grep "could not acquire" "$case_dir/stderr" \
+      "record-lock-recycled: the refusal did not name the lock"
+    assert_grep "records no owner identity" "$case_dir/stderr" \
+      "record-lock-recycled: the refusal did not report the missing identity proof"
+    assert_present "$case_dir/state/.meta-task-x1.lock" \
+      "record-lock-recycled: an unprovable lock was removed instead of reported"
+    pass "a recycled pid the host cannot disprove is refused at the bound, not stolen"
+  else
+    expect_code 0 "$rc" "record-lock-recycled: teardown must reclaim the recycled-pid lock and finish"
+    assert_absent "$case_dir/state/.meta-task-x1.lock" \
+      "record-lock-recycled: the stale record lock survived a successful teardown"
+    assert_present "$case_dir/stdout" "record-lock-recycled: teardown produced no output"
+    pass "a recycled-pid record lock is reclaimed and teardown completes"
+  fi
+}
+
+# Without an identity proof - an identity-less legacy record here, on a record old
+# enough that ps' etime arithmetic in the reader's clock domain would read the
+# live pid as starting after it - teardown must refuse at its bound with the
+# evidence a human needs to decide, never silently steal a lock and never hang.
+# A start time recomputed in the current wall-clock domain moves under a clock
+# step, so it is not a property of the process and cannot prove reuse.
+test_legacy_recycled_pid_record_lock_refuses_when_unprovable() {
+  local case_dir rc live_pid
+  case_dir=$(make_case record-lock-legacy-unprovable)
+  write_meta "$case_dir" local-only ship
+  sleep 300 &
+  live_pid=$!
+  plant_recycled_pid_lock "$case_dir" "$live_pid" -
+
+  rc=0
+  FM_LOCK_ACQUIRE_WAIT_SECS=1 \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  kill "$live_pid" 2>/dev/null || true
+  wait "$live_pid" 2>/dev/null || true
+
+  expect_code 124 "$rc" "record-lock-legacy-unprovable: teardown must refuse at its lock deadline"
+  assert_grep "could not acquire" "$case_dir/stderr" \
+    "record-lock-legacy-unprovable: the refusal did not name the lock"
+  assert_grep "held by live pid $live_pid" "$case_dir/stderr" \
+    "record-lock-legacy-unprovable: the refusal did not name the holder"
+  assert_grep "records no owner identity" "$case_dir/stderr" \
+    "record-lock-legacy-unprovable: the refusal did not say why the holder cannot be confirmed"
+  assert_present "$case_dir/state/.meta-task-x1.lock" \
+    "record-lock-legacy-unprovable: an unprovable lock was removed instead of reported"
+  assert_absent "$case_dir/state/.control-task-x1.lock" \
+    "record-lock-legacy-unprovable: the refused teardown leaked its task control lock"
+  pass "an unprovable legacy record lock refuses with holder evidence, and nothing is stolen"
+}
+
+# The entry point the field hang was reported on: teardown holds the task's
+# control lock and the supervision lease while it waits for the task record
+# lock, so a waiter that never gives up wedges every other lifecycle action for
+# that task too. A held record lock must refuse at the bound instead.
+test_held_record_lock_refuses_instead_of_wedging() {
+  local case_dir rc holder_pid i lock
+  case_dir=$(make_case record-lock-held)
+  write_meta "$case_dir" local-only ship
+  lock="$case_dir/state/.meta-task-x1.lock"
+  FM_STATE_OVERRIDE="$case_dir/state" bash -c '
+    . "$1"
+    fm_lock_acquire_wait "$2" || exit 10
+    printf "ready\n" > "$3"
+    while [ ! -e "$4" ]; do sleep 0.05; done
+    fm_lock_release "$2"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$lock" "$case_dir/holder.ready" "$case_dir/release-holder" &
+  holder_pid=$!
+  i=0
+  while [ "$i" -lt 100 ] && [ ! -s "$case_dir/holder.ready" ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+  [ -s "$case_dir/holder.ready" ] || {
+    kill "$holder_pid" 2>/dev/null || true
+    fail "record-lock-held: the fixture never took the task record lock"
+  }
+
+  rc=0
+  FM_LOCK_ACQUIRE_WAIT_SECS=1 \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  : > "$case_dir/release-holder"
+  wait "$holder_pid" 2>/dev/null || true
+
+  expect_code 124 "$rc" "record-lock-held: teardown must refuse at its lock deadline"
+  assert_grep "could not acquire" "$case_dir/stderr" \
+    "record-lock-held: the refusal did not name the lock"
+  assert_grep "held by live pid" "$case_dir/stderr" \
+    "record-lock-held: the refusal did not name the holder"
+  assert_absent "$case_dir/state/.control-task-x1.lock" \
+    "record-lock-held: the refused teardown leaked its task control lock"
+  assert_present "$case_dir/wt" "record-lock-held: the refused teardown removed the task worktree"
+  pass "a held task record lock makes teardown refuse at its bound without leaking locks or work"
+}
+
 test_local_only_fork_remote_allows
+test_held_record_lock_refuses_instead_of_wedging
+test_recycled_pid_record_lock_self_heals
+test_legacy_recycled_pid_record_lock_refuses_when_unprovable
 test_teardown_closes_the_backlog_item_itself
 test_teardown_manual_backend_leaves_the_backlog_to_the_operator
 test_local_only_truly_unpushed_refuses

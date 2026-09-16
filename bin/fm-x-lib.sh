@@ -983,7 +983,7 @@ fmx_meta_followups_set() {
 # authorized parent directory can be inspected safely. That guarded mode also
 # bounds its lock wait (FMX_LINK_CLEAR_LOCK_TIMEOUT, default 10 seconds) so an
 # unattended remote clear refuses instead of hanging. Unguarded calls remain
-# idempotent when <meta> is missing and keep the ordinary unbounded wait.
+# idempotent when <meta> is missing and keep the ordinary wait.
 fmx_meta_link_clear() {
   local meta=$1 expected_set=0 expected='' tmp lock line rid='' link_present=0 parent
   local lock_timeout
@@ -1012,8 +1012,9 @@ fmx_meta_link_clear() {
   if [ "$expected_set" -eq 1 ]; then
     # A guarded clear runs unattended over the secondmate transport, so it must
     # refuse rather than wedge. The parent's writability can flip between the
-    # check above and lock creation, and the ordinary unbounded wait would then
-    # retry forever instead of returning the reconciliation refusal this guard
+    # check above and lock creation, and the ordinary wait is bounded only by the
+    # library-wide deadline - far longer than this guard's own, and one that ends
+    # by exiting instead of returning the reconciliation refusal this guard
     # exists to produce. A bounded acquire turns that race, and a live holder,
     # into a refusal. Unguarded local callers keep the ordinary wait unchanged.
     lock_timeout=${FMX_LINK_CLEAR_LOCK_TIMEOUT:-10}

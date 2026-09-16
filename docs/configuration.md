@@ -1066,6 +1066,7 @@ FMX_FOLLOWUP_MAX_AGE_SECS=604800   # local window for posting Relay completion f
 FMX_FOLLOWUP_MAX_COUNT=3   # local cap on Relay completion follow-ups per linked mention
 FM_PF_RETRY_BACKOFF_SECS=900   # seconds before the next attempt after a retryable promised-public-reply delivery error
 FM_LOCK_STALE_AFTER=2   # grace seconds for missing or nonnumeric lock-owner PIDs (minimum 2s); dead numeric PIDs have no age grace
+FM_LOCK_ACQUIRE_WAIT_SECS=300   # ceiling on one blocking lock acquisition (bin/fm-wake-lib.sh's fm_lock_acquire_wait); a wait that reaches it prints the holder and exits 124 rather than blocking forever; invalid or non-positive values use 300
 FM_GUARD_GRACE=300      # beacon freshness threshold for guard verdicts, arm health checks, and the primary turn-end guard; see docs/turnend-guard.md for model-aware exceptions
 FM_WATCH_CYCLE_MEDIAN_ALERT_SECS=   # median watcher-cycle duration at which bin/fm-watch-cycle-stats.sh reports ALERT in addition to its one-line median/mean/max summary (which the guard prints with a stale-beacon banner); unset defaults to half of FM_GUARD_GRACE as a conservative round-latency budget - the grace itself bounds beacon staleness, not round duration
 FM_CLAUDE_AUTOARM_ATTEMPTS=2   # bounded Stop-owned arm attempts per Claude auto-arm cycle; accepted values are 1, 2, or 3

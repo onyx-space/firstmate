@@ -9,6 +9,12 @@ STATE="${FM_STATE_OVERRIDE:-${STATE:-$FM_HOME/state}}"
 FM_WAKE_QUEUE="${FM_WAKE_QUEUE:-$STATE/.wake-queue}"
 FM_WAKE_QUEUE_LOCK="${FM_WAKE_QUEUE_LOCK:-$STATE/.wake-queue.lock}"
 FM_LOCK_STALE_AFTER="${FM_LOCK_STALE_AFTER:-2}"
+# Upper bound for one fm_lock_acquire_wait (contract: that function's own
+# header). Generous on purpose: a guarded operation legitimately holds a control
+# or lease lock for its whole mutation, and a shorter bound would refuse a wait
+# that was about to succeed.
+FM_LOCK_ACQUIRE_WAIT_DEFAULT=300
+FM_LOCK_ACQUIRE_WAIT_SECS="${FM_LOCK_ACQUIRE_WAIT_SECS:-$FM_LOCK_ACQUIRE_WAIT_DEFAULT}"
 # Resolved once at source time: fm_pid_identity and fm_path_mtime run inside 0.2s
 # confirm and 0.5s attach polls, and forking uname per call is a measurable cost on
 # the platform (Git Bash/MSYS) that already pays the highest fork price.
@@ -459,11 +465,26 @@ fm_lock_owner_dir() {
 }
 
 fm_lock_prepare_owner() {
-  local ownerdir=$1 mypid back
+  local ownerdir=$1 mypid back identity
   fm_current_pid mypid || return 1
   printf '%s\n' "$mypid" > "$ownerdir/pid" 2>/dev/null || return 1
   back=$(cat "$ownerdir/pid" 2>/dev/null || true)
-  [ "$back" = "$mypid" ]
+  [ "$back" = "$mypid" ] || return 1
+  # Record the owner's process identity beside its pid so a later stale-owner
+  # check can PROVE pid reuse instead of trusting bare liveness, which is what
+  # let a killed holder's recycled pid pin a lock forever (fm_lock_owner_recycled).
+  # Only where that comparison can use it: a locally rendered identity is not a
+  # property of the process and is never proof, so on such a host the record is
+  # skipped rather than paying a fork for it - a live pid there stays the owner
+  # until it exits, and any waiter refuses at its bound. Best effort throughout -
+  # identifying the owner is not a reason to refuse the lock.
+  if fm_pid_identity_reader_independent_available "$mypid"; then
+    identity=$(fm_pid_identity "$mypid" 2>/dev/null || true)
+    if [ -n "$identity" ]; then
+      printf '%s\n' "$identity" > "$ownerdir/pid-identity" 2>/dev/null || true
+    fi
+  fi
+  return 0
 }
 
 fm_lock_link_owner() {
@@ -594,13 +615,77 @@ fm_lock_recheck_stale_owner() {
   fi
   actual_pid=$(cat "$lockdir/pid" 2>/dev/null || true)
   [ "$actual_pid" = "$expected_pid" ] || return 1
-  if fm_pid_alive "$actual_pid"; then
+  if fm_pid_alive "$actual_pid" && ! fm_lock_owner_recycled "$lockdir" "$actual_pid"; then
     return 1
   fi
   if fm_lock_mid_acquire_is_fresh "$lockdir" "$actual_pid"; then
     return 1
   fi
   return 0
+}
+
+# fm_pid_identity_reader_independent_available <pid>: true when this host can
+# render a reader-independent process identity for <pid> at all, i.e. when
+# fm_pid_identity takes its /proc branch. Recorded identities only exist to be
+# compared later, and the comparison refuses forms that depend on who reads them,
+# so on a host without /proc - Darwin, BSD - recording one costs a ps fork per
+# lock acquisition and buys nothing. Checks a readable /proc path, never forks.
+#
+fm_pid_identity_reader_independent_available() {
+  local pid=$1 proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc}
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  [ -r "$proc_root/$pid/stat" ] && [ -r "$proc_root/$pid/cmdline" ]
+}
+
+# fm_pid_start_stamp <identity-string>: the process START-TIME field of an
+# fm_pid_identity value, without its command line, and ONLY when that field is
+# reader-independent. Only the /proc form ("<key>=<starttime> cmdline-hex=<hex>",
+# a boot-relative tick count) qualifies; the ps fallback renders lstart through
+# the reading process's local timezone, so its text is not a property of the
+# process and two readers can disagree about it.
+#
+# Only the start time is stable for the life of a process. The command line is
+# not: a process that execs into another program keeps its pid and start time
+# but changes its command, and this repo's own tests (and the watcher) do exactly
+# that after taking a lock. Comparing commands would read such an exec as pid
+# reuse and steal a lock from its live owner, so the reuse proof compares start
+# times only - and returns nothing at all when the shape it is given cannot be
+# compared across readers.
+#
+fm_pid_start_stamp() {
+  local identity=$1
+  case "$identity" in
+    *' cmdline-hex='*) printf '%s\n' "${identity%% cmdline-hex=*}" ;;
+    *) return 1 ;;
+  esac
+}
+
+# fm_lock_owner_recycled <lockdir> <pid>: true only with PROOF that a live <pid>
+# is a recycled pid rather than this lock's owner, so a caller may reclaim the
+# lock.
+#
+# The one proof is a recorded pid-identity whose start stamp the live pid no
+# longer answers to (the same abandonment shape the supervision locks apply in
+# fm_autoarm_claim_abandoned, narrowed to the one field that survives an exec).
+# It needs both sides in the SAME reader-independent form (fm_pid_start_stamp): on
+# a host without /proc the identity is a locally rendered timestamp whose text
+# depends on the reading process, and a start time recomputed in the current
+# wall-clock domain (ps etime/lstart) moves under a clock step - so a mismatch
+# there is not a property of the process and never authorizes a reclaim.
+#
+# A missing identity, a form mismatch, or currently unreadable evidence is NEVER
+# proof: such a pid stays a live holder, and the waiter refuses at its bound with
+# a diagnostic instead of guessing. A false positive here would hand one lock to
+# two owners, so every unsure answer must land on "still held".
+#
+fm_lock_owner_recycled() {
+  local lockdir=$1 pid=$2 recorded current recorded_stamp current_stamp
+  recorded=$(cat "$lockdir/pid-identity" 2>/dev/null || true)
+  [ -n "$recorded" ] || return 1
+  recorded_stamp=$(fm_pid_start_stamp "$recorded") || return 1
+  current=$(fm_pid_identity "$pid" 2>/dev/null || true)
+  current_stamp=$(fm_pid_start_stamp "$current") || return 1
+  [ "$current_stamp" != "$recorded_stamp" ]
 }
 
 FM_RECOVERY_MARKER_TOKEN=
@@ -940,7 +1025,7 @@ fm_lock_try_acquire() {
     FM_LOCK_HELD_PID=$(cat "$lockdir/pid" 2>/dev/null || true)
     return 1
   fi
-  if fm_pid_alive "$pid"; then
+  if fm_pid_alive "$pid" && ! fm_lock_owner_recycled "$lockdir" "$pid"; then
     FM_LOCK_HELD_PID=$pid
     return 1
   fi
@@ -958,7 +1043,7 @@ fm_lock_try_acquire() {
   steal_owner=${FM_LOCK_OWNER_DIR:-}
 
   cur=$(cat "$lockdir/pid" 2>/dev/null || true)
-  if fm_pid_alive "$cur"; then
+  if fm_pid_alive "$cur" && ! fm_lock_owner_recycled "$lockdir" "$cur"; then
     fm_lock_release "$steal"
     FM_LOCK_HELD_PID=$cur
     FM_LOCK_OWNER_DIR=
@@ -1012,23 +1097,113 @@ fm_lock_try_acquire() {
   return "$rc"
 }
 
+# fm_lock_acquire_wait <lockdir> [seconds]
+#
+# The blocking acquire every mutation-critical caller uses. It waits through
+# ordinary contention and stale-owner recovery, and REFUSES at its deadline
+# instead of waiting forever: FM_LOCK_ACQUIRE_WAIT_SECS (default 300) bounds the
+# wait, an explicit <seconds> overrides it for one call, and a malformed or
+# non-positive bound falls back to the default rather than disabling the bound.
+#
+# A refusal prints the lock path, who holds it, how long it has been held, and
+# the safe remedy (fm_lock_wait_refusal), then exits 124 - fm-timeout-lib.sh's
+# "the bound was hit" status.
+#
+# Exiting rather than returning into the caller is deliberate. Acquisition is
+# treated as unconditional at the call sites across this tree, so a returned
+# failure would let each of them keep mutating without the lock - exactly the
+# serialization weakening this deadline exists to prevent. Callers that must
+# handle contention themselves (wake presentation, the guarded remote link
+# clear, the away-record lock) use fm_lock_acquire_wait_bounded, which returns
+# 124 to its caller instead.
+#
 fm_lock_acquire_wait() {
-  local lockdir=$1
+  local lockdir=$1 seconds=${2:-${FM_LOCK_ACQUIRE_WAIT_SECS:-$FM_LOCK_ACQUIRE_WAIT_DEFAULT}} deadline
+  case "$seconds" in ''|*[!0-9]*|0) seconds=$FM_LOCK_ACQUIRE_WAIT_DEFAULT ;; esac
+  deadline=$((SECONDS + seconds))
   while ! fm_lock_try_acquire "$lockdir"; do
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      fm_lock_wait_refusal "$lockdir" "$seconds"
+      exit 124
+    fi
     sleep 0.1
   done
+}
+
+# fm_lock_wait_refusal <lockdir> <seconds>
+#
+# Print the operator-facing refusal for a lock this process could not take
+# inside its deadline, then return. It names the lock, the recorded owner (with
+# liveness and command where readable), how long the lock has existed, and the
+# remedy - and separates the provably-stale shapes, where removing the lock is
+# the fix, from a genuine live holder, where removing it would hand the lock to
+# two owners at once. Best effort throughout: an unreadable record never
+# suppresses the refusal itself.
+#
+fm_lock_wait_refusal() {
+  local lockdir=$1 seconds=$2 pid cmd age started recorded current recorded_stamp current_stamp
+  pid=$(cat "$lockdir/pid" 2>/dev/null || true)
+  age=$(fm_path_age "$lockdir")
+  printf 'error: could not acquire %s within %ss; refusing instead of waiting indefinitely\n' \
+    "$lockdir" "$seconds" >&2
+  case "$pid" in
+    ''|*[!0-9]*)
+      printf 'error:   the lock records no owner pid (lock age %ss); it serializes nothing. Inspect it, then remove the stale lock and its owner directory, and retry: rm -rf %s %s.owner.*\n' \
+        "$age" "$lockdir" "$lockdir" >&2
+      ;;
+    *)
+      cmd=$(ps -p "$pid" -o command= 2>/dev/null | head -n 1 || true)
+      if ! fm_pid_alive "$pid"; then
+        printf 'error:   recorded owner pid %s is gone (lock age %ss) and the lock could not be reclaimed. Inspect it, then remove it and retry: rm -rf %s %s.owner.*\n' \
+          "$pid" "$age" "$lockdir" "$lockdir" >&2
+      elif fm_lock_owner_recycled "$lockdir" "$pid"; then
+        printf 'error:   recorded owner pid %s was reused by an unrelated process (%s): the real holder is gone, but the lock could not be reclaimed. Inspect it, then remove it and retry: rm -rf %s %s.owner.*\n' \
+          "$pid" "${cmd:-command unavailable}" "$lockdir" "$lockdir" >&2
+      else
+        printf 'error:   held by live pid %s (%s) for at least %ss\n' \
+          "$pid" "${cmd:-command unavailable}" "$age" >&2
+        recorded=$(cat "$lockdir/pid-identity" 2>/dev/null || true)
+        current=$(fm_pid_identity "$pid" 2>/dev/null || true)
+        recorded_stamp=$(fm_pid_start_stamp "$recorded" 2>/dev/null || true)
+        current_stamp=$(fm_pid_start_stamp "$current" 2>/dev/null || true)
+        if [ -n "$recorded_stamp" ] && [ "$recorded_stamp" = "$current_stamp" ]; then
+          printf 'error:   that process is the lock owner: wait for it to finish, or investigate and stop it if it is wedged. Do not remove the lock while it runs.\n' >&2
+        else
+          # Ownership is unverifiable here: the record carries no identity this
+          # process can compare, so pid reuse cannot be proven. The holder's own
+          # start time is rendered by ps in this process's clock domain, which a
+          # clock step can move - context for the operator, not proof.
+          if [ -n "$recorded" ]; then
+            printf 'error:   this lock records an owner identity this host cannot compare across readers (%s), so pid reuse cannot be proven\n' \
+              "$recorded" >&2
+          elif fm_pid_identity_reader_independent_available "$pid"; then
+            printf 'error:   this lock records no owner identity (it predates identity recording), so pid reuse cannot be proven\n' >&2
+          else
+            printf 'error:   this lock records no owner identity (this host renders process identity from ps, which is not comparable across readers), so pid reuse cannot be proven\n' >&2
+          fi
+          started=$(ps -p "$pid" -o lstart= 2>/dev/null | head -n 1 || true)
+          printf 'error:   pid %s started %s (lock age %ss); wait for it to finish, or investigate and stop it if it is wedged\n' \
+            "$pid" "${started:-start time unavailable}" "$age" >&2
+          printf 'error:   if you can confirm that pid was reused, remove the stale lock (%s and its %s.owner.* directory)\n' \
+            "$lockdir" "$lockdir" >&2
+        fi
+      fi
+      ;;
+  esac
 }
 
 # Acquire in the timed helper process, then transfer the lock record to the
 # waiting caller before exiting. The lock's ordinary stale-owner recovery makes
 # every interruption safe: before transfer the helper is the owner; after
-# transfer the still-live caller is the owner.
-_fm_lock_acquire_wait_handoff() {  # <lockdir> <caller-pid>
-  local lockdir=$1 caller_pid=$2 ownerdir current back
+# transfer the still-live caller is the owner. <seconds> is the caller's own
+# bound, passed through so the helper refuses at the same deadline rather than
+# at the library default.
+_fm_lock_acquire_wait_handoff() {  # <lockdir> <caller-pid> [seconds] [caller-identity]
+  local lockdir=$1 caller_pid=$2 seconds=${3:-} caller_identity=${4:-} ownerdir current back
   case "$caller_pid" in ''|*[!0-9]*) return 1 ;; esac
   fm_pid_alive "$caller_pid" || return 1
   trap 'fm_lock_release "$lockdir"; exit 143' TERM INT
-  fm_lock_acquire_wait "$lockdir" || return 1
+  fm_lock_acquire_wait "$lockdir" "$seconds" || return 1
   if [ -L "$lockdir" ]; then
     ownerdir=$(fm_lock_link_owner "$lockdir" 2>/dev/null) || {
       fm_lock_release "$lockdir"
@@ -1039,12 +1214,29 @@ _fm_lock_acquire_wait_handoff() {  # <lockdir> <caller-pid>
   fi
   fm_current_pid current || { fm_lock_release "$lockdir"; return 1; }
   back=$(cat "$ownerdir/pid" 2>/dev/null || true)
-  if [ "$back" != "$current" ] \
-    || ! printf '%s\n' "$caller_pid" > "$ownerdir/pid" 2>/dev/null \
+  [ "$back" = "$current" ] || { fm_lock_release "$lockdir"; return 1; }
+  # The identity record must describe the pid beside it, and no window may pair a
+  # live pid with another process's stamp. Left as the helper's own identity the
+  # next acquirer would read the live caller's lock as a recycled pid and steal a
+  # lock a live owner still holds. So drop the helper's identity BEFORE the pid
+  # moves: an identity-less record licenses no reclaim at all and stays held
+  # until that pid exits. Only then move the pid and
+  # publish the identity the caller was verified with before the wait began -
+  # never one computed now, which a caller that died and had its pid recycled in
+  # the meantime would turn into a stranger's stamp. A caller whose identity
+  # could not be read leaves the record without one.
+  rm -f "$ownerdir/pid-identity" 2>/dev/null || true
+  if ! printf '%s\n' "$caller_pid" > "$ownerdir/pid" 2>/dev/null \
     || [ "$(cat "$ownerdir/pid" 2>/dev/null || true)" != "$caller_pid" ]; then
     fm_lock_release "$lockdir"
     return 1
   fi
+  case "$caller_identity" in
+    *' cmdline-hex='*)
+      printf '%s\n' "$caller_identity" > "$ownerdir/pid-identity" 2>/dev/null \
+        || rm -f "$ownerdir/pid-identity" 2>/dev/null || true
+      ;;
+  esac
   trap - TERM INT
 }
 
@@ -1053,12 +1245,13 @@ _fm_lock_acquire_wait_handoff() {  # <lockdir> <caller-pid>
 # Bounded acquire variant. It preserves the ordinary wait/reclaim behavior
 # until fm-timeout-lib.sh's hard deadline, returns 124 when a live holder still
 # owns the lock, and leaves FM_LOCK_HELD_PID naming that holder.
-# Use it where a caller must refuse rather than block: wake presentation, and
-# the guarded remote link clear, whose whole contract is to return a
-# reconciliation refusal instead of wedging an unattended close.
-# Mutation-critical callers that can safely block keep fm_lock_acquire_wait.
+# Use it where a caller must refuse rather than block AND handle the refusal
+# itself: wake presentation, the guarded remote link clear, and the away-record
+# lock, whose contracts return a reconciliation refusal instead of wedging an
+# unattended close. Mutation-critical callers that just need a bounded wait use
+# fm_lock_acquire_wait, which refuses loudly on its own.
 fm_lock_acquire_wait_bounded() {
-  local lockdir=$1 seconds=$2 caller_pid rc owner_pid
+  local lockdir=$1 seconds=$2 caller_pid rc owner_pid caller_identity
   case "$seconds" in ''|*[!0-9]*|0) return 2 ;; esac
   _fm_wake_require_timeout || return 1
   if fm_lock_try_acquire "$lockdir"; then
@@ -1066,13 +1259,23 @@ fm_lock_acquire_wait_bounded() {
   fi
 
   fm_current_pid caller_pid || return 1
+  # Snapshot the caller's identity NOW, while it is known to be alive and before
+  # the helper takes over: an identity read after the wait could describe a
+  # recycled pid rather than this caller (contract in the handoff below). Only
+  # where the value is comparable across readers - see the availability helper.
+  caller_identity=
+  if fm_pid_identity_reader_independent_available "$caller_pid"; then
+    caller_identity=$(fm_pid_identity "$caller_pid" 2>/dev/null || true)
+  fi
   # shellcheck disable=SC2016 # Positional parameters expand in the child shell.
   if fm_run_timed "$seconds" env \
     "FM_STATE_OVERRIDE=$STATE" \
     "FM_ROOT_OVERRIDE=$FM_ROOT" \
     "FM_LOCK_STALE_AFTER=$FM_LOCK_STALE_AFTER" \
-    bash -c '. "$1"; _fm_lock_acquire_wait_handoff "$2" "$3"' \
-      _ "$FM_WAKE_LIB_DIR/fm-wake-lib.sh" "$lockdir" "$caller_pid" \
+    "FM_LOCK_ACQUIRE_WAIT_SECS=$FM_LOCK_ACQUIRE_WAIT_SECS" \
+    bash -c '. "$1"; _fm_lock_acquire_wait_handoff "$2" "$3" "$4" "$5"' \
+      _ "$FM_WAKE_LIB_DIR/fm-wake-lib.sh" "$lockdir" "$caller_pid" "$seconds" \
+      "$caller_identity" \
       </dev/null >/dev/null 2>&1; then
     rc=0
   else

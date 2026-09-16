@@ -831,7 +831,7 @@ EOF
     fi
     notify_key="secondmate-wake-loop-$task-$row_key"
     reason="check: secondmate wake-loop stalled: mate=$task row=$seq idle=${idle}s"
-    queued=$(fm_wake_queued_keys check)
+    queued=$(fm_wake_queued_keys check) || return 1
     if ! printf '%s\n' "$queued" | grep -Fx "$notify_key" >/dev/null 2>&1; then
       fm_wake_append check "$notify_key" "$reason" || return 1
     fi

@@ -2249,6 +2249,54 @@ SH
   pass "fm-mail: the journal survives when the heal cannot commit a uid"
 }
 
+test_poll_heal_fails_when_queue_read_is_refused() {
+  local fakebin homedir_bin holder lock_ready out rc=0 i=0
+  fakebin=$(fm_fakebin "$TMP_ROOT")
+  homedir_bin="$HOME_DIR/bin"
+  mkdir -p "$homedir_bin"
+  [ -e "$homedir_bin/fm-wake-lib.sh" ] || ln -s "$ROOT/bin/fm-wake-lib.sh" "$homedir_bin/fm-wake-lib.sh"
+
+  # No unseen mail; the poll only heals the seeded journal entry, and that heal
+  # has to READ the queue. A refusal there must fail the heal rather than look
+  # like "nothing is queued".
+  cat > "$fakebin/python3" <<'SH'
+#!/usr/bin/env bash
+printf 'uidvalidity\t90009\n'
+SH
+  chmod +x "$fakebin/python3"
+  printf 'uidvalidity=90009\n' > "$HOME_DIR/state/.mail-seen"
+  printf '%s\t%s\n' '90009' '55' > "$HOME_DIR/state/.mail-woken"
+
+  lock_ready="$TMP_ROOT/heal-queue-lock-ready"
+  FM_HOME="$HOME_DIR" FM_STATE_OVERRIDE="$HOME_DIR/state" bash -c '
+    . "$1/bin/fm-wake-lib.sh"
+    fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK"
+    : > "$2"
+    sleep 30
+  ' _ "$ROOT" "$lock_ready" &
+  holder=$!
+  while [ "$i" -lt 50 ] && [ ! -e "$lock_ready" ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  if [ ! -e "$lock_ready" ]; then
+    kill "$holder" 2>/dev/null || true
+    fail "the queue lock holder did not start"
+  fi
+
+  out=$(FM_MAIL_USER=test FM_MAIL_PASS=pass FM_IMAP_HOST=imap.test FM_SMTP_HOST=smtp.test \
+    FM_HOME="$HOME_DIR" PATH="$fakebin:$PATH" FM_LOCK_ACQUIRE_WAIT_SECS=1 \
+    "$MAIL" poll 2>&1) || rc=$?
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  expect_code 1 "$rc" "a refused queue read must fail the heal, not heal nothing"
+  assert_contains "$out" "heal could not record a uid" \
+    "a refused queue read did not fail the heal"
+  assert_contains "$out" "could not acquire" \
+    "the refusal did not name the lock it could not take"
+  pass "fm-mail: a refused queue read fails the heal instead of healing nothing"
+}
+
 test_poll_heal_failure_does_not_rewake_unseen_mail() {
   local fakebin homedir_bin heal_home out rc=0
   fakebin=$(fm_fakebin "$TMP_ROOT")
@@ -2651,6 +2699,7 @@ test_poll_restores_retry_when_recovered_wake_cannot_append
 test_poll_death_between_retry_remove_and_publish_does_not_strand
 test_poll_fetch_raise_does_not_abort_the_scan
 test_poll_keeps_journal_when_heal_cannot_record
+test_poll_heal_fails_when_queue_read_is_refused
 test_poll_heal_failure_does_not_rewake_unseen_mail
 test_body_preview_falls_back_from_empty_plain
 test_body_preview_tolerates_none_payload

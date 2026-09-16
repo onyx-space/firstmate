@@ -38,8 +38,8 @@
 # to zero mid-scan, and an invocation that exits having visited nothing would
 # advance the durable cursor past a child it never examined. A process-group
 # kill one second after the budget remains as a backstop for a scan wedged in
-# an unbounded wait (for example a live-held wake-queue lock), so the clean
-# deadline path is not racing its own backstop.
+# a wait that outlasts the budget (for example a live-held wake-queue lock), so
+# the clean deadline path is not racing its own backstop.
 #
 # It considers only a direct ordinary crewmate whose newest meta, status, or
 # turn-ended mtime is older than that interval and whose last status is not
@@ -228,15 +228,10 @@ mark_reported() { # <record>
   mv -f "$record" "$reported"
 }
 
-queue_key_exists() { # <key>
-  local key=$1 queued
-  queued=$(fm_wake_queued_keys check 2>/dev/null || true)
-  printf '%s\n' "$queued" | grep -Fx -- "$key" >/dev/null 2>&1
-}
-
 publish_actionable() { # <key> <payload>
-  local key=$1 payload=$2
-  queue_key_exists "$key" && return 1
+  local key=$1 payload=$2 queued
+  queued=$(fm_wake_queued_keys check) || return 2
+  printf '%s\n' "$queued" | grep -Fx -- "$key" >/dev/null 2>&1 && return 1
   fm_wake_append check "$key" "$payload" || return 2
   printf 'actionable: %s\n' "$payload"
 }
@@ -640,8 +635,9 @@ case "$mode" in
     esac
     # The scan's own whole-second deadline enforces the budget; this outer
     # process-group kill is only the backstop for a scan wedged outside every
-    # bounded section (an unbounded lock wait), so it fires one second after
-    # the deadline instead of racing the clean bounded exit it exists to guard.
+    # section the budget can bound (a lock wait outlasting it), so it fires one
+    # second after the deadline instead of racing the clean bounded exit it
+    # exists to guard.
     if fm_run_timed $((FM_INACTIVE_RECONCILE_BUDGET_SECS + 1)) "$0" _scan-locked "$startup"; then
       :
     elif [ "$?" -ne 124 ]; then
