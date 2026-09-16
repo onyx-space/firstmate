@@ -742,7 +742,16 @@ worker_claim_owner_provably_dead() { # <job-dir>
     return 0
   fi
   pid=$(tr -d '\n' < "$owner")
-  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  case "$pid" in
+    ''|*[!0-9]*)
+      # The record exists but names no process. A claimant writes its pid in
+      # the same subshell as the exclusive create, so a record that is still
+      # fresh may simply not have landed yet; once it is older than the grace,
+      # no publisher can be behind it and the claim is provably abandoned.
+      worker_path_recent "$owner" && return 1
+      return 0
+      ;;
+  esac
   kill -0 "$pid" 2>/dev/null || return 0
   recorded_identity=$(fm_remote_job_read_single_line "$claim/owner_identity" 64 2>/dev/null || true)
   [ -n "$recorded_identity" ] || return 1
@@ -1258,6 +1267,7 @@ worker_process_once() { # <account-home>
         worker_lane_owns_job "$job" && continue
         if ! worker_clear_dead_claim "$job"; then
           if worker_claim_owner_alive "$job"; then
+            worker_report_held_job "$job"
             home=$(worker_read_text "$job" home 8192 2>/dev/null || true)
             [ -n "$home" ] && reserved_homes+=("$home")
           fi

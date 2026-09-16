@@ -206,6 +206,34 @@ fm_remote_job_wait "$ACCOUNT_HOME" "$CLAIM_JOB_ID" || fail "$FM_REMOTE_JOB_ERROR
 [ "$FM_REMOTE_JOB_EXIT" -eq 0 ] || fail "the recovered claim's job did not complete"
 assert_present "$CLAIM_JOB_EFFECT" "an abandoned claim was never recovered"
 fm_remote_job_reap "$ACCOUNT_HOME" "$CLAIM_JOB_ID" || true
+
+# A claim whose owner record exists but names no process is the same state: a
+# claimant stopped between the exclusive create and the write. While that record
+# is fresh it is still in flight, and it must be held - silently recovering it
+# is what erased a sibling's live claim. Once it is older than the grace no
+# publisher can be behind it, so the claim has to be recovered instead of
+# holding the job, and its home, for good.
+EMPTY_CLAIM_EFFECT="$TMP_ROOT/empty-claim-job"
+fm_remote_job_stage "$ACCOUNT_HOME" "$REMOTE_ROOT" "$REMOTE_HOME" \
+  fm-record-job.sh 0 "$EMPTY_CLAIM_EFFECT" < /dev/null > /dev/null \
+  || fail "$FM_REMOTE_JOB_ERROR"
+EMPTY_CLAIM_JOB_ID=$FM_REMOTE_JOB_ID
+EMPTY_CLAIM_JOB_DIR="$STATE_ROOT/jobs/$EMPTY_CLAIM_JOB_ID"
+mkdir "$EMPTY_CLAIM_JOB_DIR/.claim"
+: > "$EMPTY_CLAIM_JOB_DIR/.claim/owner"
+chmod 700 "$EMPTY_CLAIM_JOB_DIR/.claim"
+chmod 600 "$EMPTY_CLAIM_JOB_DIR/.claim/owner"
+sleep 1
+assert_present "$EMPTY_CLAIM_JOB_DIR/.claim/owner" \
+  "a fresh unreadable claim record was recovered while it was still in flight"
+assert_absent "$EMPTY_CLAIM_EFFECT" "a job ran under a claim whose owner was not published yet"
+grep -lF "leaving job $EMPTY_CLAIM_JOB_ID" "$TMP_ROOT"/burst-*.err 2>/dev/null >/dev/null \
+  || fail "a queued job held by a live claim left no diagnostic"
+touch -t 200001010000 "$EMPTY_CLAIM_JOB_DIR/.claim" "$EMPTY_CLAIM_JOB_DIR/.claim/owner"
+fm_remote_job_wait "$ACCOUNT_HOME" "$EMPTY_CLAIM_JOB_ID" || fail "$FM_REMOTE_JOB_ERROR"
+[ "$FM_REMOTE_JOB_EXIT" -eq 0 ] || fail "the recovered unreadable claim's job did not complete"
+assert_present "$EMPTY_CLAIM_EFFECT" "an aged unreadable claim was never recovered"
+fm_remote_job_reap "$ACCOUNT_HOME" "$EMPTY_CLAIM_JOB_ID" || true
 pass "a claim in flight is held for the grace and recovered after it"
 
 # --- ownership survives a host whose mkdir cannot decide it ----------------
