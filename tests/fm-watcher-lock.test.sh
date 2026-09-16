@@ -501,7 +501,9 @@ test_lock_reader_independent_stamp_mismatch_is_proof() {
   ' _ "$LIB" "$live" 2>/dev/null || true)
   case "$real" in
     *' cmdline-hex='*)
-      printf '%s\n' 'proc-starttime=1 cmdline-hex=00' > "$lockdir/pid-identity"
+      # Tamper ONLY the numeric start field: a differing key would pass for any
+      # implementation that compares the string at all, which is not the claim.
+      printf '%s\n' "${real%%=*}=1 cmdline-hex=00" > "$lockdir/pid-identity"
       rc=0
       out=$(FM_STATE_OVERRIDE="$state" bash -c '
         . "$1"
