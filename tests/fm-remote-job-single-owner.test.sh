@@ -46,20 +46,26 @@ git -C "$REMOTE_ROOT" config user.name Test
 git -C "$REMOTE_ROOT" add AGENTS.md bin
 git -C "$REMOTE_ROOT" commit -qm 'remote job fixture'
 
-# Each worker is its own process group, so cleanup reaches the lane children as
+# Each worker is its own process group, so this reaches the lane children as
 # well: a lane that outlives its worker keeps writing into the fixture and makes
 # the fixture removal race its own output.
-cleanup_single_owner_fixture() {
+stop_started_workers() {
   local pid
   for pid in "${STARTED_PIDS[@]:-}"; do
     [ -n "$pid" ] || continue
     kill -CONT "$pid" 2>/dev/null || true
     kill -TERM -- "-$pid" 2>/dev/null || true
   done
+  sleep 0.2
   for pid in "${STARTED_PIDS[@]:-}"; do
     [ -n "$pid" ] || continue
     kill -KILL -- "-$pid" 2>/dev/null || true
   done
+  sleep 0.2
+}
+
+cleanup_single_owner_fixture() {
+  stop_started_workers
   fm_test_cleanup
 }
 trap cleanup_single_owner_fixture EXIT
@@ -70,19 +76,25 @@ export FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux
 . "$ROOT/bin/fm-remote-job-lib.sh"
 
 # start_serve <tag> <state-root> [path-prefix]: start one serving worker on the
-# given state root, record its pid, echo that pid
+# given state root and record it in SERVE_PID and STARTED_PIDS.
+#
+# The pid is reported through a variable rather than standard output because
+# every call site would otherwise capture it with a command substitution, and
+# the STARTED_PIDS append would then run in that subshell: the parent's array
+# would stay empty, cleanup would reap nothing, and the worker would outlive the
+# fixture.
+SERVE_PID=
 start_serve() {
-  local tag=$1 root=$2 prefix=${3:-} pid launch_path=$PATH
+  local tag=$1 root=$2 prefix=${3:-} launch_path=$PATH
   [ -z "$prefix" ] || launch_path="$prefix:$PATH"
   set -m
   HOME="$ACCOUNT_HOME" PATH="$launch_path" FM_ROOT_OVERRIDE="$REMOTE_ROOT" \
     FM_REMOTE_JOB_STATE_ROOT="$root" FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux \
     "$REMOTE_ROOT/bin/fm-remote-job-worker.sh" --serve \
     > "$TMP_ROOT/$tag.out" 2> "$TMP_ROOT/$tag.err" &
-  pid=$!
+  SERVE_PID=$!
   set +m
-  STARTED_PIDS+=("$pid")
-  printf '%s\n' "$pid"
+  STARTED_PIDS+=("$SERVE_PID")
 }
 
 # alive_count <pid...>: how many of the given processes are still running
@@ -120,7 +132,8 @@ await_single_owner() {
 # broken. All six must reach the ownership decision instead.
 BURST_PIDS=()
 for i in 1 2 3 4 5 6; do
-  BURST_PIDS+=("$(start_serve "burst-$i" "$STATE_ROOT")")
+  start_serve "burst-$i" "$STATE_ROOT"
+  BURST_PIDS+=("$SERVE_PID")
 done
 await_single_owner "$STATE_ROOT" "${BURST_PIDS[@]}" \
   || fail "concurrent starters did not settle on one serving worker"
@@ -149,7 +162,8 @@ fm_remote_job_stage "$ACCOUNT_HOME" "$REMOTE_ROOT" "$REMOTE_HOME" \
   fm-record-job.sh 3 "$SIDE_EFFECT" < /dev/null > /dev/null \
   || fail "$FM_REMOTE_JOB_ERROR"
 JOB_ID=$FM_REMOTE_JOB_ID
-OUTSIDER=$(start_serve outsider "$STATE_ROOT")
+start_serve outsider "$STATE_ROOT"
+OUTSIDER=$SERVE_PID
 sleep 1.5
 [ "$(cat "$STATE_ROOT/worker.lock/pid")" = "$OWNER" ] \
   || fail "a replacement displaced a live owner's ownership record"
@@ -203,7 +217,8 @@ LYING_STATE="$TMP_ROOT/lying-state"
 mkdir -p "$LYING_STATE"
 LYING_PIDS=()
 for i in 1 2 3 4 5 6; do
-  LYING_PIDS+=("$(start_serve "lying-$i" "$LYING_STATE" "$LYING_BIN")")
+  start_serve "lying-$i" "$LYING_STATE" "$LYING_BIN"
+  LYING_PIDS+=("$SERVE_PID")
 done
 await_single_owner "$LYING_STATE" "${LYING_PIDS[@]}" \
   || fail "a host whose mkdir always reports success left more than one owner"
@@ -212,5 +227,43 @@ for i in 1 2 3 4 5 6; do
     "lying-mkdir start $i lost a job it owned"
 done
 pass "ownership survives a host whose mkdir reports false success"
+
+# --- several replacements on one stale record leave one owner ---------------
+#
+# A crash leaves a lock whose owner is gone, and every replacement that sees it
+# may decide to displace it. Displacement has to be one atomic act that exactly
+# one of them can win: the check-then-act version deleted records by path, so a
+# replacement that lost the removal race deleted the record the winner had just
+# published, and both served.
+STALE_STATE="$TMP_ROOT/stale-state"
+mkdir -p "$STALE_STATE/worker.lock"
+sleep 0.1 &
+STALE_PID=$!
+wait "$STALE_PID" 2>/dev/null || true
+printf '%s\n' "$STALE_PID" > "$STALE_STATE/worker.lock/pid"
+printf 'dead-owner-start\n' > "$STALE_STATE/worker.lock/start"
+printf 'dead-owner-command\n' > "$STALE_STATE/worker.lock/command"
+STALE_PIDS=()
+for i in 1 2 3 4 5 6; do
+  start_serve "stale-$i" "$STALE_STATE"
+  STALE_PIDS+=("$SERVE_PID")
+done
+await_single_owner "$STALE_STATE" "${STALE_PIDS[@]}" \
+  || fail "replacements racing one stale record did not settle on one owner"
+for log in "$TMP_ROOT"/stale-*.err; do
+  assert_no_grep 'cannot acquire or safely reclaim' "$log" \
+    "a replacement reported the reclaim it lost as a startup failure: $log"
+done
+[ -f "$STALE_STATE/worker.ready" ] \
+  || fail "the winner of a stale-record displacement never became ready"
+pass "replacements racing one stale record leave exactly one owner"
+
+# Every worker this case started must be gone once its group is signalled. The
+# assertion is what catches a fixture that recorded nothing to clean up.
+stop_started_workers
+for pid in "${STARTED_PIDS[@]}"; do
+  kill -0 "$pid" 2>/dev/null && fail "worker $pid outlived the case that started it"
+done
+pass "every worker this case started was reaped"
 
 echo "ALL TESTS PASSED"

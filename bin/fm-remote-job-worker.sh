@@ -150,8 +150,28 @@ worker_publish_lock_owner() {
   fi
   chmod 600 "$WORKER_LOCK/pid" 2>/dev/null || true
   mv -f -- "$command_tmp" "$WORKER_LOCK/command" 2>/dev/null || rm -f -- "$command_tmp"
-  mv -f -- "$start_tmp" "$WORKER_LOCK/start" 2>/dev/null || rm -f -- "$start_tmp"
+  # The identity record must land: a serving owner whose start record is missing
+  # could not be told apart from a publisher that died half way, and the record
+  # it left would eventually be displaced while it was still serving. Keeping
+  # the exclusive pid record but refusing to serve without the identity removes
+  # that state instead of making it reachable.
+  if ! mv -f -- "$start_tmp" "$WORKER_LOCK/start" 2>/dev/null; then
+    rm -f -- "$start_tmp"
+    worker_release_published_pid
+    return 1
+  fi
+  # Re-read the record before serving: a replacement that judged an older
+  # record dead can never delete this one (displacement renames the directory
+  # it judged), but an owner must never serve a lock it does not hold.
+  [ "$(fm_remote_job_read_single_line "$WORKER_LOCK/pid" 64 2>/dev/null || true)" = "$pid" ] || return 1
   return 0
+}
+
+# Drop this process's own exclusive pid record, and only its own.
+worker_release_published_pid() {
+  local pid=${BASHPID:-$$}
+  [ "$(fm_remote_job_read_single_line "$WORKER_LOCK/pid" 64 2>/dev/null || true)" = "$pid" ] || return 0
+  rm -f -- "$WORKER_LOCK/pid" 2>/dev/null || true
 }
 
 # A directory younger than this bound may still be a record being published by
@@ -161,7 +181,7 @@ worker_publish_lock_owner() {
 # filesystem.
 FM_REMOTE_JOB_RECORD_GRACE_SECONDS=$(worker_bounded_setting "${FM_REMOTE_JOB_RECORD_GRACE_SECONDS:-}" 10)
 
-worker_dir_recent() { # <directory>
+worker_path_recent() { # <path>
   local mtime now
   mtime=$(fm_remote_job_path_mtime "$1" 2>/dev/null || true)
   case "$mtime" in ''|*[!0-9]*) return 0 ;; esac
@@ -179,37 +199,64 @@ worker_dir_recent() { # <directory>
 # whose heartbeat read as stale had its lock directory deleted underneath it by
 # a replacement; both then served the same queue, raced the same job records,
 # and neither could publish a result.
-worker_lock_owner_status() { # <account-home>
-  local account_home=$1 lock pid recorded_start actual_start
-  fm_remote_job_prepare_state "$account_home" || return 2
-  lock=$(fm_remote_job_worker_lock_path)
-  [ -d "$lock" ] && [ ! -L "$lock" ] || return 2
+worker_lock_record_status() { # <lock-dir>
+  local lock=$1 pid recorded_start actual_start
+  [ -d "$lock" ] && [ ! -L "$lock" ] || return 1
   pid=$(fm_remote_job_read_single_line "$lock/pid" 64 2>/dev/null || true)
   case "$pid" in ''|*[!0-9]*) pid= ;; esac
-  [ -n "$pid" ] && [ "$pid" -gt 1 ] || {
-    worker_dir_recent "$lock" && return 2
+  if [ -z "$pid" ] || [ "$pid" -le 1 ]; then
+    worker_path_recent "$lock" && return 2
     return 1
-  }
+  fi
   kill -0 "$pid" 2>/dev/null || return 1
   recorded_start=$(fm_remote_job_read_single_line "$lock/start" 256 2>/dev/null || true)
-  [ -n "$recorded_start" ] || return 2
+  if [ -z "$recorded_start" ]; then
+    # The pid record is published first, so a start record that has not arrived
+    # yet is a publish in flight. The bound is the pid record's own age, not
+    # forever: past it the publisher died between its two records, and a record
+    # whose identity never arrived can never be the owner this state root is
+    # waiting for. Treating it as indeterminate without that bound wedged the
+    # queue whenever a killed publisher's pid was later reused.
+    worker_path_recent "$lock/pid" && return 2
+    return 1
+  fi
   actual_start=$(fm_remote_job_process_start "$pid" 2>/dev/null || true)
   [ -n "$actual_start" ] || return 2
   [ "$recorded_start" = "$actual_start" ] && return 0
   return 1
 }
 
-# Discard the records of an owner already proven gone. Losing the removal race
-# to another replacement is ordinary contention, so it is not an error: the
-# caller just tries the lock directory again. Only records that are not plain
-# files are a real fault, because those were never published by a worker.
+worker_lock_owner_status() { # <account-home>
+  local account_home=$1 lock
+  fm_remote_job_prepare_state "$account_home" || return 2
+  lock=$(fm_remote_job_worker_lock_path)
+  worker_lock_record_status "$lock"
+}
+
+# Displace an owner already proven gone. Displacement is one atomic rename of
+# the whole lock directory, so exactly one replacement can ever take a given
+# directory and no process can delete a record another one just published: the
+# loser's rename finds nothing to move and leaves everything alone, and the
+# winner works only inside the directory it now owns. The taken directory is
+# re-verified before anything in it is removed, so a live owner that published
+# between the judgment and the rename gets its directory handed straight back.
 worker_reclaim_lock() { # <lock-dir>
-  local lock=$1 file
-  for file in pid start command; do
-    [ ! -L "$lock/$file" ] || return 1
-  done
-  rm -f -- "$lock/pid" "$lock/start" "$lock/command" 2>/dev/null || true
-  rmdir "$lock" 2>/dev/null || true
+  local lock=$1 taken
+  taken="$lock.reclaim.${BASHPID:-$$}"
+  [ -d "$lock" ] && [ ! -L "$lock" ] || return 0
+  [ ! -e "$taken" ] && [ ! -L "$taken" ] || return 0
+  mv -- "$lock" "$taken" 2>/dev/null || return 0
+  worker_lock_record_status "$taken"
+  case "$?" in
+    1) rm -rf -- "$taken" 2>/dev/null || true ;;
+    *)
+      # A live or still-publishing owner had the path: put the directory back
+      # rather than deleting it. If a new owner took the path in the meantime
+      # the taken directory is left beside it and is never consulted again.
+      mv -- "$taken" "$lock" 2>/dev/null || rm -rf -- "$taken" 2>/dev/null || true
+      ;;
+  esac
+  return 0
 }
 
 worker_quarantined_execution_stopped() { # <account-home>
@@ -240,7 +287,17 @@ worker_acquire_lock() {
   local account_home=$1 attempt=0
   while [ "$attempt" -lt 150 ]; do
     (umask 077; mkdir "$WORKER_LOCK") 2>/dev/null || true
-    [ -d "$WORKER_LOCK" ] && [ ! -L "$WORKER_LOCK" ] || return 1
+    # A path that is not a plain directory is a real fault. A path that is
+    # momentarily absent is not: a replacement displaces a stale lock by
+    # renaming the directory away, so the window between that rename and the
+    # winner's own create is ordinary contention, not a broken queue.
+    [ ! -L "$WORKER_LOCK" ] || return 1
+    if [ ! -d "$WORKER_LOCK" ]; then
+      [ ! -e "$WORKER_LOCK" ] || return 1
+      attempt=$((attempt + 1))
+      sleep 0.1
+      continue
+    fi
     if [ -e "$WORKER_LOCK/quarantine" ] || [ -L "$WORKER_LOCK/quarantine" ]; then
       worker_recover_quarantine "$account_home" || return 3
       continue
@@ -533,7 +590,13 @@ worker_claim() { # <job-dir>
     return 1
   fi
   chmod 600 "$claim/owner" 2>/dev/null || true
-  mv -f -- "$start_tmp" "$claim/owner_start" 2>/dev/null || rm -f -- "$start_tmp"
+  if ! mv -f -- "$start_tmp" "$claim/owner_start" 2>/dev/null; then
+    rm -f -- "$start_tmp"
+    [ "$(fm_remote_job_read_single_line "$claim/owner" 64 2>/dev/null || true)" = "$pid" ] \
+      && rm -f -- "$claim/owner" 2>/dev/null
+    return 1
+  fi
+  [ "$(fm_remote_job_read_single_line "$claim/owner" 64 2>/dev/null || true)" = "$pid" ] || return 1
   return 0
 }
 
@@ -547,7 +610,7 @@ worker_claim_owner_alive() { # <job-dir>
     # was how a second worker erased a live sibling's claim and left neither
     # able to publish: the sibling then failed on its own half-written record.
     # Past the grace the record never arrived, which is a real crashed claim.
-    worker_dir_recent "$claim" && return 0
+    worker_path_recent "$claim" && return 0
     return 1
   fi
   pid=$(tr -d '\n' < "$owner")
