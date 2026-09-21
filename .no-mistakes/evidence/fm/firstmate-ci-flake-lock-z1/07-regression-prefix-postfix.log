@@ -1,0 +1,7 @@
+=== new queue-lock regression test against PRE-FIX product code (base ddf98bc) ===
+not ok - a contended queue lock failed the whole drain
+PRE_FIX_EXIT=1
+
+=== same test against POST-FIX product code (target 7d7249b) ===
+ok - a queue-lock deadline without a named live holder is contention, not an unsafe lock
+POST_FIX_EXIT=0

@@ -1,0 +1,6 @@
+iter 1: ok
+iter 2: ok
+iter 3: ok
+iter 4: ok
+iter 5: ok
+tree=/tmp/fm-base-check iters=5 failures=0

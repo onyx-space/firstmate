@@ -1,0 +1,62 @@
+
+=== A: dead primary holder + live recovery holder ===
+PASS  A :: rc=0, live recoverer 3181994 named, dead pid 3181962 unnamed, wake retained
+  stdout: WAKE DRAIN SKIPPED: queue lock remains held by live pid 3181994 after 1s; retry on the next drain.
+  stderr: 
+  dead_pid=3181962 steal_pid=3181994
+
+=== B: live directory-shaped queue lock ===
+PASS  B :: rc=0, live directory holder 3182713 named, lock untouched
+  stdout: WAKE DRAIN SKIPPED: queue lock remains held by live pid 3182713 after 1s; retry on the next drain.
+  stderr: 
+
+=== C: absent primary + live recovery holder ===
+PASS  C :: rc=0, live recovery holder 3183056 named on absent primary, wake retained
+  stdout: WAKE DRAIN SKIPPED: queue lock remains held by live pid 3183056 after 1s; retry on the next drain.
+  stderr: 
+
+=== D: malformed regular-file lock still refused ===
+PASS  D :: rc=1 refusal preserved, durable wake retained
+  stdout: 
+  stderr: wake drain: queue lock could not be acquired safely
+
+=== E: live owner-symlink holder ===
+PASS  E :: rc=0, live holder 3183988 named
+  stdout: WAKE DRAIN SKIPPED: queue lock remains held by live pid 3183988 after 1s; retry on the next drain.
+  stderr: 
+
+=== F: dead recovery slot -> unnamed-contention wording, never a dead pid ===
+PASS  F :: dead recovery pid 3184516 never named as a live holder (rc=0)
+  rc=0 stdout: 1790033675	1	signal	task.status	signal: /tmp/fm-live-root-lB0918/F/state/task.status
+wake annotation: latest wake-EVENT observed at drain, not current state: task.status: blocked: fixture
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+task blocked: fixture
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+  stderr: WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 3184490.1790033675.FbzSbm
+
+=== H: present lock, dead owner record, fresh mid-acquire recovery slot ===
+PASS  H :: rc=0, unnamed-contention wording, dead pid 3185343 never named
+  rc=0 stdout: WAKE DRAIN SKIPPED: queue lock is still held or being recovered after 1s; retry on the next drain.
+  stderr: 
+
+=== I: presentation lock held, dead owner record, fresh mid-acquire recovery slot ===
+PASS  I :: rc=0, unnamed-contention presentation wording, dead pid 3186083 never named
+  rc=0 stdout: 1790033679	1	signal	task.status	signal: /tmp/fm-live-root-lB0918/I/state/task.status
+STATUS PRESENTATION SKIPPED: lock is still held or being recovered after 1s; retry on the next drain.
+  stderr: WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 3186054.1790033679.AfIJZu
+
+=== K: un-creatable lock path (read-only state dir) still refused ===
+drive.sh: 第 44 行：3187141 Segmentation fault      timeout 60 env FM_STATE_OVERRIDE="$state" FM_ROOT_OVERRIDE="$ROOT_SCRATCH" FM_STATUS_PRESENTATION_LOCK_TIMEOUT="$tmo" "$DRAIN" > "$out" 2> "$err"
+SKIP  K :: host bash segfaults (rc=139) on the read-only-state fixture; identical on base and target, so it cannot discriminate the change
+  rc=139 stdout: 
+  stderr: timeout: 被监视的命令已核心转储
+
+=== G: contention clears, retained wake replays ===
+PASS  G :: wake replayed after contention cleared
+  replay stdout: 1790033723	1	signal	task.status	signal: /tmp/fm-live-root-lB0918/G/state/task.status
+wake annotation: latest wake-EVENT observed at drain, not current state: task.status: blocked: fixture
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+task blocked: fixture
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+
+=== 0 failure(s) ===
