@@ -1,0 +1,10 @@
+# Repo-wide inventory for the old escalating-ladder wording (intent: 'no other file states this policy')
+# command: git grep over the target commit tree, plus working-tree grep excluding .git
+
+## Escalation-ladder phrases NOT intentionally quoted in CONTRIBUTING.md:
+(none)
+
+## Files whose only mention of the incident is CONTRIBUTING.md's divergence record:
+./.agents/skills/harness-adapters/references/common/model-and-effort.md
+./.agents/skills/ask-user-authority/SKILL.md
+./AGENTS.md

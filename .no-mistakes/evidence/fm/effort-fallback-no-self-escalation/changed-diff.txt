@@ -1,0 +1,51 @@
+diff --git a/.agents/skills/harness-adapters/references/common/model-and-effort.md b/.agents/skills/harness-adapters/references/common/model-and-effort.md
+index a89edb3..9c802ce 100644
+--- a/.agents/skills/harness-adapters/references/common/model-and-effort.md
++++ b/.agents/skills/harness-adapters/references/common/model-and-effort.md
+@@ -10,11 +10,10 @@ The tool reference records verified flags, accepted values, omission behavior, a
+ 
+ Effort precedence is a per-task captain instruction, then applicable dispatch profile or secondmate pin, then the fallback below.
+ Never replace either higher-precedence value.
+-Use the fallback only when neither specifies effort.
++Use the fallback only when neither the captain, a dispatch profile, nor a secondmate pin specifies effort.
+ 
+-Use `low` for well-understood work with an explicit bounded path and `xhigh` for ambiguous investigation or design.
+-Choose intermediate levels as complexity, uncertainty, blast radius, or open-ended reasoning rises.
+-If an adapter lacks `xhigh`, cap at its highest supported non-`max` level rather than silently omitting the intent.
++The fallback does not escalate on the agent's own reading of difficulty: `low` applies even to ambiguous investigation or design, and a higher level needs an explicit per-task instruction or a standing configured value.
++When a higher level is instructed or configured but the adapter lacks it, cap at its highest supported non-`max` level rather than silently omitting the intent.
+ Never select `max` through this fallback; only an explicit per-task or standing captain preference permits it.
+ 
+ The explicit native `ultra` value follows the model-scoped refusal contract in `../../../bin/fm-harness.sh validate-native-effort`; it is never silently omitted or mapped to a Pi level.
+diff --git a/AGENTS.md b/AGENTS.md
+index 3bac3f8..fa88b32 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -228,7 +228,7 @@ When every candidate is tight, preserve the captain's strongest-reasoning class
+ Break genuine evidence ties without array-order or harness bias.
+ `quota-axi` owns how model or product windows relate to bounding account windows and remains data-only.
+ Load `quota-array-dispatch` before choosing among a matched profile array; that skill is the single owner of the TOON-first spendPriority selection procedure.
+-The generic effort fallback and its precedence are owned by `harness-adapters`: explicit captain and standing configured effort win; otherwise use low for well-understood explicit work, xhigh for ambiguous investigation or design, intermediate levels proportionally, and never max without explicit captain preference.
++The generic effort fallback and its precedence are owned by `harness-adapters`: explicit captain and standing configured effort win; the fallback itself does not escalate — it applies `low` when neither says otherwise — and `max` is never reachable through it.
+ Do not add model-specific versions of that policy.
+ 
+ `secondmate-provisioning` owns secondmate harness pins and inherited local material, while `harness-adapters` owns the harness consequences.
+diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md
+index 9567425..32a5f1b 100644
+--- a/CONTRIBUTING.md
++++ b/CONTRIBUTING.md
+@@ -121,6 +121,14 @@ Where a case's assertion is not about the timeout itself, give that window headr
+ Tests that need a real optional backend or an explicit opt-in (real herdr/zellij/cmux smoke tests, the live Pi regression) skip themselves and print the tool or environment gate needed to enable them, so the portable suite remains safe on machines without those tools.
+ The [Herdr backend guide](docs/herdr-backend.md#destructive-lab-safety) owns the lane's isolation boundary, while [runtime backend verification](docs/verification/runtime-backends.md#herdr) owns active empirical evidence; live harness credential tests remain opt-in.
+ 
++## Fork-local divergence from upstream
++
++This fork is not a thin follower: it carries a large body of its own work, and a small number of places intentionally differ from `kunchenguid/firstmate` in a **rule** rather than in an implementation. Each one is listed here so an upstream sync keeps our wording instead of resolving the conflict toward upstream out of habit.
++
++| Path | What differs | Why |
++|---|---|---|
++| `AGENTS.md` (§4, the effort-fallback sentence) and `.agents/skills/harness-adapters/references/common/model-and-effort.md` (§ Axes and precedence) | The effort fallback no longer escalates on the agent's own reading of difficulty: it applies `low` whenever neither the captain, a dispatch profile, nor a secondmate pin specifies effort, and a higher level needs an explicit instruction or configured value. | On 2026-09-21 a firstmate read the skill before dispatching a lane and took `xhigh` on its own judgement of "ambiguous investigation". Nothing had asked for it; the sentence that licensed the choice was ours to change. The precedence above the fallback — captain instruction, then profile or secondmate pin — is unchanged. |
++
+ ## Questions
+ 
+ Open an issue, or talk to me on [Discord](https://discord.gg/Wsy2NpnZDu).
