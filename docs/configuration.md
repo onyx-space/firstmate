@@ -442,7 +442,8 @@ Both `use` and the optional top-level `default` accept either one profile object
 The single-object form stays fully backward-compatible, and every profile needs `harness`.
 Profile `model` and `effort` fields and rule `why` are optional.
 `ultra` is native-only: the model-aware validation contract and launch mapping are owned by `bin/fm-harness.sh validate-native-effort` and `bin/fm-spawn.sh` respectively.
-An omitted model or effort means the selected harness uses its own default for that axis.
+An omitted model means the selected harness uses its own default for that axis.
+An omitted effort instead defers to the [`harness-adapters` effort fallback](../.agents/skills/harness-adapters/references/common/model-and-effort.md), which applies `low` when neither the captain, a dispatch profile, nor a secondmate pin specifies effort, and a higher level needs an explicit per-task instruction or a standing configured value.
 Every profile array is an implicit quota-aware choice resolved through `quota-array-dispatch`.
 If no dispatch rule fits, firstmate resolves `default` through the same object-or-array path before falling back to `config/crew-harness`.
 Except for `ultra`, which refuses unsupported profiles under the native-effort contract above, an effort value the chosen harness does not accept is recorded as `effort=` in task meta for traceability but omitted from the launch flags.
