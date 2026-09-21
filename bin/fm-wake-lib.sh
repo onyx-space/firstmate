@@ -1244,14 +1244,27 @@ _fm_lock_acquire_wait_handoff() {  # <lockdir> <caller-pid> [seconds] [caller-id
 #
 # Bounded acquire variant. It preserves the ordinary wait/reclaim behavior
 # until fm-timeout-lib.sh's hard deadline, returns 124 when a live holder still
-# owns the lock, and leaves FM_LOCK_HELD_PID naming that holder.
-# Use it where a caller must refuse rather than block AND handle the refusal
-# itself: wake presentation, the guarded remote link clear, and the away-record
-# lock, whose contracts return a reconciliation refusal instead of wedging an
-# unattended close. Mutation-critical callers that just need a bounded wait use
-# fm_lock_acquire_wait, which refuses loudly on its own.
+# owns the lock, and leaves FM_LOCK_HELD_PID naming that holder where one could
+# be identified. Use it where a caller must refuse rather than block AND handle
+# the refusal itself: wake presentation, the guarded remote link clear, and the
+# away-record lock, whose contracts return a reconciliation refusal instead of
+# wedging an unattended close. Mutation-critical callers that just need a
+# bounded wait use fm_lock_acquire_wait, which refuses loudly on its own.
+#
+# The refusal verdict is what the caller acts on, so a hit deadline is
+# classified from evidence that survives a release window rather than from one
+# read of the holder record: a holder may release between the failed attempt and
+# any read of that record, and reading the empty result as an unsafe lock turned
+# ordinary contention into a hard refusal. A hit deadline therefore
+# re-probes to its own ownership over a bounded settle window, reports 124
+# whenever the lock is merely busy or being recovered,
+# and reports the acquire failure only for a path that cannot be a firstmate
+# lock at all - a present path that is not the owner symlink, or a path that
+# stayed absent and so could never be created there. The window is bounded at
+# 10 probes of 0.1s; only the refusal path pays it, and a live holder is
+# reported on the first probe.
 fm_lock_acquire_wait_bounded() {
-  local lockdir=$1 seconds=$2 caller_pid rc owner_pid caller_identity
+  local lockdir=$1 seconds=$2 caller_pid rc owner_pid caller_identity probe
   case "$seconds" in ''|*[!0-9]*|0) return 2 ;; esac
   _fm_wake_require_timeout || return 1
   if fm_lock_try_acquire "$lockdir"; then
@@ -1294,19 +1307,42 @@ fm_lock_acquire_wait_bounded() {
     return 0
   fi
   if [ "$rc" -eq 124 ]; then
-    owner_pid=$(cat "$lockdir/pid" 2>/dev/null || true)
-    case "$owner_pid" in
-      ''|*[!0-9]*|0) ;;
-      *)
-        if [ "$owner_pid" -gt 0 ] 2>/dev/null && fm_pid_alive "$owner_pid"; then
-          FM_LOCK_HELD_PID=$owner_pid
-          return 124
-        fi
-        ;;
-    esac
-    # shellcheck disable=SC2034 # Output read by callers after bounded acquisition.
-    FM_LOCK_HELD_PID=
-    return 1
+    probe=10
+    while :; do
+      if [ -L "$lockdir" ]; then
+        owner_pid=$(cat "$lockdir/pid" 2>/dev/null || true)
+        case "$owner_pid" in
+          ''|*[!0-9]*|0) ;;
+          *)
+            if [ "$owner_pid" -gt 0 ] 2>/dev/null && fm_pid_alive "$owner_pid"; then
+              FM_LOCK_HELD_PID=$owner_pid
+              return 124
+            fi
+            ;;
+        esac
+      elif [ -e "$lockdir" ]; then
+        # A firstmate lock is a symlink to its owner directory, so a real path
+        # that is not one can never become a lock here: that is the shape the
+        # acquire failure is for.
+        # shellcheck disable=SC2034 # Output read by callers after bounded acquisition.
+        FM_LOCK_HELD_PID=
+        return 1
+      fi
+      if fm_lock_try_acquire "$lockdir"; then
+        return 0
+      fi
+      probe=$((probe - 1))
+      [ "$probe" -gt 0 ] || break
+      sleep 0.1
+    done
+    if [ ! -e "$lockdir" ] && [ ! -L "$lockdir" ]; then
+      # Absent across the whole window and still not ours to take: the lock
+      # cannot be created here at all, which is never ordinary contention.
+      # shellcheck disable=SC2034 # Output read by callers after bounded acquisition.
+      FM_LOCK_HELD_PID=
+      return 1
+    fi
+    return 124
   fi
   return "$rc"
 }
