@@ -228,7 +228,7 @@ When every candidate is tight, preserve the captain's strongest-reasoning class 
 Break genuine evidence ties without array-order or harness bias.
 `quota-axi` owns how model or product windows relate to bounding account windows and remains data-only.
 Load `quota-array-dispatch` before choosing among a matched profile array; that skill is the single owner of the TOON-first spendPriority selection procedure.
-The generic effort fallback and its precedence are owned by `harness-adapters`: explicit captain and standing configured effort win; the fallback itself does not escalate — it applies `low` when neither says otherwise — and `max` is never reachable through it.
+The generic effort fallback and its precedence are owned by `harness-adapters`: explicit captain and standing configured effort win; the fallback itself does not escalate (it applies `low` when neither says otherwise), and `max` is never reachable through it.
 Do not add model-specific versions of that policy.
 
 `secondmate-provisioning` owns secondmate harness pins and inherited local material, while `harness-adapters` owns the harness consequences.
