@@ -127,7 +127,7 @@ This fork is not a thin follower: it carries a large body of its own work, and a
 
 | Path | What differs | Why |
 |---|---|---|
-| `AGENTS.md` (§4, the effort-fallback sentence) and `.agents/skills/harness-adapters/references/common/model-and-effort.md` (§ Axes and precedence) | The effort fallback no longer escalates on the agent's own reading of difficulty: it applies `low` whenever neither the captain nor a standing profile specifies effort, and a higher level needs an explicit instruction or configured value. | On 2026-09-21 a firstmate read the skill before dispatching a lane and took `xhigh` on its own judgement of "ambiguous investigation". Nothing had asked for it; the sentence that licensed the choice was ours to change. The precedence above the fallback — captain instruction, then profile or secondmate pin — is unchanged. |
+| `AGENTS.md` (§4, the effort-fallback sentence) and `.agents/skills/harness-adapters/references/common/model-and-effort.md` (§ Axes and precedence) | The effort fallback no longer escalates on the agent's own reading of difficulty: it applies `low` whenever neither the captain, a dispatch profile, nor a secondmate pin specifies effort, and a higher level needs an explicit instruction or configured value. | On 2026-09-21 a firstmate read the skill before dispatching a lane and took `xhigh` on its own judgement of "ambiguous investigation". Nothing had asked for it; the sentence that licensed the choice was ours to change. The precedence above the fallback — captain instruction, then profile or secondmate pin — is unchanged. |
 
 ## Questions
 
