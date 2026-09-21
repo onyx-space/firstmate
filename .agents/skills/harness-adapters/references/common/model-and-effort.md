@@ -10,11 +10,10 @@ The tool reference records verified flags, accepted values, omission behavior, a
 
 Effort precedence is a per-task captain instruction, then applicable dispatch profile or secondmate pin, then the fallback below.
 Never replace either higher-precedence value.
-Use the fallback only when neither specifies effort.
+Use the fallback only when neither the captain, a dispatch profile, nor a secondmate pin specifies effort.
 
-Use `low` for well-understood work with an explicit bounded path and `xhigh` for ambiguous investigation or design.
-Choose intermediate levels as complexity, uncertainty, blast radius, or open-ended reasoning rises.
-If an adapter lacks `xhigh`, cap at its highest supported non-`max` level rather than silently omitting the intent.
+The fallback does not escalate on the agent's own reading of difficulty: `low` applies even to ambiguous investigation or design, and a higher level needs an explicit per-task instruction or a standing configured value.
+When a higher level is instructed or configured but the adapter lacks it, cap at its highest supported non-`max` level rather than silently omitting the intent.
 Never select `max` through this fallback; only an explicit per-task or standing captain preference permits it.
 
 The explicit native `ultra` value follows the model-scoped refusal contract in `../../../bin/fm-harness.sh validate-native-effort`; it is never silently omitted or mapped to a Pi level.

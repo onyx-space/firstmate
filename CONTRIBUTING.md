@@ -121,6 +121,15 @@ Where a case's assertion is not about the timeout itself, give that window headr
 Tests that need a real optional backend or an explicit opt-in (real herdr/zellij/cmux smoke tests, the live Pi regression) skip themselves and print the tool or environment gate needed to enable them, so the portable suite remains safe on machines without those tools.
 The [Herdr backend guide](docs/herdr-backend.md#destructive-lab-safety) owns the lane's isolation boundary, while [runtime backend verification](docs/verification/runtime-backends.md#herdr) owns active empirical evidence; live harness credential tests remain opt-in.
 
+## Fork-local divergence from upstream
+
+This fork is not a thin follower: it carries a large body of its own work, and a small number of places intentionally differ from `kunchenguid/firstmate` in a **rule** rather than in an implementation.
+Each one is listed here so an upstream sync keeps our wording instead of resolving the conflict toward upstream out of habit.
+
+| Path | What differs | Why |
+|---|---|---|
+| `AGENTS.md` (§4, the effort-fallback sentence), `.agents/skills/harness-adapters/references/common/model-and-effort.md` (§ Axes and precedence), and `docs/configuration.md` (the crew-dispatch profile effort sentence) | The effort fallback no longer escalates on the agent's own reading of difficulty: it applies `low` whenever neither the captain, a dispatch profile, nor a secondmate pin specifies effort, and a higher level needs an explicit instruction or configured value. | On 2026-09-21 a firstmate read the skill before dispatching a lane and took `xhigh` on its own judgement of "ambiguous investigation". Nothing had asked for it; the sentence that licensed the choice was ours to change. The precedence above the fallback (captain instruction, then profile or secondmate pin) is unchanged. Upstream's `docs/configuration.md` still says an omitted effort means the harness's own default, so that sentence is also ours to keep on sync. |
+
 ## Questions
 
 Open an issue, or talk to me on [Discord](https://discord.gg/Wsy2NpnZDu).
