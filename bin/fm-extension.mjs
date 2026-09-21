@@ -68,7 +68,6 @@ import {
   readdir,
   realpath,
   rename,
-  rmdir,
   rm,
   unlink,
   writeFile,
@@ -2058,8 +2057,10 @@ async function releaseLifecycleLock() {
   await assertLifecycleLockOwned();
   const { lockPath, ownerPath } = activeLifecycleLock;
   await unlink(lockPath);
-  await unlink(path.join(ownerPath, "pid"));
-  await rmdir(ownerPath);
+  // The shell owner also records its pid identity, and may add other known
+  // owner files; removing the whole verified owner directory keeps this
+  // release in step with the acquisition layout instead of re-listing it.
+  await rm(ownerPath, { recursive: true, force: true });
   activeLifecycleLock = null;
 }
 
