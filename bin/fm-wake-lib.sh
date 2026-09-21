@@ -1240,6 +1240,31 @@ _fm_lock_acquire_wait_handoff() {  # <lockdir> <caller-pid> [seconds] [caller-id
   trap - TERM INT
 }
 
+# fm_lock_live_holder_pid <lockdir>
+#
+# Print the pid of a live process holding <lockdir> or its recovery slot and
+# return 0; print nothing and return 1 when no live holder can be named. The
+# owner record alone is not enough: a killed holder leaves its pid behind, and a
+# recoverer that has taken "$lockdir.steal" is live contention even while the
+# owner record is stale or the lock is briefly absent. Each candidate is checked
+# for liveness - and against the recorded identity, so a recycled pid is never
+# reported as a live holder. Only the lock and its immediate recovery slot are
+# named; naming a live holder needs no deeper walk.
+fm_lock_live_holder_pid() {
+  local lockdir=$1 slot pid
+  for slot in "$lockdir" "$lockdir.steal"; do
+    pid=$(cat "$slot/pid" 2>/dev/null || true)
+    case "$pid" in
+      ''|*[!0-9]*|0) continue ;;
+    esac
+    if fm_pid_alive "$pid" && ! fm_lock_owner_recycled "$slot" "$pid"; then
+      printf '%s\n' "$pid"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # fm_lock_acquire_wait_bounded <lockdir> <positive-seconds>
 #
 # Bounded acquire variant. It preserves the ordinary wait/reclaim behavior
@@ -1255,14 +1280,16 @@ _fm_lock_acquire_wait_handoff() {  # <lockdir> <caller-pid> [seconds] [caller-id
 # classified from evidence that survives a release window rather than from one
 # read of the holder record: a holder may release between the failed attempt and
 # any read of that record, and reading the empty result as an unsafe lock turned
-# ordinary contention into a hard refusal. A hit deadline therefore
-# re-probes to its own ownership over a bounded settle window, reports 124
-# whenever the lock is merely busy or being recovered,
-# and reports the acquire failure only for a path that cannot be a firstmate
-# lock at all - a present path that is not the owner symlink, or a path that
-# stayed absent and so could never be created there. The window is bounded at
-# 10 probes of 0.1s; only the refusal path pays it, and a live holder is
-# reported on the first probe.
+# ordinary contention into a hard refusal. A hit deadline therefore re-probes to
+# its own ownership over a bounded settle window and reports 124 whenever a live
+# holder can be named - the owner symlink, a directory-shaped owner, or a live
+# process holding the recovery slot while the owner record is stale or briefly
+# absent. A dead pid is never named as a live holder, so that refusal keeps the
+# caller's unnamed-contention wording. The acquire failure is reported only for
+# a present path that cannot be a firstmate lock at all, or a path absent across
+# the whole window that still could not be created. The window is bounded at 10
+# probes of 0.1s; only the refusal path pays it, and a live holder is reported
+# on the first probe.
 fm_lock_acquire_wait_bounded() {
   local lockdir=$1 seconds=$2 caller_pid rc owner_pid caller_identity probe
   case "$seconds" in ''|*[!0-9]*|0) return 2 ;; esac
@@ -1309,40 +1336,36 @@ fm_lock_acquire_wait_bounded() {
   if [ "$rc" -eq 124 ]; then
     probe=10
     while :; do
-      if [ -L "$lockdir" ]; then
-        owner_pid=$(cat "$lockdir/pid" 2>/dev/null || true)
-        case "$owner_pid" in
-          ''|*[!0-9]*|0) ;;
-          *)
-            if [ "$owner_pid" -gt 0 ] 2>/dev/null && fm_pid_alive "$owner_pid"; then
-              FM_LOCK_HELD_PID=$owner_pid
-              return 124
-            fi
-            ;;
-        esac
-      elif [ -e "$lockdir" ]; then
-        # A firstmate lock is a symlink to its owner directory, so a real path
-        # that is not one can never become a lock here: that is the shape the
-        # acquire failure is for.
+      if fm_lock_try_acquire "$lockdir"; then
+        return 0
+      fi
+      owner_pid=$(fm_lock_live_holder_pid "$lockdir" || true)
+      if [ -n "$owner_pid" ]; then
+        FM_LOCK_HELD_PID=$owner_pid
+        return 124
+      fi
+      if [ -e "$lockdir" ] && [ ! -L "$lockdir" ] && [ ! -d "$lockdir" ]; then
+        # A firstmate lock is the owner symlink or its legacy directory, so a
+        # present path that is neither can never become one here: that is the
+        # shape the acquire failure is for.
         # shellcheck disable=SC2034 # Output read by callers after bounded acquisition.
         FM_LOCK_HELD_PID=
         return 1
-      fi
-      if fm_lock_try_acquire "$lockdir"; then
-        return 0
       fi
       probe=$((probe - 1))
       [ "$probe" -gt 0 ] || break
       sleep 0.1
     done
-    if [ ! -e "$lockdir" ] && [ ! -L "$lockdir" ]; then
-      # Absent across the whole window and still not ours to take: the lock
-      # cannot be created here at all, which is never ordinary contention.
-      # shellcheck disable=SC2034 # Output read by callers after bounded acquisition.
-      FM_LOCK_HELD_PID=
-      return 1
+    # shellcheck disable=SC2034 # Output read by callers after bounded acquisition.
+    FM_LOCK_HELD_PID=
+    if [ -e "$lockdir" ] || [ -L "$lockdir" ]; then
+      # A lock-shaped path still present without a nameable live holder is
+      # ordinary contention or recovery, not an un-creatable lock path.
+      return 124
     fi
-    return 124
+    # Absent across the whole window and still not ours to take: the lock
+    # cannot be created here at all, which is never ordinary contention.
+    return 1
   fi
   return "$rc"
 }

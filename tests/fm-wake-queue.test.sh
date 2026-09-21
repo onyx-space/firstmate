@@ -1867,7 +1867,7 @@ test_malformed_presentation_lock_reports_acquire_failure() {
 # round, which is the CI flake in the concurrent append/drain case above
 # (run 35611681520, job 106372100898, under a loaded runner).
 test_queue_lock_deadline_without_a_named_holder_is_contention() {
-  local dir state out err holder steal_holder ready attempt
+  local dir state out err holder steal_holder dead_pid steal_pid ready attempt
   dir=$(make_case queue-lock-deadline)
   state="$dir/state"
   out="$dir/drain.out"
@@ -1895,8 +1895,9 @@ test_queue_lock_deadline_without_a_named_holder_is_contention() {
     || { kill "$holder" 2>/dev/null || true; fail "the fixture never took the queue lock"; }
   kill -9 "$holder" 2>/dev/null || true
   wait "$holder" 2>/dev/null || true
-  kill -0 "$(cat "$(readlink "$state/.wake-queue.lock" 2>/dev/null)/pid" 2>/dev/null)" 2>/dev/null \
-    && fail "the killed holder is still alive"
+  dead_pid=$(cat "$(readlink "$state/.wake-queue.lock" 2>/dev/null)/pid" 2>/dev/null || true)
+  [ -n "$dead_pid" ] || fail "the killed holder left no pid record to misread"
+  kill -0 "$dead_pid" 2>/dev/null && fail "the killed holder is still alive"
 
   # A live process holds the recovery slot, so the stale record cannot be
   # reclaimed inside the drain's deadline while recovery is under way.
@@ -1914,18 +1915,41 @@ test_queue_lock_deadline_without_a_named_holder_is_contention() {
   done
   [ -s "$dir/steal.ready" ] \
     || { kill "$steal_holder" 2>/dev/null || true; fail "the fixture never took the recovery slot"; }
+  steal_pid=$(cat "$state/.wake-queue.lock.steal/pid" 2>/dev/null || true)
+  [ -n "$steal_pid" ] \
+    || { kill "$steal_holder" 2>/dev/null || true; fail "the recovery slot recorded no owner pid"; }
 
   FM_STATE_OVERRIDE="$state" FM_STATUS_PRESENTATION_LOCK_TIMEOUT=1 \
     "$DRAIN" > "$out" 2> "$err" \
     || { kill "$steal_holder" 2>/dev/null || true; fail "a contended queue lock failed the whole drain"; }
-  grep -F 'WAKE DRAIN SKIPPED: queue lock' "$out" >/dev/null \
-    || { kill "$steal_holder" 2>/dev/null || true; fail "a contended queue lock did not report a skipped round"; }
+  grep -F "WAKE DRAIN SKIPPED: queue lock remains held by live pid $steal_pid after" "$out" >/dev/null \
+    || { kill "$steal_holder" 2>/dev/null || true; fail "the skip advisory did not name the live recovery holder"; }
+  if grep -F "WAKE DRAIN SKIPPED: queue lock remains held by live pid $dead_pid" "$out" >/dev/null; then
+    kill "$steal_holder" 2>/dev/null || true
+    fail "the skip advisory named the dead pid as a live holder"
+  fi
   if grep -F 'queue lock could not be acquired safely' "$err" >/dev/null; then
     kill "$steal_holder" 2>/dev/null || true
     fail "a deadline with no named live holder was reported as an unsafe queue lock"
   fi
   grep "$(printf '\tsignal\t')" "$state/.wake-queue" >/dev/null \
     || { kill "$steal_holder" 2>/dev/null || true; fail "the skipped round dropped the durable wake"; }
+
+  # The recoverer can also be between removing the stale owner and creating its
+  # own: with the primary gone, its live hold on the recovery slot is still
+  # contention, not an un-creatable lock path.
+  rm -f "$state/.wake-queue.lock"
+  FM_STATE_OVERRIDE="$state" FM_STATUS_PRESENTATION_LOCK_TIMEOUT=1 \
+    "$DRAIN" > "$out" 2> "$err" \
+    || { kill "$steal_holder" 2>/dev/null || true; fail "an absent queue lock with a live recovery failed the whole drain"; }
+  grep -F "WAKE DRAIN SKIPPED: queue lock remains held by live pid $steal_pid after" "$out" >/dev/null \
+    || { kill "$steal_holder" 2>/dev/null || true; fail "an absent queue lock with a live recovery did not skip the round"; }
+  if grep -F 'queue lock could not be acquired safely' "$err" >/dev/null; then
+    kill "$steal_holder" 2>/dev/null || true
+    fail "an absent queue lock with a live recovery was reported as an unsafe queue lock"
+  fi
+  grep "$(printf '\tsignal\t')" "$state/.wake-queue" >/dev/null \
+    || { kill "$steal_holder" 2>/dev/null || true; fail "the absent-lock skipped round dropped the durable wake"; }
 
   kill "$steal_holder" 2>/dev/null || true
   wait "$steal_holder" 2>/dev/null || true

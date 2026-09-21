@@ -362,6 +362,36 @@ test_lock_does_not_steal_live_lock() {
   pass "live-held lock is not stolen"
 }
 
+# Bounded wait: a live directory-shaped lock is a firstmate lock shape with a
+# namable owner, so the refusal stays contention (124, holder named) even though
+# the path is not the owner symlink current locks use. Reading it as an
+# un-creatable path refused the caller instead of skipping the round.
+test_bounded_wait_reports_live_directory_lock_as_contention() {
+  local dir state lockdir out live
+  dir=$(make_case lock-bounded-directory-holder)
+  state="$dir/state"
+  lockdir="$state/.contend.lock"
+  sleep 300 &
+  live=$!
+  mkdir "$lockdir"
+  printf '%s\n' "$live" > "$lockdir/pid"
+  out=$(FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    rc=0
+    fm_lock_acquire_wait_bounded "$2" 1 || rc=$?
+    printf "rc=%s held=%s\n" "$rc" "${FM_LOCK_HELD_PID:-}"
+  ' _ "$LIB" "$lockdir")
+  kill "$live" 2>/dev/null || true
+  wait "$live" 2>/dev/null || true
+  case "$out" in
+    *"rc=124 held=$live"*) ;;
+    *) fail "a live directory-shaped lock was not reported as namable contention: $out" ;;
+  esac
+  [ "$(cat "$lockdir/pid" 2>/dev/null || true)" = "$live" ] \
+    || fail "a refused bounded waiter took the directory lock"
+  pass "a bounded wait reports a live directory-shaped lock as contention"
+}
+
 test_lock_empty_pid_uses_minimum_grace() {
   local dir state lockdir out
   dir=$(make_case lock-empty-grace)
@@ -1466,6 +1496,7 @@ test_lock_steals_dead_pid_lock
 test_lock_stale_steal_single_winner_under_concurrency
 test_lock_live_steal_mutex_is_not_reclaimed
 test_lock_does_not_steal_live_lock
+test_bounded_wait_reports_live_directory_lock_as_contention
 test_lock_empty_pid_uses_minimum_grace
 test_lock_late_claim_loses_after_recreate
 test_lock_paused_mid_acquire_claim_fails_during_steal
