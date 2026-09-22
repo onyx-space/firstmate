@@ -1867,7 +1867,7 @@ test_malformed_presentation_lock_reports_acquire_failure() {
 # round, which is the CI flake in the concurrent append/drain case above
 # (run 35611681520, job 106372100898, under a loaded runner).
 test_queue_lock_deadline_without_a_named_holder_is_contention() {
-  local dir state out err holder steal_holder dead_pid steal_pid ready attempt
+  local dir state out err holder steal_holder dead_pid steal_pid attempt
   dir=$(make_case queue-lock-deadline)
   state="$dir/state"
   out="$dir/drain.out"
