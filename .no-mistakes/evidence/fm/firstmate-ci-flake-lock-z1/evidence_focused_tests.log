@@ -1,0 +1,17 @@
+# Focused product-level tests on the target commit (dccad60)
+# driver = tests/fm-wake-queue.test.sh minus its run-list, plus the named tests
+
+$ bash tests/.pm-driver.sh   # queue-lock deadline classification + guard/refusal + bounded presentation/ack
+ok - a queue-lock deadline without a named live holder is contention, not an unsafe lock
+ok - malformed presentation locks report acquire failure instead of contention
+ok - presentation lock waits are bounded and retriable without weakening acknowledgement atomicity
+ok - bounded acquire hands ownership to the waiting caller after contention
+ok - an abandoned same-process lock hold is reclaimed; a parent's live hold is not
+ok - without BASHPID a subshell cannot release or reclaim its parent lock and owns its own hold
+
+$ bash tests/.pm-lock-driver.sh   # bounded-wait verdict shapes
+ok - a bounded wait reports a live directory-shaped lock as contention
+ok - live-held lock is not stolen
+ok - dead-pid stale lock is reclaimed by a single acquirer
+ok - live steal mutex is not reclaimed
+ok - concurrent fm_lock_try_acquire yields exactly one winner

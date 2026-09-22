@@ -1,0 +1,19 @@
+$ bash repro_queue_lock_deadline.sh <base ddf98bc> 'base commit (pre-fix)'
+== base commit ddf98bc (pre-fix) ==
+stale (dead) owner pid record : 4190818
+live recovery-slot holder pid : 4190852
+drain exit code               : 1
+drain stdout                  :
+drain stderr                  :
+  | wake drain: queue lock could not be acquired safely
+durable wake preserved        : yes
+
+$ bash repro_queue_lock_deadline.sh <target dccad60> 'target commit (fix)'
+== target commit dccad60 (fix) ==
+stale (dead) owner pid record : 4191339
+live recovery-slot holder pid : 4191384
+drain exit code               : 0
+drain stdout                  :
+  | WAKE DRAIN SKIPPED: queue lock remains held by live pid 4191384 after 1s; retry on the next drain.
+drain stderr                  :
+durable wake preserved        : yes

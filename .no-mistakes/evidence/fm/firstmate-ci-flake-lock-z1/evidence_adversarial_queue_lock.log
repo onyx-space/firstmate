@@ -1,0 +1,79 @@
+$ bash adversarial_queue_lock.sh <base ddf98bc>
+---- malformed queue lock (regular file) => unsafe verdict expected ----
+exit: 1
+stdout:
+stderr:
+  | wake drain: queue lock could not be acquired safely
+durable wake preserved: yes
+
+---- fresh directory-shaped queue lock, no pid => unnamed contention ----
+exit: 1
+stdout:
+stderr:
+  | wake drain: queue lock could not be acquired safely
+durable wake preserved: yes
+
+---- dead-owner queue lock only => reclaimed, round runs ----
+exit: 0
+stdout:
+  | 1790041477	1	signal	task.status	signal: /tmp/pm-adv-ilaBtU/dead/task.status
+stderr:
+  | WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 437085.1790041477.3ZP5Da
+durable wake preserved: yes
+
+---- live queue-lock owner => contention naming the live pid ----
+exit: 0
+stdout:
+  | WAKE DRAIN SKIPPED: queue lock remains held by live pid 437605 after 1s; retry on the next drain.
+stderr:
+durable wake preserved: yes
+
+---- fresh directory-shaped status-presentation lock, no pid ----
+exit: 0
+stdout:
+  | 1790041479	1	signal	task.status	signal: /tmp/pm-adv-ilaBtU/presentation/task.status
+stderr:
+  | WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 437890.1790041479.pCX8M2
+  | wake drain: status presentation lock could not be acquired safely
+durable wake preserved: yes
+
+
+$ bash adversarial_queue_lock.sh <target dccad60>
+---- malformed queue lock (regular file) => unsafe verdict expected ----
+exit: 1
+stdout:
+stderr:
+  | wake drain: queue lock could not be acquired safely
+durable wake preserved: yes
+
+---- fresh directory-shaped queue lock, no pid => unnamed contention ----
+exit: 0
+stdout:
+  | WAKE DRAIN SKIPPED: queue lock is still held or being recovered after 1s; retry on the next drain.
+stderr:
+durable wake preserved: yes
+
+---- dead-owner queue lock only => reclaimed, round runs ----
+exit: 0
+stdout:
+  | 1790041484	1	signal	task.status	signal: /tmp/pm-adv-e1EABk/dead/task.status
+stderr:
+  | WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 439369.1790041484.PVSA3X
+durable wake preserved: yes
+
+---- live queue-lock owner => contention naming the live pid ----
+exit: 0
+stdout:
+  | WAKE DRAIN SKIPPED: queue lock remains held by live pid 439886 after 1s; retry on the next drain.
+stderr:
+durable wake preserved: yes
+
+---- fresh directory-shaped status-presentation lock, no pid ----
+exit: 0
+stdout:
+  | 1790041486	1	signal	task.status	signal: /tmp/pm-adv-e1EABk/presentation/task.status
+  | STATUS PRESENTATION SKIPPED: lock is still held or being recovered after 1s; retry on the next drain.
+stderr:
+  | WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 440277.1790041486.0WJryB
+durable wake preserved: yes
+

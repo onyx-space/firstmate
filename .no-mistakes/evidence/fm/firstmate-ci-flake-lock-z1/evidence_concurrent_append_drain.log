@@ -1,0 +1,29 @@
+# The CI-failing case (Behavior portable serial 3 -> tests/fm-wake-queue.test.sh
+# 'concurrent append/drain') run repeatedly, and again with CPU load.
+
+$ bash tests/.pm-conc-driver.sh   # plain run 1
+ok - concurrent append plus drain preserves durable records through acknowledgement
+exit: 0
+$ bash tests/.pm-conc-driver.sh   # plain run 2
+ok - concurrent append plus drain preserves durable records through acknowledgement
+exit: 0
+$ bash tests/.pm-conc-driver.sh   # plain run 3
+ok - concurrent append plus drain preserves durable records through acknowledgement
+exit: 0
+$ bash tests/.pm-conc-driver.sh   # plain run 4
+ok - concurrent append plus drain preserves durable records through acknowledgement
+exit: 0
+$ bash tests/.pm-conc-driver.sh   # plain run 5
+ok - concurrent append plus drain preserves durable records through acknowledgement
+exit: 0
+
+# under CPU load: 4 busy loops on 32 cpus
+$ bash tests/.pm-conc-driver.sh   # loaded run 1
+ok - concurrent append plus drain preserves durable records through acknowledgement
+exit: 0
+$ bash tests/.pm-conc-driver.sh   # loaded run 2
+ok - concurrent append plus drain preserves durable records through acknowledgement
+exit: 0
+$ bash tests/.pm-conc-driver.sh   # loaded run 3
+ok - concurrent append plus drain preserves durable records through acknowledgement
+exit: 0

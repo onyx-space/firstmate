@@ -1,0 +1,19 @@
+# Pre-existing, NOT introduced by this change: a SIGSEGV when the lock's
+# parent directory cannot create the lock at all. fm_lock_try_acquire
+# recurses into "$lockdir.steal" and keeps appending .steal until the shell
+# stack overflows. Reproduced identically on the base commit and the target.
+
+---- base ddf98bc (pre-fix): drain with an unwritable state dir (lock parent cannot create) ----
+environment: 第 3 行：441737 Segmentation fault      （核心已转储）FM_ROOT_OVERRIDE="$T/no-repo" FM_STATE_OVERRIDE="$S" FM_STATUS_PRESENTATION_LOCK_TIMEOUT=1 bash -x "$R/bin/fm-wake-drain.sh" > "$T/out" 2> "$T/xerr"
+drain exit: 139  (139 = SIGSEGV)
+stdout: 
+last 3 trace lines (elided to show the .steal recursion):
+  | eal...REPEATED-.steal...
+
+---- target dccad60 (fix): drain with an unwritable state dir (lock parent cannot create) ----
+environment: 第 3 行：458054 Segmentation fault      （核心已转储）FM_ROOT_OVERRIDE="$T/no-repo" FM_STATE_OVERRIDE="$S" FM_STATUS_PRESENTATION_LOCK_TIMEOUT=1 bash -x "$R/bin/fm-wake-drain.sh" > "$T/out" 2> "$T/xerr"
+drain exit: 139  (139 = SIGSEGV)
+stdout: 
+last 3 trace lines (elided to show the .steal recursion):
+  | eal...REPEATED-.steal...
+

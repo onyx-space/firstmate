@@ -1,0 +1,10 @@
+# Regression proof: the new test fails before the fix and passes after it
+# Same test body in both trees; bin/fm-wake-lib.sh and bin/fm-wake-drain.sh differ.
+
+$ cd <base ddf98bc> && bash tests/.pm-newonly.sh
+not ok - a contended queue lock failed the whole drain
+exit: 1
+
+$ cd <target dccad60> && bash tests/.pm-newonly.sh
+ok - a queue-lock deadline without a named live holder is contention, not an unsafe lock
+exit: 0
