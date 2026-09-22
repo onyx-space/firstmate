@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # tests/fm-wake-queue.test.sh - wake-queue losslessness (the queue safety matrix):
-# concurrent append/drain, bounded structural enrichment and presentation-lock
-# waits, interruption safety, signal catch-up while no watcher runs, stale/check enqueue-before-suppressor
+# concurrent append/drain, bounded structural enrichment, queue-lock deadline
+# classification, and presentation-lock waits, interruption safety, signal
+# catch-up while no watcher runs, stale/check enqueue-before-suppressor
 # ordering, atomic double-drain, duplicate collapse, and liveness assertion.
 # Nothing is lost and nothing is double-consumed. General watcher/lock liveness
 # lives in fm-watcher-lock.test.sh; daemon classification/injection in
@@ -1858,6 +1859,107 @@ test_malformed_presentation_lock_reports_acquire_failure() {
   pass "malformed presentation locks report acquire failure instead of contention"
 }
 
+# A queue-lock deadline whose holder cannot be named must be read as contention.
+# The refusal is classified after the failed attempt, so a holder that released
+# in between - or an owner record whose process is already gone while another
+# live process holds the recovery slot - used to be reported as an unsafe lock
+# path. That misclassification failed the whole drain instead of skipping the
+# round, which is the CI flake in the concurrent append/drain case above
+# (run 35611681520, job 106372100898, under a loaded runner).
+test_queue_lock_deadline_without_a_named_holder_is_contention() {
+  local dir state out err holder steal_holder dead_pid steal_pid attempt
+  dir=$(make_case queue-lock-deadline)
+  state="$dir/state"
+  out="$dir/drain.out"
+  err="$dir/drain.err"
+
+  printf 'blocked: fixture\n' > "$state/task.status"
+  append_wake "$state" signal task.status "signal: $state/task.status" \
+    || fail "could not seed the contended-lock wake"
+
+  # An owner record left by a holder that was killed outright: the lock still
+  # names a pid, and that pid is gone.
+  bash -c '
+    . "$1"
+    fm_lock_acquire_wait "$2"
+    printf "ready\n" > "$3"
+    exec sleep 30
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$state/.wake-queue.lock" "$dir/held.ready" &
+  holder=$!
+  attempt=0
+  while [ "$attempt" -lt 100 ] && [ ! -s "$dir/held.ready" ]; do
+    sleep 0.05
+    attempt=$((attempt + 1))
+  done
+  [ -s "$dir/held.ready" ] \
+    || { kill "$holder" 2>/dev/null || true; fail "the fixture never took the queue lock"; }
+  kill -9 "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  dead_pid=$(cat "$(readlink "$state/.wake-queue.lock" 2>/dev/null)/pid" 2>/dev/null || true)
+  [ -n "$dead_pid" ] || fail "the killed holder left no pid record to misread"
+  kill -0 "$dead_pid" 2>/dev/null && fail "the killed holder is still alive"
+
+  # A live process holds the recovery slot, so the stale record cannot be
+  # reclaimed inside the drain's deadline while recovery is under way.
+  bash -c '
+    . "$1"
+    fm_lock_acquire_wait "$2"
+    printf "ready\n" > "$3"
+    exec sleep 30
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$state/.wake-queue.lock.steal" "$dir/steal.ready" &
+  steal_holder=$!
+  attempt=0
+  while [ "$attempt" -lt 100 ] && [ ! -s "$dir/steal.ready" ]; do
+    sleep 0.05
+    attempt=$((attempt + 1))
+  done
+  [ -s "$dir/steal.ready" ] \
+    || { kill "$steal_holder" 2>/dev/null || true; fail "the fixture never took the recovery slot"; }
+  steal_pid=$(cat "$state/.wake-queue.lock.steal/pid" 2>/dev/null || true)
+  [ -n "$steal_pid" ] \
+    || { kill "$steal_holder" 2>/dev/null || true; fail "the recovery slot recorded no owner pid"; }
+
+  FM_STATE_OVERRIDE="$state" FM_STATUS_PRESENTATION_LOCK_TIMEOUT=1 \
+    "$DRAIN" > "$out" 2> "$err" \
+    || { kill "$steal_holder" 2>/dev/null || true; fail "a contended queue lock failed the whole drain"; }
+  grep -F "WAKE DRAIN SKIPPED: queue lock remains held by live pid $steal_pid after" "$out" >/dev/null \
+    || { kill "$steal_holder" 2>/dev/null || true; fail "the skip advisory did not name the live recovery holder"; }
+  if grep -F "WAKE DRAIN SKIPPED: queue lock remains held by live pid $dead_pid" "$out" >/dev/null; then
+    kill "$steal_holder" 2>/dev/null || true
+    fail "the skip advisory named the dead pid as a live holder"
+  fi
+  if grep -F 'queue lock could not be acquired safely' "$err" >/dev/null; then
+    kill "$steal_holder" 2>/dev/null || true
+    fail "a deadline with no named live holder was reported as an unsafe queue lock"
+  fi
+  grep "$(printf '\tsignal\t')" "$state/.wake-queue" >/dev/null \
+    || { kill "$steal_holder" 2>/dev/null || true; fail "the skipped round dropped the durable wake"; }
+
+  # The recoverer can also be between removing the stale owner and creating its
+  # own: with the primary gone, its live hold on the recovery slot is still
+  # contention, not an un-creatable lock path.
+  rm -f "$state/.wake-queue.lock"
+  FM_STATE_OVERRIDE="$state" FM_STATUS_PRESENTATION_LOCK_TIMEOUT=1 \
+    "$DRAIN" > "$out" 2> "$err" \
+    || { kill "$steal_holder" 2>/dev/null || true; fail "an absent queue lock with a live recovery failed the whole drain"; }
+  grep -F "WAKE DRAIN SKIPPED: queue lock remains held by live pid $steal_pid after" "$out" >/dev/null \
+    || { kill "$steal_holder" 2>/dev/null || true; fail "an absent queue lock with a live recovery did not skip the round"; }
+  if grep -F 'queue lock could not be acquired safely' "$err" >/dev/null; then
+    kill "$steal_holder" 2>/dev/null || true
+    fail "an absent queue lock with a live recovery was reported as an unsafe queue lock"
+  fi
+  grep "$(printf '\tsignal\t')" "$state/.wake-queue" >/dev/null \
+    || { kill "$steal_holder" 2>/dev/null || true; fail "the absent-lock skipped round dropped the durable wake"; }
+
+  kill "$steal_holder" 2>/dev/null || true
+  wait "$steal_holder" 2>/dev/null || true
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" 2> "$err" \
+    || fail "the drain after contention cleared failed"
+  grep "$(printf '\tsignal\t')" "$out" >/dev/null \
+    || fail "the drain after contention cleared lost the wake"
+  pass "a queue-lock deadline without a named live holder is contention, not an unsafe lock"
+}
+
 # Drain-time historical annotation staleness: a turn-ended-only wake row must
 # not present an already-announced status line as a new update, while a status
 # file with unannounced bytes keeps its annotation and a direct status row is
@@ -1912,6 +2014,7 @@ test_subshell_lock_ownership_without_bashpid
 test_bounded_lock_handoff_after_contention
 test_live_presentation_holder_is_deadlined_without_weakening_ack
 test_malformed_presentation_lock_reports_acquire_failure
+test_queue_lock_deadline_without_a_named_holder_is_contention
 test_secondmate_foreign_queue_stall_tracks_progress_and_alerts_once
 test_secondmate_declared_pause_rows_do_not_feed_stall_escalation
 test_secondmate_reprovisioned_queue_starts_a_fresh_interval

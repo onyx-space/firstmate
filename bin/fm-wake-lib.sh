@@ -1240,18 +1240,58 @@ _fm_lock_acquire_wait_handoff() {  # <lockdir> <caller-pid> [seconds] [caller-id
   trap - TERM INT
 }
 
+# fm_lock_live_holder_pid <lockdir>
+#
+# Print the pid of a live process holding <lockdir> or its recovery slot and
+# return 0; print nothing and return 1 when no live holder can be named. The
+# owner record alone is not enough: a killed holder leaves its pid behind, and a
+# recoverer that has taken "$lockdir.steal" is live contention even while the
+# owner record is stale or the lock is briefly absent. Each candidate is checked
+# for liveness - and against the recorded identity, so a recycled pid is never
+# reported as a live holder. Only the lock and its immediate recovery slot are
+# named; naming a live holder needs no deeper walk.
+fm_lock_live_holder_pid() {
+  local lockdir=$1 slot pid
+  for slot in "$lockdir" "$lockdir.steal"; do
+    pid=$(cat "$slot/pid" 2>/dev/null || true)
+    case "$pid" in
+      ''|*[!0-9]*|0) continue ;;
+    esac
+    if fm_pid_alive "$pid" && ! fm_lock_owner_recycled "$slot" "$pid"; then
+      printf '%s\n' "$pid"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # fm_lock_acquire_wait_bounded <lockdir> <positive-seconds>
 #
 # Bounded acquire variant. It preserves the ordinary wait/reclaim behavior
 # until fm-timeout-lib.sh's hard deadline, returns 124 when a live holder still
-# owns the lock, and leaves FM_LOCK_HELD_PID naming that holder.
-# Use it where a caller must refuse rather than block AND handle the refusal
-# itself: wake presentation, the guarded remote link clear, and the away-record
-# lock, whose contracts return a reconciliation refusal instead of wedging an
-# unattended close. Mutation-critical callers that just need a bounded wait use
-# fm_lock_acquire_wait, which refuses loudly on its own.
+# owns the lock, and leaves FM_LOCK_HELD_PID naming that holder where one could
+# be identified. Use it where a caller must refuse rather than block AND handle
+# the refusal itself: wake presentation, the guarded remote link clear, and the
+# away-record lock, whose contracts return a reconciliation refusal instead of
+# wedging an unattended close. Mutation-critical callers that just need a
+# bounded wait use fm_lock_acquire_wait, which refuses loudly on its own.
+#
+# The refusal verdict is what the caller acts on, so a hit deadline is
+# classified from evidence that survives a release window rather than from one
+# read of the holder record: a holder may release between the failed attempt and
+# any read of that record, and reading the empty result as an unsafe lock turned
+# ordinary contention into a hard refusal. A hit deadline therefore re-probes to
+# its own ownership over a bounded settle window and reports 124 whenever a live
+# holder can be named - the owner symlink, a directory-shaped owner, or a live
+# process holding the recovery slot while the owner record is stale or briefly
+# absent. A dead pid is never named as a live holder, so that refusal keeps the
+# caller's unnamed-contention wording. The acquire failure is reported only for
+# a present path that cannot be a firstmate lock at all, or a path absent across
+# the whole window that still could not be created. The window is bounded at 10
+# probes of 0.1s; only the refusal path pays it, and a live holder is reported
+# on the first probe.
 fm_lock_acquire_wait_bounded() {
-  local lockdir=$1 seconds=$2 caller_pid rc owner_pid caller_identity
+  local lockdir=$1 seconds=$2 caller_pid rc owner_pid caller_identity probe
   case "$seconds" in ''|*[!0-9]*|0) return 2 ;; esac
   _fm_wake_require_timeout || return 1
   if fm_lock_try_acquire "$lockdir"; then
@@ -1294,18 +1334,37 @@ fm_lock_acquire_wait_bounded() {
     return 0
   fi
   if [ "$rc" -eq 124 ]; then
-    owner_pid=$(cat "$lockdir/pid" 2>/dev/null || true)
-    case "$owner_pid" in
-      ''|*[!0-9]*|0) ;;
-      *)
-        if [ "$owner_pid" -gt 0 ] 2>/dev/null && fm_pid_alive "$owner_pid"; then
-          FM_LOCK_HELD_PID=$owner_pid
-          return 124
-        fi
-        ;;
-    esac
+    probe=10
+    while :; do
+      if fm_lock_try_acquire "$lockdir"; then
+        return 0
+      fi
+      owner_pid=$(fm_lock_live_holder_pid "$lockdir" || true)
+      if [ -n "$owner_pid" ]; then
+        FM_LOCK_HELD_PID=$owner_pid
+        return 124
+      fi
+      if [ -e "$lockdir" ] && [ ! -L "$lockdir" ] && [ ! -d "$lockdir" ]; then
+        # A firstmate lock is the owner symlink or its legacy directory, so a
+        # present path that is neither can never become one here: that is the
+        # shape the acquire failure is for.
+        # shellcheck disable=SC2034 # Output read by callers after bounded acquisition.
+        FM_LOCK_HELD_PID=
+        return 1
+      fi
+      probe=$((probe - 1))
+      [ "$probe" -gt 0 ] || break
+      sleep 0.1
+    done
     # shellcheck disable=SC2034 # Output read by callers after bounded acquisition.
     FM_LOCK_HELD_PID=
+    if [ -e "$lockdir" ] || [ -L "$lockdir" ]; then
+      # A lock-shaped path still present without a nameable live holder is
+      # ordinary contention or recovery, not an un-creatable lock path.
+      return 124
+    fi
+    # Absent across the whole window and still not ours to take: the lock
+    # cannot be created here at all, which is never ordinary contention.
     return 1
   fi
   return "$rc"
