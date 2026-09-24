@@ -1,0 +1,10 @@
+$ bin/fm-herdr-session-cleanup.sh --candidate-ready        # no id
+usage: fm-herdr-session-cleanup.sh --candidate-ready <task-id> [--ignore-focus] [--pending-meta]
+exit=2
+
+$ bin/fm-herdr-session-cleanup.sh --candidate-ready --bogus x  # unknown flag
+fm-herdr-session-cleanup.sh: unknown flag --bogus
+exit=2
+
+$ bin/fm-herdr-session-cleanup.sh --candidate-ready task-x1  # no such candidate
+exit=1

@@ -1,0 +1,14 @@
+fm-crew-state.sh verdict                                     class       actively-working?
+------------------------------------------------------------ ----------- ------------------
+ok   state: working · source: pane · harness busy (native)  busy        yes
+ok   state: working · source: run-step · validating (running) advancing   yes
+ok   state: working · source: run-step · validating (fixing) advancing   yes
+ok   state: working · source: run-step · ci running         monitoring  no
+ok   state: working · source: run-step · run active         monitoring  no
+ok   state: parked · source: run-step · parked at review gate monitoring  no
+ok   state: done · source: run-step · run passed: PR held for merge landed      no
+ok   state: paused · source: status-log · awaiting upstream paused      no
+ok   state: working · source: run-step · validating (running) · no recent step activity none        no
+ok   state: failed · source: run-step · run failed          none        no
+ok   state: unknown · source: none · worktree gone (torn down?) none        no
+mismatches=0

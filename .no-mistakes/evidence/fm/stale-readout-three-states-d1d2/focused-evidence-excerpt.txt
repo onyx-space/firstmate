@@ -1,0 +1,31 @@
+# Intent-targeted no-mistakes Test — focused evidence excerpts
+# runner: bin/fm-test-run.sh (6 suites, no --all)
+
+## Suite result
+FM_TEST_SUMMARY total=6 failed=0 skipped_gate=0 duration_ms=1400187
+FM_TEST_SUMMARY_FAMILY family=backend-dispatch count=2 duration_ms=57029 failed=0
+FM_TEST_SUMMARY_FAMILY family=pr-forge count=1 duration_ms=381312 failed=0
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=18345 failed=0
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=2 duration_ms=999809 failed=0
+
+## D1 teardown deferral (real bin/fm-teardown.sh + real bin/fm-herdr-session-cleanup.sh)
+ok - herdr projection teardown retires its journal only after confirming the exact recorded pane is gone
+ok - herdr projection teardown retains every record when post-close presence is unknown
+ok - herdr projection teardown surfaces failed focus restoration without turning confirmed cleanup into a hard failure
+ok - herdr projection teardown defers a focus-blocked close only when the session-start sweep then takes it, instead of orphaning a landed task
+ok - herdr projection teardown keeps every record when the focus-blocked pane is agent-free but not a clean idle shell
+ok - herdr projection teardown keeps every record when the focus-blocked pane still holds a live agent
+
+## Round-1 plan-refusal-reason fix (real bin/backends/herdr.sh)
+ok - herdr presentation cleanup: a plan refusal carries the focus checkpoint's own reason to the caller
+
+## candidate-ready read-only gate (real bin/fm-herdr-session-cleanup.sh)
+ok - the sweep treats the registered post-agent-exit reading as agent-free, with the idle shell proof
+ok - a registered post-agent-exit reading still needs the lone idle childless shell proof
+ok - candidate-ready answers only for the exact licensed resumable candidate
+
+## three-state readout (real bin/fm-classify-lib.sh)
+ok - crew_stale_class: busy, the quiet external waits (advancing/monitoring/paused), landed, and the dead/no-progress cases each read as their own state
+
+## no-progress marker producer (real bin/fm-crew-state.sh)
+ok - a foreign quiet run cannot mark this crew, its own quiet run still does
