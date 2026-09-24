@@ -3183,7 +3183,35 @@ test_nonterminal_stale_pause_transitions_reclassify_unchanged_hash() {
 
   printf 'working: upstream landed, resuming\n' > "$state/transition.status"
   sig=$(seen_sig "$state/transition.status"); printf '%s' "$sig" > "$state/.seen-transition_status"
+  # The pipeline is now doing this crew's work (an actively advancing run step), so
+  # the same unchanged hash reclassifies out of the DECLARED pause into the DERIVED
+  # external wait: the class is re-recorded in the flag and the wedge timer stays
+  # unarmed, because a run still advancing is a wait, not a wedge (2026-09-24 D2).
   FM_FAKE_CREW_STATE='state: working · source: run-step · validating (running)'
+  : > "$out"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  i=0
+  while [ "$i" -lt 100 ] && kill -0 "$pid" 2>/dev/null; do
+    [ "$(cat "$state/.paused-$key" 2>/dev/null || true)" = waiting ] && break
+    sleep 0.1
+    i=$((i + 1))
+  done
+  kill -0 "$pid" 2>/dev/null || { reap "$pid"; fail "a stale hash that left pause was not reclassified as a derived wait: $(cat "$out")"; }
+  [ "$(cat "$state/.paused-$key" 2>/dev/null || true)" = waiting ] || { reap "$pid"; fail "unchanged stale hash did not reclassify from the declared pause to the derived wait: $(cat "$out")"; }
+  [ ! -e "$state/.stale-since-$key" ] || { reap "$pid"; fail "a derived wait retained the declared pause's wedge timer"; }
+  [ -e "$state/.wait-since-$key" ] || { reap "$pid"; fail "the derived wait recorded no cadence anchor"; }
+  wait_poll_cycle "$state" "$pid" || { reap "$pid"; fail "a stale hash that left pause was not reclassified as a derived wait: $(cat "$out")"; }
+  reap "$pid"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the intentional derived-wait watcher stop"
+
+  # And the hash reclassifies again when the pane's own harness reports the agent
+  # busy: only that arms the wedge timer, which is what the declared pause left behind.
+  printf 'working: mid-turn on the resumed work\n' > "$state/transition.status"
+  sig=$(seen_sig "$state/transition.status"); printf '%s' "$sig" > "$state/.seen-transition_status"
+  FM_FAKE_CREW_STATE='state: working · source: pane · harness busy (native)'
   : > "$out"
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
@@ -3196,12 +3224,12 @@ test_nonterminal_stale_pause_transitions_reclassify_unchanged_hash() {
     i=$((i + 1))
   done
   kill -0 "$pid" 2>/dev/null || { reap "$pid"; fail "a stale hash that left pause did not resume wedge tracking: $(cat "$out")"; }
-  [ ! -e "$state/.paused-$key" ] || { reap "$pid"; fail "unchanged stale hash retained paused mode after resume"; }
-  [ -s "$state/.stale-since-$key" ] || { reap "$pid"; fail "unchanged stale hash did not restart wedge tracking after resume"; }
+  [ ! -e "$state/.paused-$key" ] || { reap "$pid"; fail "unchanged stale hash retained wait mode after the agent went busy"; }
+  [ -s "$state/.stale-since-$key" ] || { reap "$pid"; fail "unchanged stale hash did not restart wedge tracking after the agent went busy"; }
   wait_poll_cycle "$state" "$pid" || { reap "$pid"; fail "a stale hash that left pause did not resume wedge tracking: $(cat "$out")"; }
   reap "$pid"
   unset FM_FAKE_CREW_STATE
-  pass "unchanged stale hashes reclassify when a crew enters or leaves pause"
+  pass "unchanged stale hashes reclassify as a crew enters a declared pause, a derived wait, or a busy pane"
 }
 
 test_nonterminal_paused_rechecks_authoritative_state() {
@@ -3299,8 +3327,10 @@ test_wedge_escalation_marks_demand_deep_inspection_after_threshold() {
   pane_hash=$(hash_text "idle building output")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
-  # The crew's pipeline is actively running: a static pane is normal (waiting on CI).
-  export FM_FAKE_CREW_STATE='state: working · source: run-step · validating (running)'
+  # The harness itself reports the agent busy: that is the state that arms the
+  # wedge timer under the three-state readout (a run step merely advancing or
+  # monitoring is a quiet external wait and takes the pause cadence instead).
+  export FM_FAKE_CREW_STATE='state: working · source: pane · harness busy (native)'
 
   # Priming round: first sighting of this stale hash classifies and absorbs it
   # (establishing .stale-$key and starting the wedge timer) without going
