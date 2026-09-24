@@ -2,15 +2,17 @@
 # Firstmate watcher.
 # Classifies supervision wakes in bash. In normal mode it absorbs benign wakes
 # and keeps blocking; it queues and exits only for actionable wakes.
-# The no-verb signal and stale path is absorb-only-on-positive-evidence: a wake
-# is absorbed only when the crew shows it is still working through an actively
-# running no-mistakes step or a backend busy signal. A home that opts in with
+# The no-verb signal path is absorb-only-on-positive-evidence: a wake is absorbed
+# only when the crew shows it is still working through an actively running
+# no-mistakes step or a backend busy signal. A home that opts in with
 # config/turnend-churn-absorb lets a bare turn-end also use bounded pane churn
-# since the previous poll. Every other no-verb wake surfaces, so a crew
-# that finishes (or stops and waits) is never silently swallowed. A declared wait,
-# either a paused: external wait or a verified captain-held transfer, is the
-# separate idle absorb case and re-surfaces only on its long bounded cadence,
-# although its initial no-verb status signal still surfaces in normal mode.
+# since the previous poll. The stale path instead reads the crew's current state
+# through the three-state readout and its three absorb classes (see the stale:
+# reason below). Every other no-verb wake surfaces, so a crew that finishes (or
+# stops and waits) is never silently swallowed. A declared wait, either a paused:
+# external wait or a verified captain-held transfer, re-surfaces only on its long
+# bounded cadence, although its initial no-verb status signal still surfaces in
+# normal mode.
 # That cadence is hours long and condition-aware: a paused: line naming
 # `until <UTC ISO 8601>` is rechecked when that time passes, but a declared time
 # beyond FM_PAUSE_RESURFACE_SECS cannot extend the ordinary recheck cadence, and
@@ -21,16 +23,25 @@
 #   signal: <file>...      status/turn-end signals, surfaced when a listed status
 #                          span has a captain-relevant event OR a no-verb signal lacks
 #                          positive execution evidence, unless afk is active
-#   stale: <window>        a provably-working stale is ALWAYS absorbed (with a wedge
-#                          timer) regardless of what the status log says - an active
-#                          run-step or busy pane outranks even a captain-relevant log
-#                          line, since the crew's own log gets no new entry once
-#                          firstmate hands it to a no-mistakes validation. A declared
-#                          external-wait pause or verified captain-held transfer is
-#                          absorbed instead with its own long re-surface cadence,
+#   stale: <window>        the silence is read through the three-state readout,
+#                          which yields three absorb classes. (1) The crew working
+#                          now - a busy pane, or an actively running run-step when
+#                          the terminal-status override reads it as actively working
+#                          to supersede a captain-relevant log line - is absorbed
+#                          with a wedge timer regardless of what the status log says,
+#                          because the crew's own log gets no new entry once
+#                          firstmate hands it to a no-mistakes validation. (2) A
+#                          declared external-wait pause or verified captain-held
+#                          transfer is absorbed with its own long re-surface cadence,
 #                          never as a wedge, and that recheck reason names which
-#                          human the wait is on. Only when neither absorb class
-#                          applies does the log's last line decide:
+#                          human the wait is on. (3) A quiet external wait the
+#                          readout DERIVES with no declaration - an actively running
+#                          run-step on the non-terminal path, the pipeline's ci
+#                          monitor, a run parked at a gate, or a delivery that
+#                          already landed - is absorbed on the bounded
+#                          FM_PAUSE_RESURFACE_SECS cadence, never as a wedge, with a
+#                          reason naming what is being waited on. Only when no
+#                          absorb class applies does the log's last line decide:
 #                          terminal (captain-relevant) or non-terminal (no verb),
 #                          both surfaced at once. A provably-working stale past the
 #                          wedge threshold also surfaces, with an "escalation N"
@@ -234,15 +245,17 @@ TURNEND_CHURN_ABSORB_SECS=${FM_TURNEND_CHURN_ABSORB_SECS:-900}  # longest a task
 # than wake firstmate's LLM for each, this watcher classifies every wake in bash
 # and ABSORBS the benign majority - it advances the suppression marker, logs to a
 # debug log, and keeps blocking WITHOUT enqueuing or exiting. The no-verb signal
-# / stale path is absorb-only-on-positive-evidence. The shared proof is an actively
+# path is absorb-only-on-positive-evidence: its shared proof is an actively
 # running no-mistakes step or a busy pane via crew_is_provably_working over
-# fm-crew-state.sh; where config/turnend-churn-absorb opts in, a bare turn-end alone
-# may also use bounded pane churn since the previous poll.
+# fm-crew-state.sh; where config/turnend-churn-absorb opts in, a bare turn-end
+# alone may also use bounded pane churn since the previous poll. The stale path
+# reads that same state through crew_stale_class's three-state readout instead,
+# whose three absorb classes the stale: reason below owns.
 # Every other crew that stopped its turn is SURFACED, so a finish reported
 # only through interactive pane menus (no done: status) is never swallowed. An
 # ACTIONABLE wake (a captain-relevant signal, a no-verb signal without either
-# eligible proof, any check, a stale pane whose crew is not provably working, a
-# provably-working stale past the threshold, or anything unknown) is written to
+# eligible proof, any check, a stale pane no absorb class covers, a busy or
+# advancing stale past the wedge threshold, or anything unknown) is written to
 # the durable queue and exits. That wakes the LLM through the background-task
 # completion. The same classifier
 # (fm-classify-lib.sh) backs the away-mode daemon; while state/.afk exists the
