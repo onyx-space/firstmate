@@ -41,7 +41,7 @@
 #     drain and acknowledges it only after routing completes.
 #   - Fail-safe-to-escalate: any wake the classifier cannot confidently mark
 #     routine is escalated.
-#   - Bounded wedge latency: a stale pane without a declared wait is escalated
+#   - Bounded wedge latency: a stale pane without a wait behind it is escalated
 #     only after it has been idle for STALE_ESCALATE_SECS
 #     (configurable), rechecked once. A wedged crewmate is therefore detected
 #     within STALE_ESCALATE_SECS + a tick, never lost. A declared wait - either a
@@ -49,7 +49,13 @@
 #     fm-classify-lib.sh's combined predicate - instead gets its own longer
 #     PAUSE_RESURFACE_SECS recheck, never a wedge escalation, whether its pane
 #     reads idle or busy; only a status append that stops declaring the wait
-#     ends that routing. A captain-held transfer is not rechecked at all while
+#     ends that routing. A wait the same readout DERIVES with no declaration (the
+#     crew's own run still advancing, the pipeline's ci monitor or a gate, or work
+#     that already landed) takes that same bounded recheck, re-derived from the
+#     crew's own state when each window comes due and aged against this daemon's
+#     own recorded marker; a busy pane, a run step with no progress behind it,
+#     and an unreadable read all keep the ordinary wedge aging.
+#     A captain-held transfer is not rechecked at all while
 #     the away-posture record (state/.afk-contract) exists: nobody is there to
 #     answer it, and the return brief lists it.
 #     Crewmates are autonomous, so a delayed stale response does not stall a
@@ -97,7 +103,9 @@
 #                                   as a possible wedge (default 240)
 #          FM_PAUSE_RESURFACE_SECS  seconds a declared wait stays declared,
 #                                   idle or busy, before it re-surfaces as a
-#                                   recheck (default 14400, four hours); an
+#                                   recheck (default 14400, four hours); a wait
+#                                   the readout derives re-derives and
+#                                   re-surfaces on this same cadence; an
 #                                   `until` time cannot extend this bound, and a
 #                                   captain-held transfer is never rechecked
 #                                   while the away-posture record exists

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Shared wake classifier: the common source of truth for captain-relevant status
-# tests, declared-external-wait vocabulary, and the working/paused absorb
-# classification that makes no-verb signal and stale-pane wakes safe to absorb.
+# tests, declared-external-wait vocabulary, the working/paused absorb
+# classification for no-verb signal wakes, and the three-state stale readout that
+# makes a stale-pane wake safe to absorb, wait out, or surface.
 # Sourced by BOTH the always-on watcher
 # (bin/fm-watch.sh) and the away-mode daemon (bin/fm-supervise-daemon.sh) so the
 # overlapping triage policy lives in one place instead of two copies that can
@@ -2228,21 +2229,19 @@ crew_absorb_class() {  # <id>
 
 # 0 if crew <id> shows POSITIVE evidence it is still working (crew_absorb_class
 # reports `working`). This is the "provably working" predicate at the heart of
-# absorb-only-on-positive-evidence. This is the sole proof for stale wakes and the
-# shared authoritative proof for no-verb signals. Where a home opts in, fm-watch.sh
+# absorb-only-on-positive-evidence for no-verb signal wakes; the stale-pane decision
+# uses the three-state readout below instead. Where a home opts in, fm-watch.sh
 # may additionally absorb a bare turn-end on bounded pane churn, while every other
 # failed verdict surfaces
-# because the crew may be done, waiting on a decision, or wedged. For stale panes
-# it is checked before trusting the status log so a pre-validation captain-relevant
-# line does not override an active run. See crew_absorb_class for the exact
-# working/paused/none decision.
+# because the crew may be done, waiting on a decision, or wedged. See
+# crew_absorb_class for the exact working/paused/none decision.
 crew_is_provably_working() {  # <id>
   [ "$(crew_absorb_class "$1")" = working ]
 }
 
 # 0 if crew <id>'s authoritative current state is a declared external-wait pause.
-# The stale path absorbs such a crew (on a long re-surface cadence) instead of
-# escalating a possible wedge.
+# The stale path reads that same declaration through crew_stale_class's `paused`
+# token instead, absorbing it on a long re-surface cadence rather than a wedge.
 crew_is_paused() {  # <id>
   [ "$(crew_absorb_class "$1")" = paused ]
 }
