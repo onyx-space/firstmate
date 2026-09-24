@@ -1,0 +1,113 @@
+### The real pi pane under test (real harness render, real tmux capture)
+--- window: table ---
+  base   identity=pi	idle    cursor-mode=empty     cursorless(herdr-shape)=unknown
+  target identity=pi	idle    cursor-mode=empty     cursorless(herdr-shape)=empty
+     1	
+     2	 pi v0.87.0
+     3	 escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more
+     4	 Press ctrl+o to show full startup help and loaded resources.
+     5	
+     6	 Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.
+     7	
+     8	[Themes]
+     9	  fleet-accent
+    10	
+    11	
+    12	 show me the report
+    13	
+    14	
+    15	 Here is the build report:
+    16	
+    17	 ┌────────┬────────┬──────┐
+    18	 │ Target │ Status │ Time │
+    19	 ├────────┼────────┼──────┤
+    20	 │ core   │ ok     │ 1.2s │
+    21	 ├────────┼────────┼──────┤
+    22	 │ ui     │ ok     │ 3.4s │
+    23	 ├────────┼────────┼──────┤
+    24	 │ docs   │ ok     │ 0.4s │
+    25	 └────────┴────────┴──────┘
+    26	
+    27	 Warning: tmux extended-keys is off. Modified Enter keys may not work. Add `set -g extended-keys on` to ~/.tmux.conf and restart tmux.
+    28	
+    29	
+    30	
+    31	
+    32	
+    33	
+    34	
+    35	
+    36	
+    37	
+    38	
+    39	
+    40	
+    41	
+    42	
+    43	
+    44	
+    45	
+    46	────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    47	
+    48	────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    49	/tmp
+    50	↑100 ↓50 0.0%/1.0M (auto)                                                                                                                                                          deepseek-flash • high
+
+### Variant 1: control, real pi idle with NO box-drawing row in the transcript
+  base   identity=pi	idle    cursor-mode=empty     cursorless(herdr-shape)=empty
+  target identity=pi	idle    cursor-mode=empty     cursorless(herdr-shape)=empty
+
+### Variant 2: real GFM markdown table rendered above the idle pi composer (the reported bug)
+  base   identity=pi	idle    cursor-mode=empty     cursorless(herdr-shape)=unknown
+  target identity=pi	idle    cursor-mode=empty     cursorless(herdr-shape)=empty
+
+### Variant 3: a single stray border row (code block) above the idle pi composer
+  base   identity=pi	idle    cursor-mode=unknown   cursorless(herdr-shape)=unknown
+  target identity=pi	idle    cursor-mode=unknown   cursorless(herdr-shape)=empty
+
+### Variant 4: real pi idle + GFM table above + real unsubmitted text typed into the composer
+  base   identity=pi	idle    cursor-mode=pending   cursorless(herdr-shape)=unknown
+  target identity=pi	idle    cursor-mode=pending   cursorless(herdr-shape)=pending
+
+### Real tmux shell pane: blank row between two rules, NO pi process (strict posture)
+  base   identity=probe-absent cursorless=unknown
+  target identity=probe-absent cursorless=unknown
+
+### Guard matrix over the REAL pi capture (production classifier, base vs target)
+--- base ---
+  table above idle pi pair .................. unknown
+  table above + typed pending ............... unknown
+  identity pi working (non-idle) ............ unknown
+  identity pi blocked ....................... unknown
+  identity zsh (non-pi) ..................... unknown
+  identity probe-absent ..................... unknown
+  poison box BELOW the pi pair (adversarial)  unknown
+  poison box INSIDE the pair ................ unknown
+  pair stretched past PI_MAX_LINES .......... unknown
+--- target ---
+  table above idle pi pair .................. empty
+  table above + typed pending ............... pending
+  identity pi working (non-idle) ............ unknown
+  identity pi blocked ....................... unknown
+  identity zsh (non-pi) ..................... unknown
+  identity probe-absent ..................... unknown
+  poison box BELOW the pi pair (adversarial)  unknown
+  poison box INSIDE the pair ................ unknown
+  pair stretched past PI_MAX_LINES .......... unknown
+
+### Counterfactual regression check (the added test) at each commit
+--- target commit: bash tests/fm-composer-lib.test.sh ---
+ok - fm_composer_classify_screen: a table above a valid empty pi pair no longer hides the composer
+ok - fm_composer_classify_screen: an incomplete box below the pi pair still refuses
+exit=0
+--- base commit library + target tests ---
+not ok - closed markdown table above idle pi pair: expected empty, got 'unknown'
+exit=1
+
+### Targeted existing suites (composer surface)
+  fm-composer-lib.test.sh          exit=0 ok=36 not-ok=0
+  fm-composer-ghost.test.sh        exit=0 ok=33 not-ok=0
+base   table above, identity=pi\tdone -> unknown
+base   table above, identity=pi\t      -> unknown
+target table above, identity=pi\tdone -> empty
+target table above, identity=pi\t      -> unknown

@@ -1,0 +1,253 @@
+<!doctype html><html><head><meta charset="utf-8"><title>composer table vs pi pair — live validation</title>
+<style>
+ body{font:14px/1.5 system-ui,sans-serif;margin:24px;background:#0e1116;color:#e6edf3}
+ h1{font-size:19px} h2{font-size:15px;margin:0 0 4px}
+ section{border:1px solid #30363d;border-radius:8px;padding:14px;margin:0 0 18px;background:#161b22}
+ pre.pane{font:12px/1.25 "DejaVu Sans Mono",monospace;background:#0b0f14;color:#c9d1d9;padding:10px;border-radius:6px;overflow:auto;white-space:pre}
+ .note{color:#8b949e;margin:0 0 8px} table{border-collapse:collapse;font-size:13px}
+ th,td{border:1px solid #30363d;padding:4px 10px;text-align:left} .good{color:#3fb950;font-weight:700} .bad{color:#f85149;font-weight:700}
+</style></head><body>
+<h1>composer classifier: markdown table above an idle pi composer — live validation</h1>
+<p class="note">Each pane is a real <code>pi</code> harness launched in an isolated tmux server (real TUI render, real tmux capture, real pi foreground-process identity). The two columns are the same capture classified by the base commit library and the target commit library.</p>
+
+    <section>
+      <h2>Real pi v0.87.0 idle pane — real GFM markdown table above the composer (the reported failure)</h2>
+      <p class="note">Real harness render, real tmux capture, real foreground-process identity probe (pi\tidle). Only the shared classifier differs between columns.</p>
+      <pre class="pane">
+ pi v0.87.0
+ escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more
+ Press ctrl+o to show full startup help and loaded resources.
+
+ Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.
+
+[Themes]
+  fleet-accent
+
+
+ show me the report
+
+
+ Here is the build report:
+
+ ┌────────┬────────┬──────┐
+ │ Target │ Status │ Time │
+ ├────────┼────────┼──────┤
+ │ core   │ ok     │ 1.2s │
+ ├────────┼────────┼──────┤
+ │ ui     │ ok     │ 3.4s │
+ ├────────┼────────┼──────┤
+ │ docs   │ ok     │ 0.4s │
+ └────────┴────────┴──────┘
+
+ Warning: tmux extended-keys is off. Modified Enter keys may not work. Add `set -g extended-keys on` to ~/.tmux.conf and restart tmux.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+/tmp
+↑100 ↓50 0.0%/1.0M (auto)                                                                                                                                                          deepseek-flash • high
+</pre>
+      <table>
+        <tr><th>library</th><th>cursor-mode (tmux)</th><th>cursorless (herdr/cmux/zellij/orca shape)</th></tr>
+        <tr><td>base </td><td>empty</td><td class="bad">unknown</td></tr>
+        <tr><td>target </td><td>empty</td><td class="good">empty</td></tr>
+      </table>
+    </section>
+    <section>
+      <h2>Real pi idle pane — NO box-drawing row in the transcript (control)</h2>
+      <p class="note">Same control the report describes: remove the offending row and the verdict reads empty.</p>
+      <pre class="pane">
+ pi v0.87.0
+ escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more
+ Press ctrl+o to show full startup help and loaded resources.
+
+ Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.
+
+[Themes]
+  fleet-accent
+
+
+ show me the report
+
+
+ All checks passed. Nothing else to report.
+
+ Warning: tmux extended-keys is off. Modified Enter keys may not work. Add `set -g extended-keys on` to ~/.tmux.conf and restart tmux.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+/tmp
+↑100 ↓50 0.0%/1.0M (auto)                                                                                                                                                          deepseek-flash • high
+</pre>
+      <table>
+        <tr><th>library</th><th>cursor-mode (tmux)</th><th>cursorless (herdr/cmux/zellij/orca shape)</th></tr>
+        <tr><td>base </td><td>empty</td><td class="bad">empty</td></tr>
+        <tr><td>target </td><td>empty</td><td class="good">empty</td></tr>
+      </table>
+    </section>
+    <section>
+      <h2>Real pi idle pane — a single stray border row above the composer</h2>
+      <p class="note"></p>
+      <pre class="pane">
+ pi v0.87.0
+ escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more
+ Press ctrl+o to show full startup help and loaded resources.
+
+ Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.
+
+[Themes]
+  fleet-accent
+
+
+ show me the report
+
+
+ The renderer emitted this border row:
+
+ ```
+   ┌─────┬─────┐
+ ```
+
+ That is all.
+
+ Warning: tmux extended-keys is off. Modified Enter keys may not work. Add `set -g extended-keys on` to ~/.tmux.conf and restart tmux.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+/tmp
+↑100 ↓50 0.0%/1.0M (auto)                                                                                                                                                          deepseek-flash • high
+</pre>
+      <table>
+        <tr><th>library</th><th>cursor-mode (tmux)</th><th>cursorless (herdr/cmux/zellij/orca shape)</th></tr>
+        <tr><td>base </td><td>unknown</td><td class="bad">unknown</td></tr>
+        <tr><td>target </td><td>unknown</td><td class="good">empty</td></tr>
+      </table>
+    </section>
+    <section>
+      <h2>Real pi idle pane — table above + real unsubmitted text typed into the composer</h2>
+      <p class="note">Proven input stays pending; the change never downgrades unknown to empty.</p>
+      <pre class="pane">
+ pi v0.87.0
+ escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more
+ Press ctrl+o to show full startup help and loaded resources.
+
+ Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.
+
+[Themes]
+  fleet-accent
+
+
+ show me the report
+
+
+ Here is the build report:
+
+ ┌────────┬────────┬──────┐
+ │ Target │ Status │ Time │
+ ├────────┼────────┼──────┤
+ │ core   │ ok     │ 1.2s │
+ ├────────┼────────┼──────┤
+ │ ui     │ ok     │ 3.4s │
+ ├────────┼────────┼──────┤
+ │ docs   │ ok     │ 0.4s │
+ └────────┴────────┴──────┘
+
+ Warning: tmux extended-keys is off. Modified Enter keys may not work. Add `set -g extended-keys on` to ~/.tmux.conf and restart tmux.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+please fix the ui target
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+/tmp
+↑100 ↓50 0.0%/1.0M (auto)                                                                                                                                                          deepseek-flash • high
+</pre>
+      <table>
+        <tr><th>library</th><th>cursor-mode (tmux)</th><th>cursorless (herdr/cmux/zellij/orca shape)</th></tr>
+        <tr><td>base </td><td>pending</td><td class="bad">unknown</td></tr>
+        <tr><td>target </td><td>pending</td><td class="good">pending</td></tr>
+      </table>
+    </section>
+</body></html>
