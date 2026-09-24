@@ -995,6 +995,57 @@ test_away_mode_escalation_drops_a_derived_wait() {
   pass "an away-mode escalation drops the derived wait it interrupted"
 }
 
+# The away posture's busy-turn safety net: a pane whose harness reads busy and
+# whose completed turn is past BUSY_TURN_MAX_SECS reaches the daemon as an enriched
+# `possible wedge` reason. A DERIVED quiet wait (run-step state) must not downgrade
+# that back into a bounded wait, or the hung-call shape gets an endless periodic
+# recheck instead of an escalation. The plain idle external wait still takes the
+# bounded cadence, and a busy pane ends a standing derived wait in housekeeping.
+test_away_mode_enriched_busy_turn_wedge_is_not_downgraded() {
+  local dir state win key out pane gen
+  dir=$(away_quiet_case away-busy-turn-wedge 'working: handed to the pipeline')
+  state="$dir/state"; win="sess:fm-quiet-w1"
+  key=$(printf '%s' quiet-w1 | tr ':/.' '___')
+  printf 'harness=pi\n' >> "$state/quiet-w1.meta"
+  export FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh"
+  export FM_FAKE_CREW_STATE='state: working · source: run-step · validating (running)'
+
+  # The fixture really is a quiet wait when the run-step reading is taken alone.
+  out=$(FM_STATE_OVERRIDE="$state" classify_stale "$win" "$state")
+  case "$out" in pause\|*) ;; *) fail "fixture: a run-step reading was not quiet-wait classified: $out" ;; esac
+
+  # The watcher's enriched busy-turn wedge must escalate, not be absorbed.
+  FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999 \
+    handle_wake "stale: $win (idle 4000s, possible wedge, escalation 1)" "$state"
+  grep -F "possible wedge" "$state/.subsuper-escalations" >/dev/null 2>&1 \
+    || fail "an enriched busy-turn wedge was swallowed instead of escalated: $(cat "$state/.subsuper-escalations" 2>/dev/null || true)"
+  [ ! -e "$state/.subsuper-paused-$key" ] || fail "an enriched busy-turn wedge was recorded as a bounded wait"
+  [ ! -e "$state/.subsuper-derivedwait-$key" ] || fail "an enriched busy-turn wedge recorded a derived wait"
+
+  # The plain idle external wait still records the bounded cadence, unescalated.
+  rm -f "$state/.subsuper-escalations"
+  FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999 handle_wake "stale: $win" "$state"
+  [ -e "$state/.subsuper-paused-$key" ] \
+    || fail "the plain idle external wait no longer recorded its bounded pause cadence"
+  [ -e "$state/.subsuper-derivedwait-$key" ] \
+    || fail "the plain idle external wait recorded no derived reason"
+  [ ! -s "$state/.subsuper-escalations" ] \
+    || fail "the plain idle external wait escalated instead of absorbing: $(cat "$state/.subsuper-escalations")"
+
+  # A busy pane ends a standing derived wait instead of re-surfacing it.
+  pane="$dir/pane.txt"; printf 'Working...\n' > "$pane"
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$state" quiet-w1)
+  "$ROOT/bin/fm-busy-event.sh" apply "$state" quiet-w1 busy --gen "$gen" --source pi-ext --event agent-start
+  printf '%s' "$(( $(date +%s) - 5000 ))" > "$state/.subsuper-paused-$key"
+  PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+    FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999 FM_PAUSE_RESURFACE_SECS=240 \
+    housekeeping "$state"
+  [ ! -e "$state/.subsuper-paused-$key" ] || fail "a busy pane left a standing derived wait in place"
+  [ ! -e "$state/.subsuper-derivedwait-$key" ] || fail "a busy pane left the derived reason in place"
+  unset FM_FAKE_CREW_STATE FM_CREW_STATE_BIN
+  pass "an enriched busy-turn wedge escalates in away mode, the idle external wait keeps its cadence, and a busy pane ends a standing derived wait"
+}
+
 # A DECLARED pause is unchanged by the derived-wait machinery: the same bounded
 # re-surface cadence as before, and no derived-reason sidecar is invented for it.
 test_away_mode_declared_pause_keeps_its_own_cadence() {
@@ -3040,6 +3091,7 @@ test_stale_terminal_escalates
 test_stale_actionable_wait_escalates_and_keeps_pause_cadence
 test_stale_quiet_external_wait_takes_pause_cadence_in_away_mode
 test_away_mode_escalation_drops_a_derived_wait
+test_away_mode_enriched_busy_turn_wedge_is_not_downgraded
 test_away_mode_declared_pause_keeps_its_own_cadence
 test_stale_undecidable_or_no_progress_still_ages_as_a_wedge_in_away_mode
 test_stale_paused_classifies_pause

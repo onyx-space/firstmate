@@ -1207,7 +1207,7 @@ housekeeping() {  # <state>
       printf '%s' "$derived_cls" > "$derived"
       stale_window_is_busy "$win" "$state"
       case "$?" in
-        2) clear_pause_tracking "$win" "$state" ;;
+        0|2) clear_pause_tracking "$win" "$state" ;;
         *)
           if [ "$derived_cls" = landed ]; then
             pause_reason="landed ${age}s (work already landed, rechecked on a long cadence; clean up the endpoint when it is no longer needed): $win"
@@ -1507,15 +1507,21 @@ handle_wake() {  # <reason> <state>
               # An enriched wedge reason carries the watcher's own escalation count
               # and its "do not re-absorb on the run-step/pane state alone" demand,
               # so it outranks this daemon's cheaper status-log absorption - EXCEPT
-              # under a current declared wait. A `pause` verdict is not run-step or
-              # pane state at all: it is the crew's own declaration that this pane
-              # waits by design, which is the one question the wedge timer cannot
-              # answer for itself. Overriding it escalated healthy declared waits
-              # once per STALE_ESCALATE_SECS for as long as the wait lasted.
-              # Housekeeping (2b) then owns the re-surface, so the wait is still
-              # bounded - by one recheck per PAUSE_RESURFACE_SECS instead.
+              # under a DECLARED wait: a paused:/captain-held line is the crew's own
+              # statement that this pane waits by design, the one question the wedge
+              # timer cannot answer for itself. A DERIVED quiet wait is run-step
+              # state, so a crossed busy-turn bound must not be downgraded into it -
+              # the busy reading is exactly the hung-call shape this bound exists for.
+              # Housekeeping (2b) then owns the declared wait's re-surface, so the
+              # wait is still bounded - by one recheck per PAUSE_RESURFACE_SECS.
               case "${decision%%|*}" in
-                pause) : ;;
+                pause) case "$stale_detail" in
+                         idle\ *s,\ possible\ wedge,\ escalation\ *)
+                           last=$(last_status_line "$state/$task.status")
+                           status_is_paused_or_captain_held "$last" \
+                             || decision="escalate|${reason#stale: }"
+                           ;;
+                       esac ;;
                 *) case "$stale_detail" in
                      idle\ *s,\ possible\ wedge,\ escalation\ *)
                        last=$(last_status_line "$state/$task.status")

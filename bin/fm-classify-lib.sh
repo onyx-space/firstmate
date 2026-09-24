@@ -2471,7 +2471,7 @@ signal_crew_provably_working() {  # <file> ...
 
 # 0 (terminal/actionable) if a stale window's last status line is
 # captain-relevant; 1 otherwise, including the no-status case. A 1 only means
-# "non-terminal"; the always-on watcher then applies crew_is_provably_working,
+# "non-terminal"; the always-on watcher then applies crew_stale_is_actively_working,
 # while the away-mode daemon applies its persistence recheck.
 stale_is_terminal() {  # <window> <state>
   local win=$1 state=$2 last
