@@ -1048,9 +1048,10 @@ fm_backend_herdr_projection_close_pane_focus_preserving() {  # <session> <pane-i
   # viewer sitting on the pane's own tab, the one refusal that cannot be fixed by
   # retrying under the same conditions, and the only one bin/fm-teardown.sh may
   # defer to the durable resumable close instead of holding every record. Every
-  # other value (`unverified-focus`, `unverified-pane`, `agent-state-mismatch`,
-  # `plan-refused`, `close-failed`, `workspace-removal-unconfirmed`,
-  # `focus-restore-failed`) keeps today's refusal-to-remove exactly as it was.
+  # other value (`unverified-focus`, `unknown-focus`, `unverified-pane`,
+  # `agent-state-mismatch`, `plan-refused`, `close-failed`,
+  # `workspace-removal-unconfirmed`, `focus-restore-failed`) keeps today's
+  # refusal-to-remove exactly as it was.
   FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL=""
   [ -n "$pane_id" ] || return 0
   before=$(fm_backend_herdr_projection_focus_snapshot "$session") || {

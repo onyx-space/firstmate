@@ -2277,9 +2277,9 @@ crew_is_paused() {  # <id>
 # a working run-step, only a detail matching NONE of the monitoring shapes below
 # (`ci running`, `run active`, `run active (<status>)`, `checks green`) stays
 # `advancing`. An unmapped step status is reported by fm-crew-state.sh as `run active
-# (<status>)` and so is `monitoring` - a NAMED wait - not `advancing`. Both are still
-# quiet external waits to the watcher, which gives each the same bounded-cadence
-# absorb (pause_state_class). The genuine no-progress case is the client's own
+# (<status>)` and so is `monitoring` - a NAMED wait - not `advancing`. Both are quiet
+# external waits this readout names rather than `advancing`, and neither has a
+# production consumer yet. The genuine no-progress case is the client's own
 # marker: matched BEFORE the monitoring shapes, so a step the pipeline itself calls
 # quiet is never read as a wait.
 # NOT a pure read, exactly like crew_absorb_class: one fm-crew-state.sh read per call.
@@ -2327,8 +2327,9 @@ crew_stale_class() {  # <id>
 # 0 when crew <id> shows the crew itself working right now: a busy pane, or an
 # actively working run step. This is the readout's own "actively working" pair.
 # The watcher's terminal-status path reads the wider crew_is_provably_working
-# predicate; this narrower one is the token split the quiet-wait classes need, and
-# is exposed for callers that must exclude the pipeline's passive phases.
+# predicate; this narrower pair is the readout's own split, for a caller that must
+# exclude the pipeline's passive phases, and it has no production caller in this
+# release either.
 # It deliberately EXCLUDES the pipeline's passive phases (the ci monitor, a run
 # parked at a gate) and a landed run. In those states the log's captain-relevant
 # line is the CURRENT one - a crew that reported `done: PR ...` while its pipeline
