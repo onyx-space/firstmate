@@ -4954,7 +4954,7 @@ test_paused_until_that_passed_is_rechecked_before_the_cadence() {
 # nothing left to wait for. It is the readout's own unit contract; the watcher's
 # stale decision does not consume it in this release.
 test_crew_stale_three_state_readout() {
-  local dir state fakebin id win spec want line got
+  local dir state fakebin id win spec
   dir=$(make_case stale-three-state); state="$dir/state"; fakebin="$dir/fakebin"
   export FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh"
   export FM_FAKE_CREW_STATE

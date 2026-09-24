@@ -267,6 +267,7 @@ write_v1 "$ID"
 # The stub reports the post-agent-exit registration while the pane is open and the
 # pane's real post-close death once it is closed, which is what the sweep's own
 # confirmation step reads.
+# shellcheck disable=SC2329 # invoked indirectly by the sweep under test.
 ( fm_backend_herdr_pane_agent_state() {
     if [ -e "$FIXTURE_DIR/closed" ]; then printf 'dead\n'; else printf 'stale-agent\n'; fi
   }
@@ -278,6 +279,7 @@ pass "the sweep treats the registered post-agent-exit reading as agent-free, wit
 reset_fixture
 write_v1 "$ID"
 : > "$FIXTURE_DIR/process-unsafe"
+# shellcheck disable=SC2329 # invoked indirectly by the sweep under test.
 ( fm_backend_herdr_pane_agent_state() { printf 'stale-agent\n'; }
   fm_herdr_session_cleanup >/dev/null 2>&1 )
 [ -f "$FM_STATE_OVERRIDE/$ID.herdr-presentation" ] || fail "stale-agent candidate without an idle shell proof was closed"
