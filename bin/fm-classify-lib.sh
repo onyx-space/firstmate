@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Shared wake classifier: the common source of truth for captain-relevant status
-# tests, declared-external-wait vocabulary, the working/paused absorb
-# classification for no-verb signal wakes, and the three-state stale readout that
-# makes a stale-pane wake safe to absorb, wait out, or surface.
+# tests, declared-external-wait vocabulary, and the working/paused absorb
+# classification that makes no-verb signal and stale-pane wakes safe to absorb.
 # Sourced by BOTH the always-on watcher
 # (bin/fm-watch.sh) and the away-mode daemon (bin/fm-supervise-daemon.sh) so the
 # overlapping triage policy lives in one place instead of two copies that can
@@ -35,9 +34,7 @@
 # (crew_absorb_class and its working/paused wrappers) is NOT a pure status-file
 # read: it reuses bin/fm-crew-state.sh, which may make a bounded no-mistakes call,
 # to decide whether a crew that just stopped its turn or went stale is working,
-# deliberately paused, or neither; the three-state readout (crew_stale_class and
-# its crew_stale_is_actively_working wrapper) pays the same read on the same
-# stale/first-sight paths. Callers run it ONLY on no-verb signal handling
+# deliberately paused, or neither. Callers run it ONLY on no-verb signal handling
 # and first sighting of a stale hash, never on every wake, so the per-wake triage
 # stays cheap. status_open_decisions_incremental (see "incremental (cursor-backed)
 # open-decisions fold" below) also writes: it persists a per-status-file byte
@@ -2229,28 +2226,31 @@ crew_absorb_class() {  # <id>
 
 # 0 if crew <id> shows POSITIVE evidence it is still working (crew_absorb_class
 # reports `working`). This is the "provably working" predicate at the heart of
-# absorb-only-on-positive-evidence for no-verb signal wakes; the stale-pane decision
-# uses the three-state readout below instead. Where a home opts in, fm-watch.sh
+# absorb-only-on-positive-evidence. This is the sole proof for stale wakes and the
+# shared authoritative proof for no-verb signals. Where a home opts in, fm-watch.sh
 # may additionally absorb a bare turn-end on bounded pane churn, while every other
 # failed verdict surfaces
-# because the crew may be done, waiting on a decision, or wedged. See
-# crew_absorb_class for the exact working/paused/none decision.
+# because the crew may be done, waiting on a decision, or wedged. For stale panes
+# it is checked before trusting the status log so a pre-validation captain-relevant
+# line does not override an active run. See crew_absorb_class for the exact
+# working/paused/none decision.
 crew_is_provably_working() {  # <id>
   [ "$(crew_absorb_class "$1")" = working ]
 }
 
 # 0 if crew <id>'s authoritative current state is a declared external-wait pause.
-# The stale path reads that same declaration through crew_stale_class's `paused`
-# token instead, absorbing it on a long re-surface cadence rather than a wedge.
+# The stale path absorbs such a crew (on a long re-surface cadence) instead of
+# escalating a possible wedge.
 crew_is_paused() {  # <id>
   [ "$(crew_absorb_class "$1")" = paused ]
 }
 
-# The three-state readout behind the stale/wedge decision: WHY a silent pane is
-# silent. Sibling of crew_absorb_class, which answers the WIDER "may this wake be
-# absorbed at all" question the no-verb and turn-end paths need; this one answers
-# the narrower question the wedge timer and the terminal-status override need, and
-# it is the one owner of that split. Prints exactly one token:
+# The three-state readout behind a silent pane: WHY it is silent. Younger sibling of
+# crew_absorb_class, which answers the WIDER "may this wake be absorbed at all"
+# question the no-verb and turn-end paths need; this one answers the narrower
+# question of what a silent pane actually is, and it is the one owner of that split.
+# bin/fm-crew-state.sh and the no-progress (真死) arm consume it; the stale/wedge
+# consumers keep their own open question pending a design decision. Prints one token:
 #   busy       the harness itself reports the agent working right now (a busy
 #              pane): the pane is silent because the agent is mid-work.
 #   advancing  the crew's own run reports an actively working step (running/
@@ -2277,12 +2277,10 @@ crew_is_paused() {  # <id>
 # `advancing`. An unmapped step status is reported by fm-crew-state.sh as `run active
 # (<status>)` and so is `monitoring` - a NAMED wait - not `advancing`. Both are still
 # quiet external waits to the watcher, which gives each the same bounded-cadence
-# derived-wait absorb (pause_state_class); the token keeps its own meaning for
-# crew_stale_is_actively_working, the terminal-status override. The genuine
-# no-progress case is the client's own marker: matched BEFORE the monitoring shapes,
-# so a step the pipeline itself calls quiet is never read as a wait.
-# NOT a pure read, exactly like crew_absorb_class: callers run it on the stale and
-# first-sight paths, never on every wake.
+# absorb (pause_state_class). The genuine no-progress case is the client's own
+# marker: matched BEFORE the monitoring shapes, so a step the pipeline itself calls
+# quiet is never read as a wait.
+# NOT a pure read, exactly like crew_absorb_class: one fm-crew-state.sh read per call.
 crew_stale_class() {  # <id>
   local id=$1 line state src rest detail sep=' · '
   [ -n "$id" ] || { printf 'none'; return; }
@@ -2325,8 +2323,10 @@ crew_stale_class() {  # <id>
 }
 
 # 0 when crew <id> shows the crew itself working right now: a busy pane, or an
-# actively working run step. This is the terminal-status override's proof that a
-# captain-relevant status line the log still carries is superseded.
+# actively working run step. This is the readout's own "actively working" pair.
+# The watcher's terminal-status path reads the wider crew_is_provably_working
+# predicate; this narrower one is the token split the quiet-wait classes need, and
+# is exposed for callers that must exclude the pipeline's passive phases.
 # It deliberately EXCLUDES the pipeline's passive phases (the ci monitor, a run
 # parked at a gate) and a landed run. In those states the log's captain-relevant
 # line is the CURRENT one - a crew that reported `done: PR ...` while its pipeline
@@ -2470,7 +2470,7 @@ signal_crew_provably_working() {  # <file> ...
 
 # 0 (terminal/actionable) if a stale window's last status line is
 # captain-relevant; 1 otherwise, including the no-status case. A 1 only means
-# "non-terminal"; the always-on watcher then applies crew_stale_is_actively_working,
+# "non-terminal"; the always-on watcher then applies crew_is_provably_working,
 # while the away-mode daemon applies its persistence recheck.
 stale_is_terminal() {  # <window> <state>
   local win=$1 state=$2 last

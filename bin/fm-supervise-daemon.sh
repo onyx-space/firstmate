@@ -41,7 +41,7 @@
 #     drain and acknowledges it only after routing completes.
 #   - Fail-safe-to-escalate: any wake the classifier cannot confidently mark
 #     routine is escalated.
-#   - Bounded wedge latency: a stale pane without a wait behind it is escalated
+#   - Bounded wedge latency: a stale pane without a declared wait is escalated
 #     only after it has been idle for STALE_ESCALATE_SECS
 #     (configurable), rechecked once. A wedged crewmate is therefore detected
 #     within STALE_ESCALATE_SECS + a tick, never lost. A declared wait - either a
@@ -49,13 +49,7 @@
 #     fm-classify-lib.sh's combined predicate - instead gets its own longer
 #     PAUSE_RESURFACE_SECS recheck, never a wedge escalation, whether its pane
 #     reads idle or busy; only a status append that stops declaring the wait
-#     ends that routing. A wait the same readout DERIVES with no declaration (the
-#     crew's own run still advancing, the pipeline's ci monitor or a gate, or work
-#     that already landed) takes that same bounded recheck, re-derived from the
-#     crew's own state when each window comes due and aged against this daemon's
-#     own recorded marker; a busy pane, a run step with no progress behind it,
-#     and an unreadable read all keep the ordinary wedge aging.
-#     A captain-held transfer is not rechecked at all while
+#     ends that routing. A captain-held transfer is not rechecked at all while
 #     the away-posture record (state/.afk-contract) exists: nobody is there to
 #     answer it, and the return brief lists it.
 #     Crewmates are autonomous, so a delayed stale response does not stall a
@@ -103,9 +97,7 @@
 #                                   as a possible wedge (default 240)
 #          FM_PAUSE_RESURFACE_SECS  seconds a declared wait stays declared,
 #                                   idle or busy, before it re-surfaces as a
-#                                   recheck (default 14400, four hours); a wait
-#                                   the readout derives re-derives and
-#                                   re-surfaces on this same cadence; an
+#                                   recheck (default 14400, four hours); an
 #                                   `until` time cannot extend this bound, and a
 #                                   captain-held transfer is never rechecked
 #                                   while the away-posture record exists
@@ -416,44 +408,11 @@ classify_signal() {  # <reason-after-colon> <state>
   fi
 }
 
-# The away posture's own ask of the three-state readout, so it classifies a quiet
-# lane exactly as the always-on watcher it replaces does: 0 with a reason on stdout
-# when the crew's OWN current state explains the silence as an external wait - its
-# run advancing, its pipeline waiting on the ci monitor or a gate, or a delivery
-# that already landed. bin/fm-classify-lib.sh's crew_stale_class is the single owner
-# of that readout, so the two paths cannot drift.
-#
-# Every other reading returns 1 and leaves the caller's existing wedge aging exactly
-# as it was, which is the whole point of the away posture's safety net: a busy pane,
-# a run step with no progress behind it, a stopped/torn-down/unknown crew, and any
-# unreadable verdict are all still aged and escalated by housekeeping. An
-# undecidable reading is never promoted to a quiet wait.
-fm_supervise_quiet_wait_class() {  # <window> <state>
-  local win=$1 state=$2 task class
-  task=$(window_to_task "$win" "$state")
-  [ -n "$task" ] || return 1
-  class=$(FM_STATE_OVERRIDE="$state" crew_stale_class "$task" 2>/dev/null) || class=none
-  case "$class" in
-    advancing|monitoring|landed) printf '%s' "$class" ;;
-    *)                           return 1 ;;
-  esac
-}
-
-fm_supervise_quiet_wait_reason() {  # <window> <state>
-  local win=$1 state=$2 class
-  class=$(fm_supervise_quiet_wait_class "$win" "$state") || return 1
-  case "$class" in
-    advancing)  printf "%s" "the crew's own validation run is still advancing" ;;
-    monitoring) printf '%s' 'the pipeline is still holding this lane on its ci monitor or a gate' ;;
-    landed)     printf '%s' 'the work in this lane already landed' ;;
-  esac
-}
-
 # classify_stale decides the WAKE itself (one-shot per distinct hash). On a
 # first sight of a non-terminal stale it returns "self" and the caller records a
 # timestamp marker; persistence is escalated by housekeeping's recheck, not here.
 classify_stale() {  # <window> <state> [<span-record> <span-status>]
-  local win=$1 state=$2 record=${3-} rc=${4-} task last event rest quiet_why
+  local win=$1 state=$2 record=${3-} rc=${4-} task last event rest
   task=$(window_to_task "$win" "$state")
   if [ -z "$rc" ]; then
     record=$(status_span_first_actionable_record "$state/$task.status" \
@@ -494,14 +453,6 @@ classify_stale() {  # <window> <state> [<span-record> <span-status>]
     if ! status_is_terminal_verb "$last"; then
       case "$(status_line_verb "$last")" in
         working|resolved|captain-held)
-          # A quiet pane whose crew's own state is an external wait is the same
-          # bounded wait here as it is in the always-on watcher: the pause cadence
-          # (housekeeping re-surfaces it once per PAUSE_RESURFACE_SECS, which the
-          # caller records by returning this action), never a wedge.
-          if quiet_why=$(fm_supervise_quiet_wait_reason "$win" "$state"); then
-            printf 'pause|quiet external wait - %s: %s' "$quiet_why" "$last"
-            return
-          fi
           printf 'self|transient stale (%s): %s' "$win" "$last"
           return
           ;;
@@ -511,13 +462,7 @@ classify_stale() {  # <window> <state> [<span-record> <span-status>]
     return
   fi
   # Non-terminal (or no status): defer to the persistence recheck. The caller
-  # records/refreshes the stale marker so housekeeping can age it - unless the
-  # crew's own state explains the quiet as an external wait, which takes the bounded
-  # pause cadence instead of the wedge.
-  if quiet_why=$(fm_supervise_quiet_wait_reason "$win" "$state"); then
-    printf 'pause|quiet external wait - %s: %s' "$quiet_why" "${last:-no status}"
-    return
-  fi
+  # records/refreshes the stale marker so housekeeping can age it.
   printf 'self|transient stale (%s): %s' "$win" "${last:-no status}"
 }
 
@@ -558,36 +503,24 @@ stale_marker_remove() {  # <window> <state>
   rm -f "$state/.subsuper-stale-$key"
 }
 
-# Pause marker: state/.subsuper-paused-<key> holds the epoch a wait was first
-# observed, whether its pane read idle or busy. Housekeeping ages it against
+# Pause marker: state/.subsuper-paused-<key> holds the epoch a declared wait (a
+# paused: external wait or a verified captain-held transfer) was first observed
+# declared, whether its pane read idle or busy. Housekeeping ages it against
 # PAUSE_RESURFACE_SECS (much longer than a wedge) and re-surfaces the wait once
 # per window. Recording is create-if-absent so the timestamp is stable across a
 # churny pane (many distinct stale hashes map to one marker), keeping the cadence
 # hash-immune.
-#
-# A DERIVED wait - one the three-state readout named itself (no paused:/
-# captain-held declaration on the status line) - additionally records WHY it
-# exists in state/.subsuper-derivedwait-<key> (advancing|monitoring|landed). That
-# sidecar is what tells reconcile_pause_tracking and housekeeping (2b) that the
-# log's silence is explained by the crew's own run rather than by a declaration,
-# so the wait ages and re-surfaces instead of being cleared on every tick.
-# The sidecar prefix deliberately shares no glob with the marker prefixes below.
-pause_marker_record() {  # <window> <state> [<derived-class>] - create if absent
-  local win=$1 state=$2 derived=${3-} key marker
+pause_marker_record() {  # <window> <state> - create if absent
+  local win=$1 state=$2 key marker
   key=$(_stale_key "$(window_to_task "$win" "$state")")
   marker="$state/.subsuper-paused-$key"
   [ -e "$marker" ] || _now > "$marker"
-  if [ -n "$derived" ]; then
-    printf '%s' "$derived" > "$state/.subsuper-derivedwait-$key"
-  else
-    rm -f "$state/.subsuper-derivedwait-$key"
-  fi
 }
 
 pause_marker_remove() {  # <window> <state>
   local win=$1 state=$2 key
   key=$(_stale_key "$(window_to_task "$win" "$state")")
-  rm -f "$state/.subsuper-paused-$key" "$state/.subsuper-pause-until-due-$key" "$state/.subsuper-derivedwait-$key"
+  rm -f "$state/.subsuper-paused-$key" "$state/.subsuper-pause-until-due-$key"
 }
 
 clear_pause_tracking() {  # <window> <state>
@@ -595,30 +528,21 @@ clear_pause_tracking() {  # <window> <state>
   task=$(window_to_task "$win" "$state")
   key=$(_stale_key "$task")
   watcher_key=$(_stale_key "$win")
-  rm -f "$state/.subsuper-paused-$key" "$state/.subsuper-pause-until-due-$key" "$state/.subsuper-derivedwait-$key" "$state/.subsuper-stale-$key" \
+  rm -f "$state/.subsuper-paused-$key" "$state/.subsuper-pause-until-due-$key" "$state/.subsuper-stale-$key" \
     "$state/.paused-$watcher_key" "$state/.paused-rechecked-$watcher_key" "$state/.paused-resurfaced-$watcher_key" \
-    "$state/.wait-since-$watcher_key" "$state/.wait-resurfaced-$watcher_key" \
     "$state/.stale-$watcher_key" "$state/.stale-since-$watcher_key" "$state/.wedge-escalations-$watcher_key" \
     "$state/.writing-since-$watcher_key" "$state/.writing-resurfaced-$watcher_key"
 }
 
 reconcile_pause_tracking() {  # <window> <state> <last-status-line>
-  local win=$1 state=$2 last=$3 task key marker derived watcher_key
+  local win=$1 state=$2 last=$3 task key marker watcher_key
   task=$(window_to_task "$win" "$state")
   key=$(_stale_key "$task")
   marker="$state/.subsuper-paused-$key"
-  derived="$state/.subsuper-derivedwait-$key"
   watcher_key=$(_stale_key "$win")
   if status_is_paused_or_captain_held "$last"; then
     stale_marker_remove "$win" "$state"
     pause_marker_record "$win" "$state"
-  elif [ -e "$derived" ]; then
-    # A DERIVED wait has no declaration on the log to reconcile against: its
-    # authority is the crew's own state, which housekeeping re-derives on the
-    # bounded cadence. Leave the marker (and the watcher's stale suppressor with
-    # it) in place, or the same wait would be re-enqueued and re-derived on every
-    # watcher cycle for its whole, possibly hours-long, duration.
-    :
   elif [ -e "$marker" ] || [ -e "$state/.paused-$watcher_key" ]; then
     clear_pause_tracking "$win" "$state"
   fi
@@ -1105,7 +1029,7 @@ _oldest_line_age() {  # <buf> -> seconds since the oldest buffered item first ar
 #  3) heartbeat scan: every HEARTBEAT_SCAN_SECS, grep state/*.status for a
 #     captain-relevant line the per-wake classifier missed and escalate it.
 housekeeping() {  # <state>
-  local state=$1 now due f key task win marker age last max_defer oldest pause_secs marker_epoch until bounded_until pause_reason derived derived_cls
+  local state=$1 now due f key task win marker age last max_defer oldest pause_secs marker_epoch until bounded_until pause_reason
   now=$(_now)
   migrate_watcher_pause_markers "$state"
 
@@ -1189,46 +1113,10 @@ housekeeping() {  # <state>
     key="${marker##*.subsuper-paused-}"
     win=$(window_for_task "$key" "$state" 2>/dev/null || true)
     if [ -z "$win" ]; then
-      rm -f "$marker" "$state/.subsuper-derivedwait-$key"; continue
+      rm -f "$marker"; continue
     fi
     task=$(window_to_task "$win" "$state")
     last=$(last_status_line "$state/$task.status")
-    derived="$state/.subsuper-derivedwait-$key"
-    if [ -s "$derived" ]; then
-      # A DERIVED wait - the three-state readout named it and the log carries no
-      # paused:/captain-held declaration - is a real wait too: it is aged against
-      # the same long cadence and re-surfaced once per window, with the reason the
-      # readout itself derived. Its authority is the crew's own current state, so
-      # the wait is re-derived only when the window comes due (one bounded read per
-      # window, not one per tick), and the marker is kept between windows so the
-      # watcher does not re-enqueue and re-derive the same wait on every cycle.
-      marker_epoch=$(cat "$marker" 2>/dev/null || echo "$now")
-      case "$marker_epoch" in ''|*[!0-9]*) marker_epoch=$now ;; esac
-      age=$(( now - marker_epoch ))
-      [ "$age" -ge "$pause_secs" ] || continue
-      if ! derived_cls=$(fm_supervise_quiet_wait_class "$win" "$state"); then
-        # Nothing explains the silence any more: drop the wait so the pane goes
-        # back to ordinary wedge aging (and a genuinely dead crew still escalates).
-        clear_pause_tracking "$win" "$state"
-        continue
-      fi
-      printf '%s' "$derived_cls" > "$derived"
-      stale_window_is_busy "$win" "$state"
-      case "$?" in
-        0|2) clear_pause_tracking "$win" "$state" ;;
-        *)
-          if [ "$derived_cls" = landed ]; then
-            pause_reason="landed ${age}s (work already landed, rechecked on a long cadence; clean up the endpoint when it is no longer needed): $win"
-          else
-            pause_reason="run in progress ${age}s (awaiting external - the crew's own run is still active on this pane's branch, rechecked on a long cadence not a wedge; confirm it is still advancing): $win"
-          fi
-          if escalate_add "$state" "$pause_reason"; then
-            _now > "$marker"
-          fi
-          ;;
-      esac
-      continue
-    fi
     if [ -z "$last" ] || ! status_is_paused_or_captain_held "$last"; then
       reconcile_pause_tracking "$win" "$state" "$last"
       continue
@@ -1515,21 +1403,15 @@ handle_wake() {  # <reason> <state>
               # An enriched wedge reason carries the watcher's own escalation count
               # and its "do not re-absorb on the run-step/pane state alone" demand,
               # so it outranks this daemon's cheaper status-log absorption - EXCEPT
-              # under a DECLARED wait: a paused:/captain-held line is the crew's own
-              # statement that this pane waits by design, the one question the wedge
-              # timer cannot answer for itself. A DERIVED quiet wait is run-step
-              # state, so a crossed busy-turn bound must not be downgraded into it -
-              # the busy reading is exactly the hung-call shape this bound exists for.
-              # Housekeeping (2b) then owns the declared wait's re-surface, so the
-              # wait is still bounded - by one recheck per PAUSE_RESURFACE_SECS.
+              # under a current declared wait. A `pause` verdict is not run-step or
+              # pane state at all: it is the crew's own declaration that this pane
+              # waits by design, which is the one question the wedge timer cannot
+              # answer for itself. Overriding it escalated healthy declared waits
+              # once per STALE_ESCALATE_SECS for as long as the wait lasted.
+              # Housekeeping (2b) then owns the re-surface, so the wait is still
+              # bounded - by one recheck per PAUSE_RESURFACE_SECS instead.
               case "${decision%%|*}" in
-                pause) case "$stale_detail" in
-                         idle\ *s,\ possible\ wedge,\ escalation\ *)
-                           last=$(last_status_line "$state/$task.status")
-                           status_is_paused_or_captain_held "$last" \
-                             || decision="escalate|${reason#stale: }"
-                           ;;
-                       esac ;;
+                pause) : ;;
                 *) case "$stale_detail" in
                      idle\ *s,\ possible\ wedge,\ escalation\ *)
                        last=$(last_status_line "$state/$task.status")
@@ -1548,15 +1430,7 @@ handle_wake() {  # <reason> <state>
   if [ "$kind" = stale ] && [ "$action" = escalate ]; then
     task=$(window_to_task "$arg" "$state")
     last=$(last_status_line "$state/$task.status")
-    # An escalation means the pane is not quiet, so any wait it was absorbed on -
-    # including a DERIVED one - is over and goes with it. reconcile_pause_tracking
-    # deliberately keeps a derived wait for the housekeeping cadence, which is not
-    # what a fresh actionable event wants.
-    if [ -e "$state/.subsuper-derivedwait-$(_stale_key "$task")" ]; then
-      clear_pause_tracking "$arg" "$state"
-    else
-      reconcile_pause_tracking "$arg" "$state" "$last"
-    fi
+    reconcile_pause_tracking "$arg" "$state" "$last"
   fi
   case "$action" in
     escalate)
@@ -1575,18 +1449,10 @@ handle_wake() {  # <reason> <state>
       # Declared wait, an external-wait pause or a verified captain-held transfer:
       # record a pause marker (long re-surface cadence in housekeeping) and drop any
       # wedge stale marker, so a pane that transitioned working->declared-wait is not
-      # still wedge-aged. Only stale produces this action. A wait the readout DERIVED
-      # (no declaration on the log) also records why it exists, so housekeeping can
-      # age it and re-surface it on the same bounded cadence instead of clearing it.
+      # still wedge-aged. Only stale produces this action.
       if [ "$kind" = "stale" ]; then
-        task=$(window_to_task "$arg" "$state")
-        last=$(last_status_line "$state/$task.status")
-        if status_is_paused_or_captain_held "$last"; then
-          pause_marker_record "$arg" "$state"
-        else
-          pause_marker_record "$arg" "$state" "$(fm_supervise_quiet_wait_class "$arg" "$state" 2>/dev/null || true)"
-        fi
         stale_marker_remove "$arg" "$state"
+        pause_marker_record "$arg" "$state"
       fi
       log "self-handle (paused): $reason -> $distilled"
       ;;

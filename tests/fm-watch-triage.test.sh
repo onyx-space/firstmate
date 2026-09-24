@@ -470,127 +470,6 @@ test_crew_absorb_class_classifier() {
   pass "crew_absorb_class: working/paused/none from one read; crew_is_paused and crew_is_provably_working agree"
 }
 
-# crew_stale_class / pause_state_class: the three-state readout over the same one
-# fm-crew-state.sh line - 忙 (busy/advancing), 静着等 (waiting, the derived face; plus
-# paused, its declared face, and landed for work already delivered), or 真死 (none).
-# The counterfactuals this pins, each a real reported failure mode:
-#   * 忙 stays 忙: a busy pane is still `working`, so its wedge timer still arms;
-#   * an ACTIVE run step is a quiet external wait, not the agent working, so it no
-#     longer arms that timer (D2: a pipeline-monitoring pane was wedge-escalated on
-#     a lane no human had touched);
-#   * 无前进 still judges dead: the pipeline's own quiet marker surfaces it;
-#   * 进程不在 still judges dead: an unknown/torn-down crew surfaces.
-test_crew_stale_three_state_readout() {
-  local dir state fakebin id win spec want line got
-  dir=$(make_case stale-three-state); state="$dir/state"; fakebin="$dir/fakebin"
-  export FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh"
-  export FM_FAKE_CREW_STATE
-  id=crew; win="test:fm-$id"
-  mkdir -p "$dir/home" "$state"
-  printf 'window=%s\nkind=ship\nbackend=tmux\n' "$win" > "$state/$id.meta"
-  # A non-terminal status line: no declaration on the log, so pause_state_class
-  # answers from the readout itself rather than through the declared-wait path.
-  printf 'working: implementing\n' > "$state/$id.status"
-
-  # The readout's token for every interesting input, one read each.
-  assert_class() {  # <fake-line> <expected-class> <why>
-    FM_FAKE_CREW_STATE="$1"
-    [ "$(crew_stale_class "$id")" = "$2" ] \
-      || fail "crew_stale_class read '$1' as $(crew_stale_class "$id"), not $2 ($3)"
-  }
-  assert_class 'state: working · source: pane · harness busy (native)' busy \
-    'a busy pane is the agent working now'
-  assert_class 'state: working · source: run-step · validating (running)' advancing \
-    'an actively working run step'
-  assert_class 'state: working · source: run-step · validating (fixing)' advancing \
-    'an actively fixing run step'
-  assert_class 'state: working · source: run-step · validating (background run)' advancing \
-    'the coarse runs-ledger reading of an active run'
-  assert_class 'state: working · source: run-step · ci running' monitoring \
-    'the pipeline waiting on checks'
-  assert_class 'state: working · source: run-step · run active' monitoring \
-    'an active run whose step the client does not name'
-  assert_class 'state: parked · source: run-step · parked at review gate' monitoring \
-    'a run parked at a gate'
-  assert_class 'state: parked · source: run-step · parked at gate: 2 finding(s) (ask-user: authority decision)' monitoring \
-    'a run parked at an ask-user gate'
-  assert_class 'state: parked · source: status-log · needs-decision: the captain must pick a route' none \
-    "a needs-decision status line is not this readout's to absorb"
-  assert_class 'state: done · source: run-step · run passed: PR held for merge' landed \
-    'a delivered PR with the merge left to the captain'
-  assert_class 'state: done · source: run-step · run passed: PR merged: https://example.test/pr/7' landed \
-    'a proven merge'
-  assert_class 'state: done · source: status-log · PR https://example.test/pr/7 checks green' landed \
-    "the crew's own delivery line with no attributed run"
-  assert_class 'state: paused · source: status-log · awaiting upstream' paused \
-    'a declared external wait'
-  assert_class 'state: working · source: run-step · validating (running) · no recent step activity' none \
-    "the pipeline's own no-progress verdict"
-  assert_class 'state: working · source: run-step · validating (running) · status-log superseded by active run' advancing \
-    'an unrecognised active-step detail keeps the conservative active reading'
-  assert_class 'state: working · source: status-log · working: compiling' none \
-    'a stale status line is not liveness'
-  assert_class 'state: failed · source: run-step · run failed' none 'a failed run'
-  assert_class 'state: unknown · source: none · worktree gone (torn down?)' none \
-    'a torn-down worktree'
-  assert_class 'state: unknown · source: pane · harness state unavailable (unknown codex-unverified)' none \
-    'an unreadable harness verdict'
-  assert_class '' none 'no current-state line at all'
-  assert_class 'state: done · source: pane · whatever' landed \
-    'a terminal verdict outranks the source it arrived with'
-
-  # The terminal-status override's own predicate: only the crew working right now
-  # may supersede a captain-relevant status line the log still carries.
-  for spec in \
-    'busy|state: working · source: pane · harness busy (native)|0' \
-    'advancing|state: working · source: run-step · validating (running)|0' \
-    'monitoring|state: working · source: run-step · ci running|1' \
-    'parked|state: parked · source: run-step · parked at review gate|1' \
-    'landed|state: done · source: run-step · run passed: PR held for merge|1' \
-    'paused|state: paused · source: status-log · awaiting upstream|1' \
-    'dead|state: unknown · source: none · worktree gone|1'
-  do
-    FM_FAKE_CREW_STATE=${spec%|*}; FM_FAKE_CREW_STATE=${FM_FAKE_CREW_STATE#*|}
-    if [ "${spec##*|}" = 0 ]; then
-      crew_stale_is_actively_working "$id" \
-        || fail "${spec%%|*} was not treated as actively working"
-    else
-      ! crew_stale_is_actively_working "$id" \
-        || fail "${spec%%|*} was treated as actively working"
-    fi
-  done
-
-  # And what the watcher's own decision function does with each of them, through
-  # the real function, in a subshell so the sourced watcher cannot touch this
-  # test's own state.
-  pause_class() {  # <fake-line>
-    FM_FAKE_CREW_STATE="$1" FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" \
-      FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
-      bash -c '. "$1/bin/fm-watch.sh"; pause_state_class "$2" "$3"' \
-      _ "$ROOT" "$win" "$id"
-  }
-  for spec in \
-    'working|state: working · source: pane · harness busy (native)' \
-    'waiting|state: working · source: run-step · validating (running)' \
-    'waiting|state: working · source: run-step · ci running' \
-    'waiting|state: parked · source: run-step · parked at review gate' \
-    'landed|state: done · source: run-step · run passed: PR held for merge' \
-    'landed|state: done · source: status-log · PR https://example.test/pr/7 checks green' \
-    'paused|state: paused · source: status-log · awaiting upstream' \
-    'none|state: working · source: run-step · validating (running) · no recent step activity' \
-    'none|state: unknown · source: none · worktree gone (torn down?)' \
-    'none|state: failed · source: run-step · run failed' \
-    'none|state: working · source: status-log · working: compiling'
-  do
-    want=${spec%%|*}; line=${spec#*|}
-    got=$(pause_class "$line")
-    [ "$got" = "$want" ] \
-      || fail "pause_state_class read '$line' as '$got', not '$want'"
-  done
-  unset FM_FAKE_CREW_STATE
-  pass "crew_stale_class/pause_state_class: busy, the quiet external waits (advancing/monitoring/paused), landed, and the dead/no-progress cases each read as their own state"
-}
-
 # The wedge detector's third liveness input: writes inside the crew's own recorded
 # worktree. Every negative outcome must report "no evidence" so the caller keeps
 # its existing escalation schedule, and a supervisor-side git read (which touches
@@ -2066,279 +1945,59 @@ test_stale_terminal_status_overridden_by_active_run() {
   pass "a stale terminal-looking status is overridden and absorbed while a run is actively working, then wedge-escalated"
 }
 
-# --- non-terminal stale, crew in a quiet EXTERNAL wait: absorbed on the long
-#     cadence, never wedge-escalated ---------------------------------------
-# pause_state_class's `waiting` face (the 2026-09-24 elmo stale-rate D2 report): a
-# pane whose crew's own run is still working the branch - the pipeline validating,
-# the ci monitor polling the forge, a run parked at a gate - is SILENT BY DESIGN.
-# The pane is not the worker there, so the wedge timer has nothing to age: it used
-# to fire on exactly these panes, on lanes no human had touched. The wait is still
-# bounded - one recheck per PAUSE_RESURFACE_SECS, naming the run in progress - so a
-# pipeline that silently stops cannot rot invisibly either (that state is the
-# no-progress marker, which surfaces at once; see the test below).
-test_nonterminal_stale_quiet_external_wait_takes_the_pause_cadence() {
-  local dir state fakebin out drain_out capture_file window key pane_hash sig pid back
-  dir=$(make_case nonterminal-stale-monitoring); state="$dir/state"; fakebin="$dir/fakebin"
+# --- non-terminal stale, crew provably working: absorbed, then wedge-escalated ---
+# A provably-working crew (an actively-running pipeline) legitimately sits on a
+# static pane (e.g. waiting on CI), so a non-terminal stale is absorbed and only
+# the wedge timer eventually escalates it - the low-churn behavior preserved.
+
+test_nonterminal_stale_provably_working_absorbed_then_escalated() {
+  local dir state fakebin out drain_out capture_file window key pane_hash sig pid
+  dir=$(make_case nonterminal-stale-working); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; drain_out="$dir/drain.out"; capture_file="$dir/pane.txt"
-  window="test:fm-monitoring"
-  printf 'idle, pipeline owns the branch' > "$capture_file"
-  printf 'window=%s\nkind=ship\n' "$window" > "$state/mon.meta"
+  window="test:fm-quiet"
+  printf 'idle building output' > "$capture_file"
+  printf 'window=%s\nkind=ship\n' "$window" > "$state/quiet.meta"
   # Non-terminal status, and prime .seen-* so the signal scan does not pre-empt
   # the stale path.
-  printf 'working: implementation handed to the pipeline\n' > "$state/mon.status"
-  sig=$(seen_sig "$state/mon.status"); printf '%s' "$sig" > "$state/.seen-mon_status"
+  printf 'working: still compiling\n' > "$state/quiet.status"
+  sig=$(seen_sig "$state/quiet.status"); printf '%s' "$sig" > "$state/.seen-quiet_status"
   key=$(printf '%s' "$window" | tr ':/.' '___')
-  pane_hash=$(hash_text "idle, pipeline owns the branch")
+  pane_hash=$(hash_text "idle building output")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
-  # The crew's pipeline is monitoring its PR: a static pane is normal.
+  # The crew's pipeline is actively running: a static pane is normal (waiting on CI).
   export FM_FAKE_CREW_STATE='state: working · source: run-step · ci running'
 
-  # Phase A: the first sighting is absorbed - no wake, and NO wedge timer.
+  # Phase A: a high escalation threshold means the first sighting is absorbed.
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
   if ! wait_poll_cycle "$state" "$pid"; then
-    reap "$pid"; fail "watcher exited for a quiet external wait (should absorb): $(cat "$out")"
+    reap "$pid"; fail "watcher exited for a fresh provably-working non-terminal stale (should absorb): $(cat "$out")"
   fi
-  [ ! -s "$out" ] || fail "a quiet external wait printed a wake reason during absorb"
-  [ ! -s "$state/.wake-queue" ] || fail "a quiet external wait enqueued a wake during absorb"
-  [ "$(cat "$state/.stale-$key" 2>/dev/null || true)" = "$pane_hash" ] || fail "stale suppressor not advanced on the wait absorb"
-  [ ! -e "$state/.stale-since-$key" ] || fail "a quiet external wait must not start the wedge timer"
-  [ "$(cat "$state/.paused-$key" 2>/dev/null || true)" = waiting ] || fail "the derived wait was not recorded as waiting"
-  [ -e "$state/.wait-since-$key" ] || fail "the derived wait recorded no cadence anchor"
+  [ ! -s "$out" ] || fail "fresh provably-working stale printed a wake reason during absorb"
+  [ ! -s "$state/.wake-queue" ] || fail "fresh provably-working stale enqueued a wake during absorb"
+  [ "$(cat "$state/.stale-$key" 2>/dev/null || true)" = "$pane_hash" ] || fail "stale suppressor not advanced on absorb"
+  [ -s "$state/.stale-since-$key" ] || fail "stale-since escalation timer was not recorded on absorb"
   reap "$pid"
-  ack_stopped_cycle "$state" || fail "could not acknowledge the intentional wait-phase watcher stop"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the intentional phase-A watcher stop"
 
-  # Phase B: age the derived wait past the cadence; it re-surfaces ONCE as a
-  # recheck naming the run, never as a possible wedge.
-  back=$(( $(date +%s) - 500 ))
-  set_mtime "$back" "$state/.wait-since-$key"
-  : > "$out"
-  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
-    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
-    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
-  pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not re-surface a quiet external wait past the cadence"
-  grep -F "stale: $window" "$out" >/dev/null || fail "the wait recheck did not print a stale wake"
-  grep -F "run in progress" "$out" >/dev/null || fail "the wait recheck was not labeled as a run still in progress"
-  grep -F "awaiting external" "$out" >/dev/null || fail "the wait recheck did not name the external wait"
-  grep -F "possible wedge" "$out" >/dev/null && fail "a quiet external wait was mislabeled a possible wedge"
-  [ ! -e "$state/.stale-since-$key" ] || fail "a quiet external wait re-surface must not use the wedge timer"
-  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the wait recheck failed"
-  grep "$(printf '\tstale\t')" "$drain_out" | grep -F "$window" >/dev/null || fail "the wait recheck was not queued"
-  unset FM_FAKE_CREW_STATE
-  pass "a quiet external wait is absorbed on first sight without a wedge timer, then re-surfaced on the bounded cadence"
-}
-
-# --- derived wait: pane churn must not reset its cadence window -------------
-# A derived wait's anchor is its own first derivation, not the status file's age. A
-# pane whose render ticks (a clock, a token counter) changes hash between stable
-# polls; if that churn - or the n<2 poll right after it - cleared the anchor, the
-# FM_PAUSE_RESURFACE_SECS window would restart forever and the "run in progress ...
-# confirm it is still advancing" recheck would never be delivered. This drives the
-# real watcher through one changed-hash poll, then the same hash at n<2, then the
-# stable n>=2 poll, and asserts the aged anchor survives and the recheck fires.
-test_derived_wait_anchor_survives_pane_churn() {
-  local dir state fakebin out capture_file window key old_hash new_hash sig pid back
-  dir=$(make_case derived-wait-churn); state="$dir/state"; fakebin="$dir/fakebin"
-  out="$dir/watch.out"; capture_file="$dir/pane.txt"
-  window="test:fm-derived-churn"
-  printf 'idle, pipeline owns the branch' > "$capture_file"
-  printf 'window=%s\nkind=ship\n' "$window" > "$state/churn.meta"
-  printf 'working: implementation handed to the pipeline\n' > "$state/churn.status"
-  sig=$(seen_sig "$state/churn.status"); printf '%s' "$sig" > "$state/.seen-churn_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
-  old_hash=$(hash_text "the previous frame of the ticking pane")
-  new_hash=$(hash_text "idle, pipeline owns the branch")
-  printf '%s' "$old_hash" > "$state/.hash-$key"
-  printf '1\n' > "$state/.count-$key"
-  printf 'waiting' > "$state/.paused-$key"
-  back=$(( $(date +%s) - 500 ))
-  date +%s > "$state/.wait-since-$key"
-  set_mtime "$back" "$state/.wait-since-$key"
-  export FM_FAKE_CREW_STATE='state: working · source: run-step · ci running'
-
-  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
-    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
-    FM_PAUSE_RESURFACE_SECS=240 FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
-    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
-  pid=$!
-  wait_for_exit "$pid" 200 || fail "a derived wait whose pane ticked never delivered its cadence recheck: $(cat "$out")"
-  grep -F "stale: $window" "$out" >/dev/null || fail "the churned derived wait recheck printed no stale wake"
-  grep -F "run in progress" "$out" >/dev/null || fail "the churned derived wait was not re-surfaced as a run still in progress"
-  grep -F "confirm it is still advancing" "$out" >/dev/null || fail "the churned derived wait recheck did not ask whether it is still advancing"
-  grep -F "possible wedge" "$out" >/dev/null && fail "a churned derived wait was mislabeled a possible wedge"
-  [ ! -e "$state/.stale-since-$key" ] || fail "a derived wait re-surface must not arm the wedge timer"
-  ack_stopped_cycle "$state" || fail "could not acknowledge the derived-wait recheck"
-
-  # The wait ending - the readout no longer explains the silence - clears its marker
-  # and anchor instead of absorbing the pane forever.
-  export FM_FAKE_CREW_STATE='state: working · source: pane · harness busy (native)'
-  printf '%s' "$new_hash" > "$state/.hash-$key"
-  printf '1\n' > "$state/.count-$key"
-  : > "$out"
-  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
-    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
-    FM_PAUSE_RESURFACE_SECS=240 FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
-    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
-  pid=$!
-  wait_poll_cycle "$state" "$pid" || { reap "$pid"; fail "watcher exited while the pane's wait reading ended: $(cat "$out")"; }
-  reap "$pid"
-  ack_stopped_cycle "$state" || fail "could not acknowledge the intentional churn-phase watcher stop"
-  [ ! -e "$state/.paused-$key" ] || fail "the derived wait marker survived the wait ending"
-  [ ! -e "$state/.wait-since-$key" ] || fail "the derived wait anchor survived the wait ending"
-  unset FM_FAKE_CREW_STATE
-  pass "a derived wait keeps its cadence anchor across pane churn and clears it once the readout no longer explains the silence"
-}
-
-# --- busy pane + a lingering derived-wait marker: the busy-turn bound must win ---
-# 忙 ≠ 等. A pane that has gone BUSY is the crew working, so any derived wait it
-# was absorbed on is over: its marker and anchor go, but the hash-scoped busy-turn
-# wedge timer must be left alone to accumulate and escalate. A derived arm that
-# only reset the hash-scoped half would delete the freshly armed `.stale-since` on
-# every poll, so a hung foreground call behind a busy signature (the 2026-07
-# incident this bound exists for) would never escalate. Both the stable-hash poll
-# and the first-sight changed-hash poll are covered, since both arms could starve.
-test_busy_pane_with_derived_marker_still_escalates_past_turn_age_bound() {
-  local shape dir state fakebin out capture_file window key pane_hash sig pid since_first
-  for shape in stable changing; do
-    dir=$(make_case "busy-derived-marker-$shape"); state="$dir/state"; fakebin="$dir/fakebin"
-    out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:fm-busy-derived"
-    printf 'Working...' > "$capture_file"
-    printf 'window=%s\nkind=ship\nharness=pi\n' "$window" > "$state/busy-derived-$shape.meta"
-    record_pi_busy "$state" "busy-derived-$shape"
-    printf 'working: setup complete\n' > "$state/busy-derived-$shape.status"
-    sig=$(seen_sig "$state/busy-derived-$shape.status"); printf '%s' "$sig" > "$state/.seen-busy-derived-${shape}_status"
-    key=$(printf '%s' "$window" | tr ':/.' '___')
-    pane_hash=$(hash_text "Working...")
-    # A lingering derived wait from before the crew resumed: the idle pane's
-    # external-wait marker plus the cadence anchor its arm manages.
-    printf 'waiting' > "$state/.paused-$key"
-    date +%s > "$state/.wait-since-$key"
-    touch -t 200001010000 "$state/busy-derived-$shape.meta"
-    if [ "$shape" = stable ]; then
-      printf '%s' "$pane_hash" > "$state/.hash-$key"
-      printf '1\n' > "$state/.count-$key"
-    fi
-
-    # Phase A: the busy pane ends the derived wait, and the busy-turn wedge timer
-    # survives from poll to poll instead of being wiped by the marker.
-    PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
-      FM_STATE_OVERRIDE="$state" FM_BUSY_TURN_MAX_SECS=1 FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
-      FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
-    pid=$!
-    if ! wait_poll_cycle "$state" "$pid"; then
-      reap "$pid"; fail "[$shape] busy pane with a lingering derived marker escalated before the wedge threshold: $(cat "$out")"
-    fi
-    [ -s "$state/.stale-since-$key" ] \
-      || { reap "$pid"; fail "[$shape] a busy pane carrying a derived marker never armed the busy-turn wedge timer"; }
-    [ ! -e "$state/.paused-$key" ] \
-      || { reap "$pid"; fail "[$shape] the derived wait marker survived a busy pane"; }
-    [ ! -e "$state/.wait-since-$key" ] \
-      || { reap "$pid"; fail "[$shape] the derived wait anchor survived a busy pane"; }
-    since_first=$(cat "$state/.stale-since-$key")
-    if ! wait_poll_cycle "$state" "$pid"; then
-      reap "$pid"; fail "[$shape] busy pane with a lingering derived marker escalated before the wedge threshold: $(cat "$out")"
-    fi
-    [ "$(cat "$state/.stale-since-$key" 2>/dev/null || true)" = "$since_first" ] \
-      || { reap "$pid"; fail "[$shape] the busy-turn wedge timer was reset while the pane stayed busy"; }
-    reap "$pid"
-    ack_stopped_cycle "$state" || fail "[$shape] could not acknowledge the intentional busy phase-A stop"
-
-    # Phase B: the accumulated timer crosses the threshold and escalates.
-    echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
-    : > "$out"
-    PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
-      FM_STATE_OVERRIDE="$state" FM_BUSY_TURN_MAX_SECS=1 FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
-      FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
-    pid=$!
-    wait_for_exit "$pid" 100 || fail "[$shape] a busy pane carrying a derived marker never wedge-escalated past the turn-age bound"
-    grep -F "stale: $window" "$out" >/dev/null || fail "[$shape] busy turn-age escalation printed no stale wake"
-    grep -F "possible wedge" "$out" >/dev/null || fail "[$shape] busy turn-age escalation did not flag a possible wedge"
-  done
-  pass "a busy pane carrying a lingering derived-wait marker ends the wait and still arms and escalates the busy-turn wedge timer"
-}
-
-# --- non-terminal stale, crew NO progress: surfaced at once -------------------
-# The other half of the same readout. A run that still CLAIMS an active step while
-# the pipeline itself reports no progress is no longer a wait: it is the case the
-# wedge timer used to be the only answer to, and it must surface at once rather than
-# be absorbed as a quiet external wait forever.
-test_nonterminal_stale_run_with_no_progress_surfaces() {
-  local dir state fakebin out capture_file window key pane_hash sig pid
-  dir=$(make_case nonterminal-stale-no-progress); state="$dir/state"; fakebin="$dir/fakebin"
-  out="$dir/watch.out"; capture_file="$dir/pane.txt"
-  window="test:fm-no-progress"
-  printf 'idle, run stopped reporting' > "$capture_file"
-  printf 'window=%s\nkind=ship\n' "$window" > "$state/noprog.meta"
-  printf 'working: implementation handed to the pipeline\n' > "$state/noprog.status"
-  sig=$(seen_sig "$state/noprog.status"); printf '%s' "$sig" > "$state/.seen-noprog_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
-  pane_hash=$(hash_text "idle, run stopped reporting")
-  printf '%s' "$pane_hash" > "$state/.hash-$key"
-  printf '1\n' > "$state/.count-$key"
-  # The pipeline's own quiet marker: an active step with no activity past its
-  # configured quiet warning.
-  export FM_FAKE_CREW_STATE='state: working · source: run-step · validating (running) · no recent step activity'
-
-  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
-    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
-    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
-  pid=$!
-  wait_for_exit "$pid" 100 || fail "a run reported with no progress was not surfaced at once"
-  grep -F "stale: $window" "$out" >/dev/null || fail "the no-progress surface did not print a stale wake"
-  grep -F "possible wedge" "$out" >/dev/null && fail "an immediate no-progress surface was mislabeled a wedge"
-  [ ! -e "$state/.stale-since-$key" ] || fail "an immediate no-progress surface must not start the wedge timer"
-  unset FM_FAKE_CREW_STATE
-  pass "a run that claims an active step with no progress surfaces at once instead of being absorbed as a wait"
-}
-
-# --- non-terminal stale, BUSY pane: the wedge timer still arms -----------------
-# The 忙 counterfactual: the harness itself reports the agent working right now, so
-# the pane's silence is unexplained by any external wait and keeps exactly the
-# wedge-timer behavior it always had.
-test_nonterminal_stale_busy_pane_still_takes_the_wedge_timer() {
-  local dir state fakebin out capture_file window key pane_hash sig pid
-  dir=$(make_case nonterminal-stale-busy-pane); state="$dir/state"; fakebin="$dir/fakebin"
-  out="$dir/watch.out"; capture_file="$dir/pane.txt"
-  window="test:fm-busy-pane"
-  printf 'idle-looking pane, harness says busy' > "$capture_file"
-  printf 'window=%s\nkind=ship\n' "$window" > "$state/busy.meta"
-  printf 'working: mid-turn\n' > "$state/busy.status"
-  sig=$(seen_sig "$state/busy.status"); printf '%s' "$sig" > "$state/.seen-busy_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
-  pane_hash=$(hash_text "idle-looking pane, harness says busy")
-  printf '%s' "$pane_hash" > "$state/.hash-$key"
-  printf '1\n' > "$state/.count-$key"
-  export FM_FAKE_CREW_STATE='state: working · source: pane · harness busy (native)'
-
-  # Phase A: absorbed, with the wedge timer armed - unlike a quiet external wait.
-  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
-    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
-    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
-  pid=$!
-  if ! wait_poll_cycle "$state" "$pid"; then
-    reap "$pid"; fail "watcher exited for a fresh busy-pane stale (should absorb): $(cat "$out")"
-  fi
-  [ ! -s "$out" ] || fail "a fresh busy-pane stale printed a wake reason during absorb"
-  [ -s "$state/.stale-since-$key" ] || fail "a busy pane must still arm the wedge timer"
-  reap "$pid"
-  ack_stopped_cycle "$state" || fail "could not acknowledge the intentional busy-phase watcher stop"
-
-  # Phase B: past the threshold it escalates exactly as before.
+  # Phase B: backdate the idle timer past the threshold; the next run escalates.
+  # (The subsequent-sight timer path does not re-read the crew state.)
   echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
   : > "$out"
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 100 || fail "watcher did not escalate a busy-pane stale past the threshold"
-  grep -F "stale: $window" "$out" >/dev/null || fail "busy-pane escalation did not print a stale wake"
-  grep -F "possible wedge" "$out" >/dev/null || fail "busy-pane escalation did not flag a possible wedge"
-  unset FM_FAKE_CREW_STATE
-  pass "a busy pane still arms the wedge timer and escalates past the threshold"
+  wait_for_exit "$pid" 100 || fail "watcher did not escalate a provably-working non-terminal stale past the threshold"
+  grep -F "stale: $window" "$out" >/dev/null || fail "escalation did not print a stale wake"
+  grep -F "possible wedge" "$out" >/dev/null || fail "escalation did not flag a possible wedge"
+  [ ! -e "$state/.stale-since-$key" ] || fail "stale-since timer was not cleared after escalation"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the wedge escalation failed"
+  grep "$(printf '\tstale\t')" "$drain_out" | grep -F "$window" >/dev/null || fail "wedge escalation was not queued"
+  pass "provably-working non-terminal stale is absorbed on first sight, then wedge-escalated past the threshold"
 }
 
 # --- non-terminal stale, crew NOT provably working: surfaced immediately ------
@@ -3042,89 +2701,6 @@ test_stale_churn_for_an_unheld_delivery_is_bounded_but_other_terminal_lines_are_
   pass "an unheld delivery is bounded like a hold while its own first sight and a replacement delivery still alarm; blocker, failure, and worker lines keep alarming on every new hash"
 }
 
-# A captain-relevant line the log still carries while the crew's OWN run is in a
-# passive external wait (monitoring: ci running / run active / checks green) is not
-# news - the run is doing the branch's work, so the leftover line is superseded. It
-# must take the bounded external-wait cadence, not surface once per stabilizing pane
-# hash, which is the per-hash storm the intent's second face names. A done: line
-# keeps its own delivered_stale_bound, and an open captain call its own bound.
-test_captain_line_on_a_monitoring_crew_takes_the_bounded_wait_cadence() {
-  local dir state fakebin out capture_file window key sig pid back round c
-  dir=$(make_case monitoring-captain-line); state="$dir/state"; fakebin="$dir/fakebin"
-  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:fm-monitoring-captain"
-  printf 'window=%s\nkind=ship\nbackend=tmux\n' "$window" > "$state/mon-captain.meta"
-  printf 'blocked: vendor API down\n' > "$state/mon-captain.status"
-  sig=$(seen_sig "$state/mon-captain.status"); printf '%s' "$sig" > "$state/.seen-mon-captain_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
-  printf 'idle render 0' > "$capture_file"
-  export FM_FAKE_CREW_STATE='state: working · source: run-step · ci running'
-
-  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
-    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
-    FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
-    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
-  pid=$!
-
-  # Phase A: successive pane frames each stabilize (two identical polls), so the
-  # terminal-status branch runs on every one of them. None may wake the watcher.
-  round=0
-  while [ "$round" -le 3 ]; do
-    [ "$round" -gt 0 ] && printf 'idle render %s' "$round" > "$capture_file"
-    c=0
-    while [ "$c" -lt 3 ]; do
-      wait_poll_cycle "$state" "$pid" \
-        || { reap "$pid"; fail "a leftover captain line on a monitoring crew woke the watcher on frame $round: $(cat "$out")"; }
-      c=$((c + 1))
-    done
-    [ ! -s "$out" ] \
-      || { reap "$pid"; fail "a leftover captain line on a monitoring crew surfaced per frame instead of taking the bounded cadence: $(cat "$out")"; }
-    round=$((round + 1))
-  done
-  [ "$(cat "$state/.paused-$key" 2>/dev/null || true)" = waiting ] \
-    || { reap "$pid"; fail "the monitoring lane was not recorded as a bounded external wait"; }
-  [ -e "$state/.wait-since-$key" ] \
-    || { reap "$pid"; fail "the bounded external wait recorded no cadence anchor"; }
-  reap "$pid"
-  ack_stopped_cycle "$state" || fail "could not acknowledge the intentional monitoring-churn stop"
-
-  # Phase B: past the window the bounded recheck is delivered, and says what it is.
-  back=$(( $(date +%s) - 5000 ))
-  set_mtime "$back" "$state/.wait-since-$key"
-  printf 'idle render 99' > "$capture_file"
-  : > "$out"
-  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
-    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
-    FM_PAUSE_RESURFACE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
-    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
-  pid=$!
-  wait_for_exit "$pid" 100 || fail "the bounded external-wait recheck was never delivered on a monitoring lane"
-  grep -F "stale: $window" "$out" >/dev/null || fail "the bounded recheck printed no stale wake"
-  grep -F "run in progress" "$out" >/dev/null || fail "the bounded recheck was not labeled a run still in progress"
-  grep -F "confirm it is still advancing" "$out" >/dev/null || fail "the bounded recheck did not ask whether it is still advancing"
-  grep -F "possible wedge" "$out" >/dev/null && fail "a quiet external wait was mislabeled a possible wedge"
-  unset FM_FAKE_CREW_STATE
-
-  # A delivery line keeps its own bound: the monitoring arm must not swallow it.
-  dir=$(make_case monitoring-done-line); state="$dir/state"; fakebin="$dir/fakebin"
-  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:fm-monitoring-done"
-  printf 'window=%s\nkind=ship\nbackend=tmux\n' "$window" > "$state/mon-done.meta"
-  printf 'done: PR https://example.invalid/pull/1 checks green\n' > "$state/mon-done.status"
-  sig=$(seen_sig "$state/mon-done.status"); printf '%s' "$sig" > "$state/.seen-mon-done_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
-  printf 'idle render, delivered' > "$capture_file"
-  export FM_FAKE_CREW_STATE='state: working · source: run-step · ci running'
-  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
-    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
-    FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
-    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
-  pid=$!
-  wait_for_exit "$pid" 100 || fail "a done: line on a monitoring crew did not surface on first sight"
-  grep -F "stale: $window" "$out" >/dev/null || fail "a done: line on a monitoring crew printed no stale wake"
-  [ ! -e "$state/.paused-$key" ] || fail "a done: line was absorbed as a derived external wait"
-  unset FM_FAKE_CREW_STATE
-  pass "a leftover captain line on a monitoring crew takes the bounded external-wait cadence, while a done: line keeps its own path"
-}
-
 
 # Pane stability is a two-poll question, so the idle counter saturates there.
 # Nothing reads a larger value, yet it used to increment once per poll forever:
@@ -3395,35 +2971,7 @@ test_nonterminal_stale_pause_transitions_reclassify_unchanged_hash() {
 
   printf 'working: upstream landed, resuming\n' > "$state/transition.status"
   sig=$(seen_sig "$state/transition.status"); printf '%s' "$sig" > "$state/.seen-transition_status"
-  # The pipeline is now doing this crew's work (an actively advancing run step), so
-  # the same unchanged hash reclassifies out of the DECLARED pause into the DERIVED
-  # external wait: the class is re-recorded in the flag and the wedge timer stays
-  # unarmed, because a run still advancing is a wait, not a wedge (2026-09-24 D2).
   FM_FAKE_CREW_STATE='state: working · source: run-step · validating (running)'
-  : > "$out"
-  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
-    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
-    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
-  pid=$!
-  i=0
-  while [ "$i" -lt 100 ] && kill -0 "$pid" 2>/dev/null; do
-    [ "$(cat "$state/.paused-$key" 2>/dev/null || true)" = waiting ] && break
-    sleep 0.1
-    i=$((i + 1))
-  done
-  kill -0 "$pid" 2>/dev/null || { reap "$pid"; fail "a stale hash that left pause was not reclassified as a derived wait: $(cat "$out")"; }
-  [ "$(cat "$state/.paused-$key" 2>/dev/null || true)" = waiting ] || { reap "$pid"; fail "unchanged stale hash did not reclassify from the declared pause to the derived wait: $(cat "$out")"; }
-  [ ! -e "$state/.stale-since-$key" ] || { reap "$pid"; fail "a derived wait retained the declared pause's wedge timer"; }
-  [ -e "$state/.wait-since-$key" ] || { reap "$pid"; fail "the derived wait recorded no cadence anchor"; }
-  wait_poll_cycle "$state" "$pid" || { reap "$pid"; fail "a stale hash that left pause was not reclassified as a derived wait: $(cat "$out")"; }
-  reap "$pid"
-  ack_stopped_cycle "$state" || fail "could not acknowledge the intentional derived-wait watcher stop"
-
-  # And the hash reclassifies again when the pane's own harness reports the agent
-  # busy: only that arms the wedge timer, which is what the declared pause left behind.
-  printf 'working: mid-turn on the resumed work\n' > "$state/transition.status"
-  sig=$(seen_sig "$state/transition.status"); printf '%s' "$sig" > "$state/.seen-transition_status"
-  FM_FAKE_CREW_STATE='state: working · source: pane · harness busy (native)'
   : > "$out"
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
@@ -3436,12 +2984,12 @@ test_nonterminal_stale_pause_transitions_reclassify_unchanged_hash() {
     i=$((i + 1))
   done
   kill -0 "$pid" 2>/dev/null || { reap "$pid"; fail "a stale hash that left pause did not resume wedge tracking: $(cat "$out")"; }
-  [ ! -e "$state/.paused-$key" ] || { reap "$pid"; fail "unchanged stale hash retained wait mode after the agent went busy"; }
-  [ -s "$state/.stale-since-$key" ] || { reap "$pid"; fail "unchanged stale hash did not restart wedge tracking after the agent went busy"; }
+  [ ! -e "$state/.paused-$key" ] || { reap "$pid"; fail "unchanged stale hash retained paused mode after resume"; }
+  [ -s "$state/.stale-since-$key" ] || { reap "$pid"; fail "unchanged stale hash did not restart wedge tracking after resume"; }
   wait_poll_cycle "$state" "$pid" || { reap "$pid"; fail "a stale hash that left pause did not resume wedge tracking: $(cat "$out")"; }
   reap "$pid"
   unset FM_FAKE_CREW_STATE
-  pass "unchanged stale hashes reclassify as a crew enters a declared pause, a derived wait, or a busy pane"
+  pass "unchanged stale hashes reclassify when a crew enters or leaves pause"
 }
 
 test_nonterminal_paused_rechecks_authoritative_state() {
@@ -3539,10 +3087,8 @@ test_wedge_escalation_marks_demand_deep_inspection_after_threshold() {
   pane_hash=$(hash_text "idle building output")
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
-  # The harness itself reports the agent busy: that is the state that arms the
-  # wedge timer under the three-state readout (a run step merely advancing or
-  # monitoring is a quiet external wait and takes the pause cadence instead).
-  export FM_FAKE_CREW_STATE='state: working · source: pane · harness busy (native)'
+  # The crew's pipeline is actively running: a static pane is normal (waiting on CI).
+  export FM_FAKE_CREW_STATE='state: working · source: run-step · validating (running)'
 
   # Priming round: first sighting of this stale hash classifies and absorbs it
   # (establishing .stale-$key and starting the wedge timer) without going
@@ -5403,6 +4949,91 @@ test_paused_until_that_passed_is_rechecked_before_the_cadence() {
 }
 
 
+
+# The three-state readout behind a silent pane: busy, a quiet external wait, or
+# nothing left to wait for. It is the readout's own unit contract; the watcher's
+# stale decision does not consume it in this release.
+test_crew_stale_three_state_readout() {
+  local dir state fakebin id win spec want line got
+  dir=$(make_case stale-three-state); state="$dir/state"; fakebin="$dir/fakebin"
+  export FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh"
+  export FM_FAKE_CREW_STATE
+  id=crew; win="test:fm-$id"
+  mkdir -p "$dir/home" "$state"
+  printf 'window=%s\nkind=ship\nbackend=tmux\n' "$win" > "$state/$id.meta"
+  # The readout answers from the crew's own current state; the watcher's stale
+  # decision does not consume it in this release.
+  printf 'working: implementing\n' > "$state/$id.status"
+
+  # The readout's token for every interesting input, one read each.
+  assert_class() {  # <fake-line> <expected-class> <why>
+    FM_FAKE_CREW_STATE="$1"
+    [ "$(crew_stale_class "$id")" = "$2" ] \
+      || fail "crew_stale_class read '$1' as $(crew_stale_class "$id"), not $2 ($3)"
+  }
+  assert_class 'state: working · source: pane · harness busy (native)' busy \
+    'a busy pane is the agent working now'
+  assert_class 'state: working · source: run-step · validating (running)' advancing \
+    'an actively working run step'
+  assert_class 'state: working · source: run-step · validating (fixing)' advancing \
+    'an actively fixing run step'
+  assert_class 'state: working · source: run-step · validating (background run)' advancing \
+    'the coarse runs-ledger reading of an active run'
+  assert_class 'state: working · source: run-step · ci running' monitoring \
+    'the pipeline waiting on checks'
+  assert_class 'state: working · source: run-step · run active' monitoring \
+    'an active run whose step the client does not name'
+  assert_class 'state: parked · source: run-step · parked at review gate' monitoring \
+    'a run parked at a gate'
+  assert_class 'state: parked · source: run-step · parked at gate: 2 finding(s) (ask-user: authority decision)' monitoring \
+    'a run parked at an ask-user gate'
+  assert_class 'state: parked · source: status-log · needs-decision: the captain must pick a route' none \
+    "a needs-decision status line is not this readout's to absorb"
+  assert_class 'state: done · source: run-step · run passed: PR held for merge' landed \
+    'a delivered PR with the merge left to the captain'
+  assert_class 'state: done · source: run-step · run passed: PR merged: https://example.test/pr/7' landed \
+    'a proven merge'
+  assert_class 'state: done · source: status-log · PR https://example.test/pr/7 checks green' landed \
+    "the crew's own delivery line with no attributed run"
+  assert_class 'state: paused · source: status-log · awaiting upstream' paused \
+    'a declared external wait'
+  assert_class 'state: working · source: run-step · validating (running) · no recent step activity' none \
+    "the pipeline's own no-progress verdict"
+  assert_class 'state: working · source: run-step · validating (running) · status-log superseded by active run' advancing \
+    'an unrecognised active-step detail keeps the conservative active reading'
+  assert_class 'state: working · source: status-log · working: compiling' none \
+    'a stale status line is not liveness'
+  assert_class 'state: failed · source: run-step · run failed' none 'a failed run'
+  assert_class 'state: unknown · source: none · worktree gone (torn down?)' none \
+    'a torn-down worktree'
+  assert_class 'state: unknown · source: pane · harness state unavailable (unknown codex-unverified)' none \
+    'an unreadable harness verdict'
+  assert_class '' none 'no current-state line at all'
+  assert_class 'state: done · source: pane · whatever' landed \
+    'a terminal verdict outranks the source it arrived with'
+
+  # The terminal-status override's own predicate: only the crew working right now
+  # may supersede a captain-relevant status line the log still carries.
+  for spec in \
+    'busy|state: working · source: pane · harness busy (native)|0' \
+    'advancing|state: working · source: run-step · validating (running)|0' \
+    'monitoring|state: working · source: run-step · ci running|1' \
+    'parked|state: parked · source: run-step · parked at review gate|1' \
+    'landed|state: done · source: run-step · run passed: PR held for merge|1' \
+    'paused|state: paused · source: status-log · awaiting upstream|1' \
+    'dead|state: unknown · source: none · worktree gone|1'
+  do
+    FM_FAKE_CREW_STATE=${spec%|*}; FM_FAKE_CREW_STATE=${FM_FAKE_CREW_STATE#*|}
+    if [ "${spec##*|}" = 0 ]; then
+      crew_stale_is_actively_working "$id" \
+        || fail "${spec%%|*} was not treated as actively working"
+    else
+      ! crew_stale_is_actively_working "$id" \
+        || fail "${spec%%|*} was treated as actively working"
+    fi
+  done
+  pass "crew_stale_class: busy, the quiet external waits (advancing/monitoring/paused), landed, and the dead/no-progress cases each read as their own state"
+}
 test_status_span_actionable_classifier
 test_status_span_survives_a_later_routine_append
 test_status_span_respects_decision_closure
@@ -5412,7 +5043,6 @@ test_classifier_primitives
 test_crew_is_provably_working_classifier
 test_status_is_paused_classifier
 test_crew_absorb_class_classifier
-test_crew_stale_three_state_readout
 test_crew_worktree_written_since_classifier
 test_empty_write_prune_widens_the_probe
 test_empty_write_prune_from_the_environment_widens_the_probe
@@ -5460,11 +5090,7 @@ test_unreadable_status_reports_once_per_file_state
 test_permission_recovery_surfaces_preserved_status
 test_terminal_stale_surfaced
 test_stale_terminal_status_overridden_by_active_run
-test_nonterminal_stale_quiet_external_wait_takes_the_pause_cadence
-test_derived_wait_anchor_survives_pane_churn
-test_busy_pane_with_derived_marker_still_escalates_past_turn_age_bound
-test_nonterminal_stale_run_with_no_progress_surfaces
-test_nonterminal_stale_busy_pane_still_takes_the_wedge_timer
+test_nonterminal_stale_provably_working_absorbed_then_escalated
 test_wedge_escalation_marks_demand_deep_inspection_after_threshold
 test_wedge_escalation_resets_when_pane_becomes_active
 test_busy_pane_below_turn_age_bound_is_absorbed
@@ -5485,7 +5111,6 @@ test_live_declared_wait_churn_honors_the_resurface_throttle
 test_live_paused_until_controls_recheck_time
 test_open_captain_call_bounds_stale_churn
 test_stale_churn_for_an_unheld_delivery_is_bounded_but_other_terminal_lines_are_not
-test_captain_line_on_a_monitoring_crew_takes_the_bounded_wait_cadence
 test_idle_poll_counter_saturates_at_the_stability_floor
 test_failed_wake_append_does_not_arm_the_captain_hold_throttle
 test_reheld_captain_call_starts_its_own_resurface_window
@@ -5525,6 +5150,8 @@ test_afk_one_shot_never_hands_off_captain_held_under_away_record
 test_paused_until_near_future_is_quiet_before_the_cadence
 test_paused_until_wrong_year_is_bounded_by_the_cadence
 test_paused_until_that_passed_is_rechecked_before_the_cadence
+test_crew_stale_three_state_readout
+
 
 # A watcher this suite started and never reaped keeps polling a fixture state
 # directory that cleanup is about to remove, which is how an earlier run left
