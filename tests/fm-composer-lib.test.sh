@@ -724,30 +724,36 @@ test_refined_refusal_vocabulary() {
 }
 
 test_dead_shell_outranks_earlier_shape_refusals() {
-  # The dead-shell fact (the agent exited) must win even when the same frame
-  # also carries one of the shape refusals: a closed stale composer box and a
-  # leftover separator rule above a login-shell prompt used to refuse as
-  # `shape`, which names `unknown-shape` for a settled identity and
-  # `unknown-busy` for a working one - a retryable mid-turn answer on a pane
-  # whose turn will never end. It stays the umbrella `unknown` under every
-  # identity, while the identical structure with no shell row keeps its shape
-  # refusal.
-  local pi_idle pi_working box rule dead stale pair_dead
+  # A dead shell is only the agent-exited fact when the shell prompt is the
+  # BOTTOM-MOST structure (the composer's own position). A shell-looking row in
+  # the transcript body must not suppress the busy/shape refusal: on the same
+  # frame a working pi stays unknown-busy and a settled one unknown-shape.
+  # When the shell row really is the lowest structure, it still wins over a
+  # stale box and a leftover separator rule and stays the umbrella `unknown`.
+  local pi_idle pi_working box rule dead stale pair_dead transcript
   pi_idle=$(printf 'pi\tidle'); pi_working=$(printf 'pi\tworking')
   box=$'╭────────────────────────╮\n│                        │\n╰────────────────────────╯'
   rule='────────────────────────'
+  # Shell occupying the bottom structure, with a stale box and a leftover rule
+  # above it.
   dead=$box$'\n'$rule$'\n$ '
   stale=$box$'\n'$rule
   assert_screen "dead shell with a stale box and rule stays unknown" unknown "$CAPS_STYLED" "$dead" '' "$pi_idle"
   assert_screen "dead shell with a stale box and rule stays unknown while working" unknown "$CAPS_STYLED" "$dead" '' "$pi_working"
   assert_screen "dead shell with a stale box and rule stays unknown without identity" unknown "$CAPS_STYLED" "$dead"
   assert_screen "stale box plus rule with no shell keeps its shape refusal" unknown-shape "$CAPS_STYLED" "$stale" '' "$pi_idle"
+  # A shell-looking transcript row above the bottom structure is NOT a dead
+  # shell: the unpaired rule below it is the lowest structure, so the refusal
+  # is named by the pane's own state.
+  transcript=$'transcript\n$ make build\nmore transcript\n────────────────────────'
+  assert_screen "transcript shell line above an unpaired rule is unknown-busy" unknown-busy "$CAPS_STYLED" "$transcript" '' "$pi_working"
+  assert_screen "transcript shell line above an unpaired rule is unknown-shape" unknown-shape "$CAPS_STYLED" "$transcript" '' "$pi_idle"
   # A valid pi pair with a dead shell below is still the dead-shell refusal, so
   # the reordered check does not change the existing rejection.
   pair_dead=$'transcript\n────────────────────────\n\n────────────────────────\n$ '
   assert_screen "valid pi pair above a dead shell stays unknown" unknown "$CAPS_STYLED" "$pair_dead" '' "$pi_idle"
   assert_screen "valid pi pair above a dead shell stays unknown while working" unknown "$CAPS_STYLED" "$pair_dead" '' "$pi_working"
-  pass "fm_composer_classify_screen: the dead-shell refusal outranks earlier shape refusals"
+  pass "fm_composer_classify_screen: only a bottom-most shell row is the dead-shell fact"
 }
 
 test_titled_bottom_requires_matching_width() {

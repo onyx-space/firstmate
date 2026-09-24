@@ -799,8 +799,9 @@ fm_backend_busy_state() {  # <backend> <target>
 }
 
 # fm_backend_composer_state: classify the composer/input area of <target> as
-# empty|pending|pending-unproven|unknown for callers that need a pre-submit
-# input guard, a submit acknowledgement, or a launch-readiness check. It is
+# empty|pending|pending-unproven|unknown|unknown-busy|unknown-shape for callers
+# that need a pre-submit input guard, a submit acknowledgement, or a
+# launch-readiness check. It is
 # exposed so a caller other than the send path (the away-mode daemon's
 # supervisor-pane pending-input guard in bin/fm-supervise-daemon.sh, and
 # fm-spawn.sh's kimi readiness/delivery checks) can ask the same question
