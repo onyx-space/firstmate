@@ -181,11 +181,15 @@
 # captain's active tab, and restore the exact response-derived pre-close tab
 # if Herdr's last-pane cleanup focuses an unrelated neighboring workspace.
 # The active-tab refusal is the ONE close failure teardown defers instead of
-# holding on to: when the refused pane holds no agent of its own, teardown finishes
-# its record cleanup and leaves the close recorded in the retained presentation
-# journal, which bin/fm-herdr-session-cleanup.sh resumes at the next locked session
-# start once the pane is no longer on the active tab. Every other refusal keeps the
-# whole record set, and the pane is never touched while it holds a live agent.
+# holding on to: when bin/fm-herdr-session-cleanup.sh's own read-only
+# --candidate-ready check proves the next session-start sweep would take this exact
+# candidate (every requirement it closes with, minus the focus refusal that caused
+# the deferral and the task record this teardown is about to remove), teardown
+# finishes its record cleanup and leaves the close recorded in the retained
+# presentation journal for that sweep to finish once the tab is no longer active.
+# When it cannot prove that, it keeps every record and refuses exactly as before,
+# because a deferred close nothing can ever collect is worse than a refusal; the
+# captain's focus is never taken and the pane is never closed while it holds an agent.
 # Secondmates (kind=secondmate in meta) are retired explicitly. Normal
 # teardown refuses while their home has in-flight crewmate meta files; --force
 # is the approved discard path that prevalidates child removal targets, locks each
@@ -3979,32 +3983,27 @@ if [ "$HERDR_PRESENTATION_RETIRE_CANDIDATE" = 1 ]; then
   HERDR_PRESENTATION_PRESENCE=$(fm_backend_herdr_pane_presence_state \
     "$HERDR_PRESENTATION_SESSION" "$HERDR_PRESENTATION_PANE") \
     || HERDR_PRESENTATION_PRESENCE=unknown
-  HERDR_PRESENTATION_PANE_AGENT_STATE=
-  [ "$HERDR_PRESENTATION_PRESENCE" = dead ] \
-    || HERDR_PRESENTATION_PANE_AGENT_STATE=$(fm_backend_herdr_pane_agent_state \
-         "$HERDR_PRESENTATION_SESSION" "$HERDR_PRESENTATION_PANE")
-  # Nothing live is left in the pane only on herdr's exact agent-free reading: no
-  # registration at all. `stale-agent` (a registration lingering over a shell-only
-  # pane), `live`, `unknown`, and every unmodelled reading keep the refusal. The
-  # resumer below requires the same exact reading, so a case it could not finish is
-  # never handed to it in the first place.
-  HERDR_PRESENTATION_PANE_AGENTLESS=1
-  [ "$HERDR_PRESENTATION_PANE_AGENT_STATE" = no-agent ] \
-    && HERDR_PRESENTATION_PANE_AGENTLESS=0
   if [ "$HERDR_PRESENTATION_PRESENCE" = dead ]; then
     rm -f "$HERDR_PRESENTATION_JOURNAL"
   elif [ "$HERDR_PRESENTATION_CLOSE_REFUSAL" = active-tab ] \
-       && [ "$HERDR_PRESENTATION_PANE_AGENTLESS" = 0 ]; then
+       && FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$STATE" \
+          FM_CONFIG_OVERRIDE="$CONFIG" FM_DATA_OVERRIDE="$DATA" \
+          HERDR_SESSION="$HERDR_PRESENTATION_SESSION" \
+          "$SCRIPT_DIR/fm-herdr-session-cleanup.sh" \
+          --candidate-ready "$ID" --ignore-focus --pending-meta >/dev/null 2>&1; then
     # D1 (2026-09-24 elmo stale-rate report): the close is refused ONLY because the
-    # pane sits in the captain's own active tab with a live viewer, and the pane
-    # holds no agent of its own. Nothing live is discarded and the captain's focus
-    # is never stolen; refusing the whole cleanup instead left a landed task's
-    # endpoint alive with no owner, so the next supervision round re-read it as a
-    # wedge suspect. The pane's close is recorded durably exactly where its own
-    # resumer already looks - the retained presentation journal, which
-    # bin/fm-herdr-session-cleanup.sh picks up at the next locked session start
-    # once the pane is no longer on the active tab (its own journal/meta/topology/
-    # agent-free proofs are unchanged and still all required).
+    # pane sits in the captain's own active tab with a live viewer. Nothing live is
+    # discarded and the captain's focus is never stolen; refusing the whole cleanup
+    # instead left a landed task's endpoint alive with no owner, so the next
+    # supervision round re-read it as a wedge suspect.
+    #
+    # The license is not a second, weaker copy of the resumer's conditions: it IS
+    # the resumer's own acceptance, asked directly. bin/fm-herdr-session-cleanup.sh
+    # --candidate-ready proves, with the same functions its sweep closes with, that
+    # this exact candidate passes every requirement except the two a deferral means -
+    # the focus refusal that caused it and the task record this teardown is about to
+    # remove. Anything it cannot prove keeps every record below, because a deferred
+    # close nobody can ever collect is worse than a refusal.
     HERDR_PRESENTATION_DEFERRED_CLOSE=1
     echo "warning: herdr pane $T for $ID is on the captain's active tab, so closing it now would move the captain's own focus; this task's records are cleaned up and the pane's close stays recorded in $HERDR_PRESENTATION_JOURNAL for the session-start presentation cleanup to finish once the tab is no longer active" >&2
   else

@@ -2522,18 +2522,18 @@ case "${1:-} ${2:-}" in
   "workspace list")
     if [ "${FM_FAKE_HERDR_ACTIVE_TAB:-0}" = 1 ]; then
       # The task's OWN workspace/tab is the captain's: a live viewer sits on it.
-      printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","active_tab_id":"w1:t2","label":"firstmate/task-x1 · p:AbCdEfGhIjKlMnOpQrStUv","focused":true}]}}'
+      printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","active_tab_id":"w1:t2","label":"└ task-x1 · p:AbCdEfGhIjKlMnOpQrStUv","focused":true}]}}'
     elif [ -e "${FM_FAKE_HERDR_RESTORED:?}" ]; then
       printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w2","active_tab_id":"w2:t2","label":"2ndmate-bravo","focused":true},{"workspace_id":"w3","active_tab_id":"w3:t1","label":"2ndmate-alpha","focused":false}]}}'
     elif [ -e "${FM_FAKE_HERDR_CLOSED:?}" ]; then
       printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w2","active_tab_id":"w2:t2","label":"2ndmate-bravo","focused":false},{"workspace_id":"w3","active_tab_id":"w3:t1","label":"2ndmate-alpha","focused":true}]}}'
     else
-      printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","active_tab_id":"w1:t2","label":"firstmate/task-x1 · p:AbCdEfGhIjKlMnOpQrStUv","focused":false},{"workspace_id":"w2","active_tab_id":"w2:t2","label":"2ndmate-bravo","focused":true},{"workspace_id":"w3","active_tab_id":"w3:t1","label":"2ndmate-alpha","focused":false}]}}'
+      printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","active_tab_id":"w1:t2","label":"└ task-x1 · p:AbCdEfGhIjKlMnOpQrStUv","focused":false},{"workspace_id":"w2","active_tab_id":"w2:t2","label":"2ndmate-bravo","focused":true},{"workspace_id":"w3","active_tab_id":"w3:t1","label":"2ndmate-alpha","focused":false}]}}'
     fi
     ;;
   "tab list")
     case "$*" in
-      *"--workspace w1"*) printf '%s\n' '{"result":{"tabs":[{"tab_id":"w1:t2","focused":true}]}}' ;;
+      *"--workspace w1"*) printf '%s\n' '{"result":{"tabs":[{"tab_id":"w1:t2","workspace_id":"w1","focused":true}]}}' ;;
       *"--workspace w2"*) printf '%s\n' '{"result":{"tabs":[{"tab_id":"w2:t2","focused":true}]}}' ;;
       *"--workspace w3"*) printf '%s\n' '{"result":{"tabs":[{"tab_id":"w3:t1","focused":true}]}}' ;;
       *) printf '%s\n' '{"result":{"tabs":[]}}' ;;
@@ -2546,14 +2546,6 @@ case "${1:-} ${2:-}" in
       printf '%s\n' '{"result":{"reason":"cleared"}}'
     else
       printf '%s\n' '{"result":{"reason":"no_foreground_client"}}'
-    fi
-    ;;
-  "pane process-info")
-    if [ "${FM_FAKE_HERDR_AGENT_LIVE:-0}" = 1 ]; then
-      printf '%s\n' "{\"result\":{\"type\":\"pane_process_info\",\"process_info\":{\"pane_id\":\"w1:p2\",\"shell_pid\":$$,\"foreground_processes\":[{\"pid\":$$,\"name\":\"pi\"}]}}}"
-    else
-      printf '%s\n' '{"error":{"code":"pane_not_found"}}' >&2
-      exit 1
     fi
     ;;
   "status --json")
@@ -2582,6 +2574,32 @@ case "${1:-} ${2:-}" in
   "tab get")
     printf '%s\n' '{"result":{"tab":{"tab_id":"w2:t2","workspace_id":"w2"}}}'
     ;;
+  "workspace get")
+    printf '%s\n' '{"result":{"workspace":{"workspace_id":"w1","label":"└ task-x1 · p:AbCdEfGhIjKlMnOpQrStUv","active_tab_id":"w1:t2","tab_count":1,"pane_count":1}}}'
+    ;;
+  "api snapshot")
+    printf '%s\n' '{"result":{"snapshot":{"focused_workspace_id":"w2","focused_tab_id":"w2:t2","focused_pane_id":"w2:p1","workspaces":[{"workspace_id":"w1","label":"└ task-x1 · p:AbCdEfGhIjKlMnOpQrStUv","active_tab_id":"w1:t2","tab_count":1,"pane_count":1}],"tabs":[{"tab_id":"w1:t2","workspace_id":"w1","focused":false}],"panes":[{"pane_id":"w1:p2","tab_id":"w1:t2","workspace_id":"w1"}]}}}'
+    ;;
+  "pane list")
+    printf '%s\n' '{"result":{"panes":[{"pane_id":"w1:p2","tab_id":"w1:t2","workspace_id":"w1"}]}}'
+    ;;
+  "pane process-info")
+    # FM_FAKE_HERDR_AGENT_STALE: a registration that outlived its process - the
+    # crew shape bin/backends/herdr.sh documents as the post-agent-exit reading -
+    # over a lone idle childless shell (the fake ps below proves pid 67 as one).
+    # FM_FAKE_HERDR_SHELL_NOT_IDLE: an agent-free registration over a pane that is
+    # NOT a clean idle shell, which must never license a deferred close.
+    if [ "${FM_FAKE_HERDR_AGENT_STALE:-0}" = 1 ]; then
+      printf '%s\n' '{"result":{"type":"pane_process_info","process_info":{"pane_id":"w1:p2","shell_pid":67,"foreground_process_group_id":67,"foreground_processes":[{"pid":67,"name":"sh","argv0":"sh","argv":["sh"]}]}}}'
+    elif [ "${FM_FAKE_HERDR_SHELL_NOT_IDLE:-0}" = 1 ]; then
+      printf '%s\n' "{\"result\":{\"type\":\"pane_process_info\",\"process_info\":{\"pane_id\":\"w1:p2\",\"shell_pid\":67,\"foreground_process_group_id\":69,\"foreground_processes\":[{\"pid\":67,\"name\":\"sh\",\"argv0\":\"sh\"},{\"pid\":69,\"name\":\"bash\",\"argv0\":\"bash\"}]}}}"
+    elif [ "${FM_FAKE_HERDR_AGENT_LIVE:-0}" = 1 ]; then
+      printf '%s\n' "{\"result\":{\"type\":\"pane_process_info\",\"process_info\":{\"pane_id\":\"w1:p2\",\"shell_pid\":$$,\"foreground_processes\":[{\"pid\":$$,\"name\":\"pi\"}]}}}"
+    else
+      printf '%s\n' '{"error":{"code":"pane_not_found"}}' >&2
+      exit 1
+    fi
+    ;;
   "tab focus")
     if [ "${FM_FAKE_HERDR_RESTORE_FAIL:-0}" = 1 ]; then
       exit 1
@@ -2590,6 +2608,15 @@ case "${1:-} ${2:-}" in
     printf '%s\n' '{"result":{"tab":{"tab_id":"w2:t2","workspace_id":"w2","focused":true}}}'
     ;;
   "agent get")
+    if [ "${FM_FAKE_HERDR_AGENT_STALE:-0}" = 1 ]; then
+      # The registration Herdr keeps after the agent process exits (issue #4115).
+      printf '%s\n' '{"result":{"agent":{"agent_status":"idle"}}}'
+      exit 0
+    fi
+    if [ "${FM_FAKE_HERDR_AGENT_NOT_IDLE_SHELL:-0}" = 1 ]; then
+      printf '%s\n' '{"error":{"code":"agent_not_found"}}' >&2
+      exit 1
+    fi
     if [ "${FM_FAKE_HERDR_AGENT_LIVE:-0}" = 1 ]; then
       printf '%s\n' '{"result":{"agent":{"agent_status":"idle"}}}'
       exit 0
@@ -2600,6 +2627,23 @@ case "${1:-} ${2:-}" in
 esac
 SH
   chmod +x "$case_dir/fakebin/herdr"
+}
+
+# A fake ps that reports exactly one idle, childless shell at the pid the fixture's
+# process-info names, so the lone-idle-childless-shell proof can be exercised for
+# real (it reads the process table, never the fake herdr's word alone).
+write_idle_shell_ps() {  # <case-dir>
+  local case_dir=$1
+  cat > "$case_dir/fakebin/ps" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  "-axo pid=,ppid=") printf '1 0\n67 1\n' ;;
+  "-axo pid=,ppid=,comm=") printf '1 0 init\n67 1 sh\n' ;;
+  "-p 67 -o stat=") printf 'Ss\n' ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$case_dir/fakebin/ps"
 }
 
 test_herdr_projection_teardown_retires_journal_only_after_confirmed_close() {
@@ -2681,11 +2725,16 @@ test_herdr_projection_teardown_defers_an_active_tab_close_to_the_resumable_clean
   case_dir=$(make_case herdr-projection-active-tab-defer)
   write_meta "$case_dir" local-only ship
   configure_herdr_projection_teardown_case "$case_dir"
+  write_idle_shell_ps "$case_dir"
   : > "$case_dir/state/task-x1.turn-ended"
   log="$case_dir/herdr.log"; closed="$case_dir/closed"; restored="$case_dir/restored"; : > "$log"
 
+  # The crew-shape post-agent-exit reading (a registration that outlived its
+  # process, over a lone idle childless shell) plus the captain's live viewer on the
+  # task's own tab: the one close that must be deferred rather than refused.
   FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" FM_FAKE_HERDR_RESTORED="$restored" \
-    FM_FAKE_HERDR_ACTIVE_TAB=1 FM_FAKE_HERDR_FOREGROUND=1 \
+    FM_FAKE_HERDR_ACTIVE_TAB=1 FM_FAKE_HERDR_FOREGROUND=1 FM_FAKE_HERDR_AGENT_STALE=1 \
+    FM_HERDR_PS_BIN="$case_dir/fakebin/ps" \
     run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" \
     || fail "herdr-projection-active-tab-defer: teardown refused the record cleanup for a focus-blocked close"
   [ ! -e "$closed" ] \
@@ -2702,7 +2751,53 @@ test_herdr_projection_teardown_defers_an_active_tab_close_to_the_resumable_clean
     "herdr-projection-active-tab-defer: the deferred close named no owner to resume it"
   assert_not_contains "$(cat "$log")" "workspace close" \
     "herdr-projection-active-tab-defer: a deferred close must never escalate to workspace cleanup"
-  pass "herdr projection teardown defers a focus-blocked close to the recorded resumable cleanup instead of orphaning a landed task"
+
+  # And the deferral is only allowed because the resumer really can take it: with the
+  # task records gone and the captain's focus moved off the pane's tab, the real
+  # session-start sweep closes exactly this pane and retires its journal.
+  : > "$log"; rm -f "$closed"
+  FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" FM_FAKE_HERDR_RESTORED="$restored" \
+    FM_FAKE_HERDR_AGENT_STALE=1 FM_HERDR_PS_BIN="$case_dir/fakebin/ps" \
+    FM_HOME="${FM_HOME:-$ROOT}" FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$case_dir/state" \
+    FM_CONFIG_OVERRIDE="$case_dir/config" FM_DATA_OVERRIDE="$case_dir/data" \
+    HERDR_SESSION=fmtest PATH="$case_dir/fakebin:$PATH" \
+    "$ROOT/bin/fm-herdr-session-cleanup.sh" > "$case_dir/cleanup.out" 2> "$case_dir/cleanup.err" \
+    || fail "herdr-projection-active-tab-defer: the session-start sweep refused the deferred candidate"
+  [ -e "$closed" ] \
+    || fail "herdr-projection-active-tab-defer: the sweep did not close the deferred pane: $(cat "$case_dir/cleanup.err")"
+  [ ! -e "$case_dir/state/task-x1.herdr-presentation" ] \
+    || fail "herdr-projection-active-tab-defer: the sweep closed the pane but kept its journal"
+  pass "herdr projection teardown defers a focus-blocked close only when the session-start sweep then takes it, instead of orphaning a landed task"
+}
+
+# F5(c)2: the deferral must not delete records when the pane is agent-free but NOT a
+# clean lone idle childless shell, because the sweep would then refuse it on every
+# session start with the task's records already gone - records deleted and pane
+# uncollectable, the exact regression this fix exists to prevent.
+test_herdr_projection_teardown_refuses_deferral_for_a_non_idle_shell_pane() {
+  local case_dir log closed restored rc=0
+  case_dir=$(make_case herdr-projection-defer-nonidle-shell)
+  write_meta "$case_dir" local-only ship
+  configure_herdr_projection_teardown_case "$case_dir"
+  write_idle_shell_ps "$case_dir"
+  : > "$case_dir/state/task-x1.turn-ended"
+  log="$case_dir/herdr.log"; closed="$case_dir/closed"; restored="$case_dir/restored"; : > "$log"
+
+  FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" FM_FAKE_HERDR_RESTORED="$restored" \
+    FM_FAKE_HERDR_ACTIVE_TAB=1 FM_FAKE_HERDR_FOREGROUND=1 FM_FAKE_HERDR_AGENT_NOT_IDLE_SHELL=1 \
+    FM_HERDR_PS_BIN="$case_dir/fakebin/ps" \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  [ "$rc" -ne 0 ] \
+    || fail "herdr-projection-defer-nonidle-shell: teardown cleaned up a pane the resumer can never collect"
+  [ -e "$case_dir/state/task-x1.meta" ] \
+    || fail "herdr-projection-defer-nonidle-shell: the refusal erased the durable endpoint metadata"
+  [ -e "$case_dir/state/task-x1.turn-ended" ] \
+    || fail "herdr-projection-defer-nonidle-shell: the refusal erased a non-endpoint task record"
+  [ -e "$case_dir/state/task-x1.herdr-presentation" ] \
+    || fail "herdr-projection-defer-nonidle-shell: the refusal erased the presentation journal"
+  assert_grep "not confirmed gone" "$case_dir/stderr" \
+    "herdr-projection-defer-nonidle-shell: the refusal was not explained"
+  pass "herdr projection teardown keeps every record when the focus-blocked pane is agent-free but not a clean idle shell"
 }
 
 # The other side of that fix: the deferral is licensed by the pane holding NO agent.
@@ -3924,6 +4019,7 @@ test_herdr_projection_teardown_retires_journal_only_after_confirmed_close
 test_herdr_projection_teardown_retains_journal_when_close_unconfirmed
 test_herdr_projection_teardown_surfaces_restore_failure_without_blocking_cleanup
 test_herdr_projection_teardown_defers_an_active_tab_close_to_the_resumable_cleanup
+test_herdr_projection_teardown_refuses_deferral_for_a_non_idle_shell_pane
 test_herdr_projection_teardown_refuses_deferral_while_the_pane_has_a_live_agent
 test_squash_merged_branch_deleted_allows
 test_squash_merged_pr_allows_when_head_ancestor_of_pr_head

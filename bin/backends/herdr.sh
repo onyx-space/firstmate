@@ -1073,12 +1073,24 @@ fm_backend_herdr_projection_close_pane_focus_preserving() {  # <session> <pane-i
     return 1
   fi
   if [ -n "$required_agent_state" ]; then
-    state=$(fm_backend_herdr_pane_agent_state "$session" "$pane_id")
-    FM_BACKEND_HERDR_PROJECTION_CLOSE_AGENT_STATE=$state
-    [ "$state" = "$required_agent_state" ] || {
-      FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL='agent-state-mismatch'
-      return 1
-    }
+    # `agent-free` is the set of readings that license closing an agentless pane
+    # (fm_backend_herdr_pane_agent_free owns it); every other required state keeps
+    # the exact-equality check.
+    if [ "$required_agent_state" = agent-free ]; then
+      state=$(fm_backend_herdr_pane_agent_state "$session" "$pane_id")
+      FM_BACKEND_HERDR_PROJECTION_CLOSE_AGENT_STATE=$state
+      fm_backend_herdr_pane_agent_free "$session" "$pane_id" || {
+        FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL='agent-state-mismatch'
+        return 1
+      }
+    else
+      state=$(fm_backend_herdr_pane_agent_state "$session" "$pane_id")
+      FM_BACKEND_HERDR_PROJECTION_CLOSE_AGENT_STATE=$state
+      [ "$state" = "$required_agent_state" ] || {
+        FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL='agent-state-mismatch'
+        return 1
+      }
+    fi
   fi
   [ "$target_tab" != "$active_tab" ] || skip_restore=1
   plan=plain
@@ -2333,6 +2345,24 @@ fm_backend_herdr_pane_agent_state() {  # <session> <pane_id>
     shell) printf 'stale-agent' ;;
     *) printf 'unknown' ;;
   esac
+}
+
+# fm_backend_herdr_pane_agent_free: 0 when <pane>'s reading is one of the two
+# AGENT-FREE values fm_backend_herdr_pane_agent_state can prove: `no-agent` (no
+# registration at all) or `stale-agent` (a registration that outlived its process -
+# see that function's contract, where it is named the crew shape's post-agent-exit
+# reading and "the explicit agent-free reason"). One owner for that set, because
+# both the close helper's `agent-free` requirement below and
+# bin/fm-herdr-session-cleanup.sh's candidate proof must agree about it.
+# It is never sufficient on its own to close a pane: callers pair it with a
+# process-level proof (fm_backend_herdr_pane_idle_shell_pid) that rules out both a
+# running agent and the nested shell the husk rule refuses.
+# 1 for `live`, `unknown`, and every unmodelled reading.
+fm_backend_herdr_pane_agent_free() {  # <session> <pane-id>
+  case "$(fm_backend_herdr_pane_agent_state "$1" "$2")" in
+    no-agent|stale-agent) return 0 ;;
+  esac
+  return 1
 }
 
 # fm_backend_herdr_tab_is_husk: true (0) only for the two conservative husk
