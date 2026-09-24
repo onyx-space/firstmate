@@ -607,6 +607,46 @@ test_incomplete_lower_box_invalidates_stale_candidate() {
   pass "fm_composer_classify_screen: incomplete lower structure invalidates stale boxes"
 }
 
+test_table_above_pi_pair_does_not_hide_the_composer() {
+  # d's wire bell never rang: a GitHub-flavoured markdown table (or any stray
+  # border row) ABOVE a valid, empty pi pair sets INCOMPLETE_BOX_FROM, and the
+  # unconditional refusal used to fire before the live separator pair was ever
+  # consulted - `unknown` forever, on a composer that reads `empty` the moment
+  # the offending row is removed. The pair now wins when the poison row is
+  # AT OR ABOVE the pair's opening rule; only a poison row BELOW the pair keeps
+  # the refusal (test_incomplete_box_below_pi_pair_still_refuses).
+  local pi_idle paired table open_table stray_top typed
+  pi_idle=$(printf 'pi\tidle')
+  paired=$'transcript\n────────────────────────\n\n────────────────────────\n footer'
+  table=$'┌─────┬─────┐\n│ a   │ b   │\n├─────┼─────┤\n│ c   │ d   │\n└─────┴─────┘\n'
+  open_table=$'┌─────┬─────┐\n│ a   │ b   │\n├─────┼─────┤\n│ c   │ d   │\n'
+  stray_top=$'┌─────┬─────┐\n'
+  # Control: the same pair with no border row above it.
+  assert_screen "bare pair, no table above" empty "$CAPS_STYLED" "$paired" '' "$pi_idle"
+  assert_screen "closed markdown table above idle pi pair" empty "$CAPS_STYLED" "$table$paired" '' "$pi_idle"
+  assert_screen "open markdown table above idle pi pair" empty "$CAPS_STYLED" "$open_table$paired" '' "$pi_idle"
+  assert_screen "stray top border above idle pi pair" empty "$CAPS_STYLED" "$stray_top$paired" '' "$pi_idle"
+  # The reason the pair is consulted first is unchanged: proven input still
+  # reads pending, and the identity/structure conjunction still decides.
+  typed=$'transcript\n────────────────────────\nfix the flaky test\n────────────────────────\n footer'
+  assert_screen "table above typed pi pair" pending "$CAPS_STYLED" "$table$typed" '' "$pi_idle"
+  assert_screen "table above a non-idle pi pair" unknown "$CAPS_STYLED" "$table$paired" '' "$(printf 'pi\tworking')"
+  pass "fm_composer_classify_screen: a table above a valid empty pi pair no longer hides the composer"
+}
+
+test_incomplete_box_below_pi_pair_still_refuses() {
+  # The position guard on the reordering: an unclosed box BELOW the pair leaves
+  # the pair unattributable (it may be a stale earlier frame), so the refusal
+  # must survive. This is the case the reorder must NOT flip to `empty`.
+  local pi_idle screen
+  pi_idle=$(printf 'pi\tidle')
+  screen=$'transcript\n────────────────────────\n\n────────────────────────\n footer\n┌─────┬─────┐\n│ a   │ b   │'
+  assert_screen "unclosed table below idle pi pair" unknown "$CAPS_STYLED" "$screen" '' "$pi_idle"
+  screen=$'transcript\n────────────────────────\n\n────────────────────────\n footer\n╭────────────────────────╮\n│ ❯ clipped live draft  '
+  assert_screen "clipped box below idle pi pair" unknown "$CAPS_STYLED" "$screen" '' "$pi_idle"
+  pass "fm_composer_classify_screen: an incomplete box below the pi pair still refuses"
+}
+
 test_titled_bottom_requires_matching_width() {
   local screen out
   screen=$'╭────────────────────────╮\n│ ❯                      │\n╰─ Grok ─╯'
@@ -694,6 +734,8 @@ test_cursorless_bare_wrap_region_classifies
 test_cursorless_container_rejects_contiguous_lower_activity
 test_bottom_most_candidate_wins
 test_incomplete_lower_box_invalidates_stale_candidate
+test_table_above_pi_pair_does_not_hide_the_composer
+test_incomplete_box_below_pi_pair_still_refuses
 test_titled_bottom_requires_matching_width
 test_cursor_on_proven_box_bottom_classifies_content
 test_selected_content_is_composer_scoped_and_wrap_normalized
