@@ -2492,7 +2492,8 @@ EOF
           # authoritative source fm-crew-state.sh itself already prioritizes
           # over the log) a chance to override before trusting the log.
           if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
-            if crew_stale_is_actively_working "$(window_to_task "$w" "$STATE")"; then
+            stale_cls=$(crew_stale_class "$task")
+            if crew_stale_is_actively_working "$task" "$stale_cls"; then
               printf '%s' "$h" > "$sf"
               date +%s > "$ssf"
               clear_write_tracking "$key"
@@ -2523,6 +2524,8 @@ EOF
               rm -f "$ssf"
               clear_write_tracking "$key"
               triage_log "absorbed stale (delivered status declaration already surfaced for this window): $w"
+            elif [ "$stale_cls" = monitoring ] && [ "$(status_line_verb "$last")" != "done" ]; then
+              handle_derived_wait_stale "$w" "$task" "$h" waiting
             else
               fm_wake_append stale "$w" "stale: $w" || exit 1
               stale_wait_record "$key"

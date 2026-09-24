@@ -2334,8 +2334,8 @@ crew_stale_class() {  # <id>
 # merely monitors that PR for merge still has that line as its last - so overriding
 # it there is how a finished lane was driven into the wedge timer on a pane no human
 # had touched (the 2026-09-24 elmo stale-rate D2 report).
-crew_stale_is_actively_working() {  # <id>
-  case "$(crew_stale_class "$1")" in
+crew_stale_is_actively_working() {  # <id> [precomputed-class]
+  case "${2-$(crew_stale_class "$1")}" in
     busy|advancing) return 0 ;;
   esac
   return 1

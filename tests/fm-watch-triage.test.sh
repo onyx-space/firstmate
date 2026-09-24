@@ -3042,6 +3042,89 @@ test_stale_churn_for_an_unheld_delivery_is_bounded_but_other_terminal_lines_are_
   pass "an unheld delivery is bounded like a hold while its own first sight and a replacement delivery still alarm; blocker, failure, and worker lines keep alarming on every new hash"
 }
 
+# A captain-relevant line the log still carries while the crew's OWN run is in a
+# passive external wait (monitoring: ci running / run active / checks green) is not
+# news - the run is doing the branch's work, so the leftover line is superseded. It
+# must take the bounded external-wait cadence, not surface once per stabilizing pane
+# hash, which is the per-hash storm the intent's second face names. A done: line
+# keeps its own delivered_stale_bound, and an open captain call its own bound.
+test_captain_line_on_a_monitoring_crew_takes_the_bounded_wait_cadence() {
+  local dir state fakebin out capture_file window key sig pid back round c
+  dir=$(make_case monitoring-captain-line); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:fm-monitoring-captain"
+  printf 'window=%s\nkind=ship\nbackend=tmux\n' "$window" > "$state/mon-captain.meta"
+  printf 'blocked: vendor API down\n' > "$state/mon-captain.status"
+  sig=$(seen_sig "$state/mon-captain.status"); printf '%s' "$sig" > "$state/.seen-mon-captain_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf 'idle render 0' > "$capture_file"
+  export FM_FAKE_CREW_STATE='state: working · source: run-step · ci running'
+
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
+    FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+
+  # Phase A: successive pane frames each stabilize (two identical polls), so the
+  # terminal-status branch runs on every one of them. None may wake the watcher.
+  round=0
+  while [ "$round" -le 3 ]; do
+    [ "$round" -gt 0 ] && printf 'idle render %s' "$round" > "$capture_file"
+    c=0
+    while [ "$c" -lt 3 ]; do
+      wait_poll_cycle "$state" "$pid" \
+        || { reap "$pid"; fail "a leftover captain line on a monitoring crew woke the watcher on frame $round: $(cat "$out")"; }
+      c=$((c + 1))
+    done
+    [ ! -s "$out" ] \
+      || { reap "$pid"; fail "a leftover captain line on a monitoring crew surfaced per frame instead of taking the bounded cadence: $(cat "$out")"; }
+    round=$((round + 1))
+  done
+  [ "$(cat "$state/.paused-$key" 2>/dev/null || true)" = waiting ] \
+    || { reap "$pid"; fail "the monitoring lane was not recorded as a bounded external wait"; }
+  [ -e "$state/.wait-since-$key" ] \
+    || { reap "$pid"; fail "the bounded external wait recorded no cadence anchor"; }
+  reap "$pid"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the intentional monitoring-churn stop"
+
+  # Phase B: past the window the bounded recheck is delivered, and says what it is.
+  back=$(( $(date +%s) - 5000 ))
+  set_mtime "$back" "$state/.wait-since-$key"
+  printf 'idle render 99' > "$capture_file"
+  : > "$out"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
+    FM_PAUSE_RESURFACE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 100 || fail "the bounded external-wait recheck was never delivered on a monitoring lane"
+  grep -F "stale: $window" "$out" >/dev/null || fail "the bounded recheck printed no stale wake"
+  grep -F "run in progress" "$out" >/dev/null || fail "the bounded recheck was not labeled a run still in progress"
+  grep -F "confirm it is still advancing" "$out" >/dev/null || fail "the bounded recheck did not ask whether it is still advancing"
+  grep -F "possible wedge" "$out" >/dev/null && fail "a quiet external wait was mislabeled a possible wedge"
+  unset FM_FAKE_CREW_STATE
+
+  # A delivery line keeps its own bound: the monitoring arm must not swallow it.
+  dir=$(make_case monitoring-done-line); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:fm-monitoring-done"
+  printf 'window=%s\nkind=ship\nbackend=tmux\n' "$window" > "$state/mon-done.meta"
+  printf 'done: PR https://example.invalid/pull/1 checks green\n' > "$state/mon-done.status"
+  sig=$(seen_sig "$state/mon-done.status"); printf '%s' "$sig" > "$state/.seen-mon-done_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf 'idle render, delivered' > "$capture_file"
+  export FM_FAKE_CREW_STATE='state: working · source: run-step · ci running'
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
+    FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 100 || fail "a done: line on a monitoring crew did not surface on first sight"
+  grep -F "stale: $window" "$out" >/dev/null || fail "a done: line on a monitoring crew printed no stale wake"
+  [ ! -e "$state/.paused-$key" ] || fail "a done: line was absorbed as a derived external wait"
+  unset FM_FAKE_CREW_STATE
+  pass "a leftover captain line on a monitoring crew takes the bounded external-wait cadence, while a done: line keeps its own path"
+}
+
 
 # Pane stability is a two-poll question, so the idle counter saturates there.
 # Nothing reads a larger value, yet it used to increment once per poll forever:
@@ -5402,6 +5485,7 @@ test_live_declared_wait_churn_honors_the_resurface_throttle
 test_live_paused_until_controls_recheck_time
 test_open_captain_call_bounds_stale_churn
 test_stale_churn_for_an_unheld_delivery_is_bounded_but_other_terminal_lines_are_not
+test_captain_line_on_a_monitoring_crew_takes_the_bounded_wait_cadence
 test_idle_poll_counter_saturates_at_the_stability_floor
 test_failed_wake_append_does_not_arm_the_captain_hold_throttle
 test_reheld_captain_call_starts_its_own_resurface_window
