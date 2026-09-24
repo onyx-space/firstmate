@@ -34,7 +34,9 @@
 # (crew_absorb_class and its working/paused wrappers) is NOT a pure status-file
 # read: it reuses bin/fm-crew-state.sh, which may make a bounded no-mistakes call,
 # to decide whether a crew that just stopped its turn or went stale is working,
-# deliberately paused, or neither. Callers run it ONLY on no-verb signal handling
+# deliberately paused, or neither; the three-state readout (crew_stale_class and
+# its crew_stale_is_actively_working wrapper) pays the same read on the same
+# stale/first-sight paths. Callers run it ONLY on no-verb signal handling
 # and first sighting of a stale hash, never on every wake, so the per-wake triage
 # stays cheap. status_open_decisions_incremental (see "incremental (cursor-backed)
 # open-decisions fold" below) also writes: it persists a per-status-file byte
@@ -2243,6 +2245,96 @@ crew_is_provably_working() {  # <id>
 # escalating a possible wedge.
 crew_is_paused() {  # <id>
   [ "$(crew_absorb_class "$1")" = paused ]
+}
+
+# The three-state readout behind the stale/wedge decision: WHY a silent pane is
+# silent. Sibling of crew_absorb_class, which answers the WIDER "may this wake be
+# absorbed at all" question the no-verb and turn-end paths need; this one answers
+# the narrower question the wedge timer and the terminal-status override need, and
+# it is the one owner of that split. Prints exactly one token:
+#   busy       the harness itself reports the agent working right now (a busy
+#              pane): the pane is silent because the agent is mid-work.
+#   advancing  the crew's own run reports an actively working step (running/
+#              fixing, no quiet marker), so the pipeline is doing this crew's work
+#              right now and a static pane is expected. This is the ONLY quiet-pane
+#              state that still outranks a status-log line: see
+#              crew_stale_is_actively_working.
+#   monitoring the crew is alive and waiting on something EXTERNAL that clears on
+#              its own: the pipeline's ci monitor, an active run whose step the
+#              client does not name, or a run parked at a gate (awaiting_approval /
+#              fix_review). Silent by design - neither stale nor working.
+#   landed     the crew's run is through: the delivery landed (PR opened or merged,
+#              checks green, run passed/completed). Nothing is owed in this pane.
+#   paused     the crew's authoritative current state is a declared external wait.
+#   none       none of the above: a stopped/finished/blocked/failed/unknown crew, an
+#              unreadable verdict, or a run step that reports NO PROGRESS (the
+#              client's own quiet marker). Every caller must surface it.
+#
+# One fm-crew-state.sh read, keyed on the state, the source, and the detail
+# vocabulary bin/fm-crew-state.sh's header owns - never a second probe of its own.
+# A detail this list does not recognize keeps the reading its own source implies: an
+# unrecognized ACTIVE run step stays `advancing`, never a silent absorb, so a future
+# vocabulary cannot turn an unexplained silence into a quiet wait. The opposite
+# asymmetry is deliberate too: the no-progress marker is matched BEFORE the
+# monitoring shapes, so a step the pipeline itself calls quiet is never read as a
+# wait (that marker is the client's own no-progress verdict).
+# NOT a pure read, exactly like crew_absorb_class: callers run it on the stale and
+# first-sight paths, never on every wake.
+crew_stale_class() {  # <id>
+  local id=$1 line state src rest detail sep=' · '
+  [ -n "$id" ] || { printf 'none'; return; }
+  line=$("$FM_CREW_STATE_BIN" "$id" 2>/dev/null) || true
+  case "$line" in state:*) ;; *) printf 'none'; return ;; esac
+  state=${line#state: }; state=${state%% *}
+  rest=${line#*"$sep"source: }
+  case "$rest" in
+    *"$sep"*) src=${rest%%"$sep"*}; detail=${rest#*"$sep"} ;;
+    *)         src=$rest; detail= ;;
+  esac
+  case "$state" in
+    paused) printf 'paused'; return ;;
+    done)   printf 'landed'; return ;;
+    parked)
+      # Only a RUN parked at a gate is a quiet external wait. The fallback path can
+      # also spell `parked` for a needs-decision status line, and that one is a
+      # captain-facing event the caller's own terminal path owns - it is not this
+      # readout's to absorb.
+      case "$src" in
+        run-step) printf 'monitoring'; return ;;
+      esac
+      ;;
+    working)
+      case "$src" in
+        pane) printf 'busy'; return ;;
+        run-step)
+          case "$detail" in
+            *'no recent step activity'*) printf 'none'; return ;;
+          esac
+          case "$detail" in
+            'ci running'*|'run active'*|'checks green'*) printf 'monitoring'; return ;;
+          esac
+          printf 'advancing'
+          return ;;
+      esac
+      ;;
+  esac
+  printf 'none'
+}
+
+# 0 when crew <id> shows the crew itself working right now: a busy pane, or an
+# actively working run step. This is the terminal-status override's proof that a
+# captain-relevant status line the log still carries is superseded.
+# It deliberately EXCLUDES the pipeline's passive phases (the ci monitor, a run
+# parked at a gate) and a landed run. In those states the log's captain-relevant
+# line is the CURRENT one - a crew that reported `done: PR ...` while its pipeline
+# merely monitors that PR for merge still has that line as its last - so overriding
+# it there is how a finished lane was driven into the wedge timer on a pane no human
+# had touched (the 2026-09-24 elmo stale-rate D2 report).
+crew_stale_is_actively_working() {  # <id>
+  case "$(crew_stale_class "$1")" in
+    busy|advancing) return 0 ;;
+  esac
+  return 1
 }
 
 # Directories excluded from the worktree write probe below, and the depth it walks.

@@ -2520,7 +2520,10 @@ set -u
 printf '%s\n' "$*" >> "${FM_FAKE_HERDR_LOG:?}"
 case "${1:-} ${2:-}" in
   "workspace list")
-    if [ -e "${FM_FAKE_HERDR_RESTORED:?}" ]; then
+    if [ "${FM_FAKE_HERDR_ACTIVE_TAB:-0}" = 1 ]; then
+      # The task's OWN workspace/tab is the captain's: a live viewer sits on it.
+      printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","active_tab_id":"w1:t2","label":"firstmate/task-x1 · p:AbCdEfGhIjKlMnOpQrStUv","focused":true}]}}'
+    elif [ -e "${FM_FAKE_HERDR_RESTORED:?}" ]; then
       printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w2","active_tab_id":"w2:t2","label":"2ndmate-bravo","focused":true},{"workspace_id":"w3","active_tab_id":"w3:t1","label":"2ndmate-alpha","focused":false}]}}'
     elif [ -e "${FM_FAKE_HERDR_CLOSED:?}" ]; then
       printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w2","active_tab_id":"w2:t2","label":"2ndmate-bravo","focused":false},{"workspace_id":"w3","active_tab_id":"w3:t1","label":"2ndmate-alpha","focused":true}]}}'
@@ -2530,10 +2533,28 @@ case "${1:-} ${2:-}" in
     ;;
   "tab list")
     case "$*" in
+      *"--workspace w1"*) printf '%s\n' '{"result":{"tabs":[{"tab_id":"w1:t2","focused":true}]}}' ;;
       *"--workspace w2"*) printf '%s\n' '{"result":{"tabs":[{"tab_id":"w2:t2","focused":true}]}}' ;;
       *"--workspace w3"*) printf '%s\n' '{"result":{"tabs":[{"tab_id":"w3:t1","focused":true}]}}' ;;
       *) printf '%s\n' '{"result":{"tabs":[]}}' ;;
     esac
+    ;;
+  "terminal title")
+    # FM_FAKE_HERDR_FOREGROUND=1 is a live viewer attached to the session, the
+    # only state in which the active-tab close refusal can happen at all.
+    if [ "${FM_FAKE_HERDR_FOREGROUND:-0}" = 1 ]; then
+      printf '%s\n' '{"result":{"reason":"cleared"}}'
+    else
+      printf '%s\n' '{"result":{"reason":"no_foreground_client"}}'
+    fi
+    ;;
+  "pane process-info")
+    if [ "${FM_FAKE_HERDR_AGENT_LIVE:-0}" = 1 ]; then
+      printf '%s\n' "{\"result\":{\"type\":\"pane_process_info\",\"process_info\":{\"pane_id\":\"w1:p2\",\"shell_pid\":$$,\"foreground_processes\":[{\"pid\":$$,\"name\":\"pi\"}]}}}"
+    else
+      printf '%s\n' '{"error":{"code":"pane_not_found"}}' >&2
+      exit 1
+    fi
     ;;
   "status --json")
     printf '%s\n' '{"server":{"running":true}}'
@@ -2569,6 +2590,10 @@ case "${1:-} ${2:-}" in
     printf '%s\n' '{"result":{"tab":{"tab_id":"w2:t2","workspace_id":"w2","focused":true}}}'
     ;;
   "agent get")
+    if [ "${FM_FAKE_HERDR_AGENT_LIVE:-0}" = 1 ]; then
+      printf '%s\n' '{"result":{"agent":{"agent_status":"idle"}}}'
+      exit 0
+    fi
     printf '%s\n' '{"error":{"code":"agent_not_found"}}' >&2
     exit 1
     ;;
@@ -2641,6 +2666,72 @@ test_herdr_projection_teardown_surfaces_restore_failure_without_blocking_cleanup
   assert_grep "exact-tab restoration failed" "$case_dir/stderr" \
     "herdr-projection-restore-failure: teardown swallowed the focus helper's restore warning"
   pass "herdr projection teardown surfaces failed focus restoration without turning confirmed cleanup into a hard failure"
+}
+
+# D1 (the 2026-09-24 elmo stale-rate report): a landed task whose projection pane
+# sits on the captain's own active tab could not be closed without moving the
+# captain's focus, and teardown then refused the WHOLE cleanup - so the landed
+# task's endpoint stayed alive with no owner and the next supervision round read it
+# as a wedge suspect again. The fix keeps the focus protection exactly as it is and
+# makes the cleanup resumable instead: the pane is left open, its close stays
+# recorded in the presentation journal the session-start cleanup already resumes,
+# and the task's own records are cleaned up so nothing keeps watching the pane.
+test_herdr_projection_teardown_defers_an_active_tab_close_to_the_resumable_cleanup() {
+  local case_dir log closed restored
+  case_dir=$(make_case herdr-projection-active-tab-defer)
+  write_meta "$case_dir" local-only ship
+  configure_herdr_projection_teardown_case "$case_dir"
+  : > "$case_dir/state/task-x1.turn-ended"
+  log="$case_dir/herdr.log"; closed="$case_dir/closed"; restored="$case_dir/restored"; : > "$log"
+
+  FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" FM_FAKE_HERDR_RESTORED="$restored" \
+    FM_FAKE_HERDR_ACTIVE_TAB=1 FM_FAKE_HERDR_FOREGROUND=1 \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "herdr-projection-active-tab-defer: teardown refused the record cleanup for a focus-blocked close"
+  [ ! -e "$closed" ] \
+    || fail "herdr-projection-active-tab-defer: the captain's active tab was closed after all"
+  [ ! -e "$case_dir/state/task-x1.meta" ] \
+    || fail "herdr-projection-active-tab-defer: the deferred close kept the durable endpoint metadata alive"
+  [ ! -e "$case_dir/state/task-x1.turn-ended" ] \
+    || fail "herdr-projection-active-tab-defer: the deferred close kept a non-endpoint task record alive"
+  [ -e "$case_dir/state/task-x1.herdr-presentation" ] \
+    || fail "herdr-projection-active-tab-defer: the resumable close record was discarded with the task records"
+  assert_grep "active tab" "$case_dir/stderr" \
+    "herdr-projection-active-tab-defer: the deferred close was not explained"
+  assert_grep "session-start presentation cleanup" "$case_dir/stderr" \
+    "herdr-projection-active-tab-defer: the deferred close named no owner to resume it"
+  assert_not_contains "$(cat "$log")" "workspace close" \
+    "herdr-projection-active-tab-defer: a deferred close must never escalate to workspace cleanup"
+  pass "herdr projection teardown defers a focus-blocked close to the recorded resumable cleanup instead of orphaning a landed task"
+}
+
+# The other side of that fix: the deferral is licensed by the pane holding NO agent.
+# A refused close on a pane that still has a live agent is not a cleanup this
+# teardown may finish - it keeps every record, exactly as before.
+test_herdr_projection_teardown_refuses_deferral_while_the_pane_has_a_live_agent() {
+  local case_dir log closed restored rc=0
+  case_dir=$(make_case herdr-projection-active-tab-live-agent)
+  write_meta "$case_dir" local-only ship
+  configure_herdr_projection_teardown_case "$case_dir"
+  : > "$case_dir/state/task-x1.turn-ended"
+  log="$case_dir/herdr.log"; closed="$case_dir/closed"; restored="$case_dir/restored"; : > "$log"
+
+  FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" FM_FAKE_HERDR_RESTORED="$restored" \
+    FM_FAKE_HERDR_ACTIVE_TAB=1 FM_FAKE_HERDR_FOREGROUND=1 FM_FAKE_HERDR_AGENT_LIVE=1 \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  [ "$rc" -ne 0 ] \
+    || fail "herdr-projection-active-tab-live-agent: teardown finished the cleanup with a live agent still in the pane"
+  [ ! -e "$closed" ] \
+    || fail "herdr-projection-active-tab-live-agent: the captain's active tab was closed after all"
+  [ -e "$case_dir/state/task-x1.meta" ] \
+    || fail "herdr-projection-active-tab-live-agent: the refusal erased the durable endpoint metadata"
+  [ -e "$case_dir/state/task-x1.turn-ended" ] \
+    || fail "herdr-projection-active-tab-live-agent: the refusal erased a non-endpoint task record"
+  [ -e "$case_dir/state/task-x1.herdr-presentation" ] \
+    || fail "herdr-projection-active-tab-live-agent: the refusal erased the presentation journal"
+  assert_grep "not confirmed gone" "$case_dir/stderr" \
+    "herdr-projection-active-tab-live-agent: the refusal was not explained"
+  pass "herdr projection teardown keeps every record when the focus-blocked pane still holds a live agent"
 }
 
 # --- Fix 1: conclude/abort the task's own parked no-mistakes run before the
@@ -3832,6 +3923,8 @@ test_forced_teardown_retains_nested_secondmate_home_when_grandchild_close_unconf
 test_herdr_projection_teardown_retires_journal_only_after_confirmed_close
 test_herdr_projection_teardown_retains_journal_when_close_unconfirmed
 test_herdr_projection_teardown_surfaces_restore_failure_without_blocking_cleanup
+test_herdr_projection_teardown_defers_an_active_tab_close_to_the_resumable_cleanup
+test_herdr_projection_teardown_refuses_deferral_while_the_pane_has_a_live_agent
 test_squash_merged_branch_deleted_allows
 test_squash_merged_pr_allows_when_head_ancestor_of_pr_head
 test_no_pr_recorded_discovers_merged_pr_by_branch_allows
