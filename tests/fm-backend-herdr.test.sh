@@ -4690,6 +4690,37 @@ test_send_text_submit_unknown_on_composer_capture_failure() {
   pass "fm_backend_herdr_send_text_submit: an unreadable composer stops Enter retries after native status stays idle"
 }
 
+test_send_text_submit_named_refusals_return_on_first_read() {
+  # A pre-Enter native `working` baseline routes through the else branch. Its
+  # composer refusal used to be the umbrella `unknown`, which returned on the
+  # first read; after the split it is `unknown-busy` (or `unknown-shape` on a
+  # settled read) and must still return immediately instead of falling out of
+  # the case into the Enter-retry loop. Observable: exactly one Enter and the
+  # umbrella verdict.
+  local dir log resp fb enter_log out enter_count state
+  for state in unknown-busy unknown-shape; do
+    dir="$TMP_ROOT/submit-named-refusal-$state"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+    enter_log="$dir/enters"; : > "$enter_log"
+    fb=$(make_herdr_fakebin "$dir")
+    out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_TEST_ENTER_LOG="$enter_log" FM_TEST_REFUSAL="$state" \
+      bash -c '
+        . "$0/bin/backends/herdr.sh"
+        fm_backend_herdr_send_literal() { return 0; }
+        fm_backend_herdr_agent_status_raw() { printf "working"; }
+        fm_backend_herdr_rendered_busy_state() { printf "idle"; }
+        fm_backend_herdr_send_key() { printf "enter\n" >> "$FM_TEST_ENTER_LOG"; return 0; }
+        fm_backend_herdr_composer_state() { printf "%s" "$FM_TEST_REFUSAL"; }
+        fm_backend_herdr_send_text_submit default:w1:p2 "hello captain" 3 0.01 0.01
+      ' "$ROOT" )
+    [ "$out" = unknown ] \
+      || fail "a named $state refusal must return the umbrella on the first read, got '$out'"
+    enter_count=$(grep -c . "$enter_log")
+    [ "$enter_count" -eq 1 ] \
+      || fail "a named $state refusal must not consume the Enter retry budget, sent $enter_count Enter(s)"
+  done
+  pass "fm_backend_herdr_send_text_submit: named refusals return immediately instead of retrying Enter"
+}
+
 # --- fm-backend.sh dispatch wiring -------------------------------------------
 
 test_dispatch_routes_herdr_backend() {
@@ -5480,6 +5511,7 @@ test_send_text_submit_slow_transition_within_one_enter_needs_no_extra_enter
 test_send_text_submit_send_failed
 test_send_text_submit_unknown_on_capture_failure
 test_send_text_submit_unknown_on_composer_capture_failure
+test_send_text_submit_named_refusals_return_on_first_read
 test_dispatch_routes_herdr_backend
 test_dispatch_busy_state_unknown_for_tmux
 test_dispatch_composer_state_routes_by_backend

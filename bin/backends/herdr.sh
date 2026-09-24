@@ -3279,6 +3279,7 @@ fm_backend_herdr_send_text_submit() {  # <target> <text> <retries> <enter-sleep>
       case "$verdict" in
         empty) printf 'empty'; return 0 ;;
         pending|pending-unproven) ;;
+        unknown|unknown-busy|unknown-shape) printf 'unknown'; return 0 ;;
         *) printf '%s' "$verdict"; return 0 ;;
       esac
     else
@@ -3292,7 +3293,7 @@ fm_backend_herdr_send_text_submit() {  # <target> <text> <retries> <enter-sleep>
       case "$verdict" in
         busy) printf 'empty'; return 0 ;;
         empty) printf 'empty'; return 0 ;;
-        unknown) printf 'unknown'; return 0 ;;
+        unknown|unknown-busy|unknown-shape) printf 'unknown'; return 0 ;;
       esac
     fi
     i=$((i + 1))

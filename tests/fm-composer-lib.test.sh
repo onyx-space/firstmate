@@ -723,6 +723,33 @@ test_refined_refusal_vocabulary() {
   pass "fm_composer_classify_screen: the refined refusals are named, actionable, and never the positive proof"
 }
 
+test_dead_shell_outranks_earlier_shape_refusals() {
+  # The dead-shell fact (the agent exited) must win even when the same frame
+  # also carries one of the shape refusals: a closed stale composer box and a
+  # leftover separator rule above a login-shell prompt used to refuse as
+  # `shape`, which names `unknown-shape` for a settled identity and
+  # `unknown-busy` for a working one - a retryable mid-turn answer on a pane
+  # whose turn will never end. It stays the umbrella `unknown` under every
+  # identity, while the identical structure with no shell row keeps its shape
+  # refusal.
+  local pi_idle pi_working box rule dead stale pair_dead
+  pi_idle=$(printf 'pi\tidle'); pi_working=$(printf 'pi\tworking')
+  box=$'╭────────────────────────╮\n│                        │\n╰────────────────────────╯'
+  rule='────────────────────────'
+  dead=$box$'\n'$rule$'\n$ '
+  stale=$box$'\n'$rule
+  assert_screen "dead shell with a stale box and rule stays unknown" unknown "$CAPS_STYLED" "$dead" '' "$pi_idle"
+  assert_screen "dead shell with a stale box and rule stays unknown while working" unknown "$CAPS_STYLED" "$dead" '' "$pi_working"
+  assert_screen "dead shell with a stale box and rule stays unknown without identity" unknown "$CAPS_STYLED" "$dead"
+  assert_screen "stale box plus rule with no shell keeps its shape refusal" unknown-shape "$CAPS_STYLED" "$stale" '' "$pi_idle"
+  # A valid pi pair with a dead shell below is still the dead-shell refusal, so
+  # the reordered check does not change the existing rejection.
+  pair_dead=$'transcript\n────────────────────────\n\n────────────────────────\n$ '
+  assert_screen "valid pi pair above a dead shell stays unknown" unknown "$CAPS_STYLED" "$pair_dead" '' "$pi_idle"
+  assert_screen "valid pi pair above a dead shell stays unknown while working" unknown "$CAPS_STYLED" "$pair_dead" '' "$pi_working"
+  pass "fm_composer_classify_screen: the dead-shell refusal outranks earlier shape refusals"
+}
+
 test_titled_bottom_requires_matching_width() {
   local screen out
   screen=$'╭────────────────────────╮\n│ ❯                      │\n╰─ Grok ─╯'
@@ -813,6 +840,7 @@ test_incomplete_lower_box_invalidates_stale_candidate
 test_table_above_pi_pair_does_not_hide_the_composer
 test_incomplete_box_below_pi_pair_still_refuses
 test_refined_refusal_vocabulary
+test_dead_shell_outranks_earlier_shape_refusals
 test_titled_bottom_requires_matching_width
 test_cursor_on_proven_box_bottom_classifies_content
 test_selected_content_is_composer_scoped_and_wrap_normalized

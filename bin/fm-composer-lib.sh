@@ -1158,6 +1158,11 @@ _fm_composer_select_cursorless() {
     FM_COMPOSER_SELECTED_FIRST=$((FM_COMPOSER_SCAN_PI_OPEN + 1))
     FM_COMPOSER_SELECTED_LAST=$((FM_COMPOSER_SCAN_PI_CLOSE - 1))
   fi
+  if [ "$FM_COMPOSER_SCAN_SHELL_ROW" -gt "$generic" ]; then
+    FM_COMPOSER_SELECTED_KIND=
+    FM_COMPOSER_SELECT_REFUSAL=dead-shell
+    return 1
+  fi
   if [ "$FM_COMPOSER_SCAN_INCOMPLETE_BOX_FROM" -gt "$generic" ]; then
     FM_COMPOSER_SELECTED_KIND=
     return 1
@@ -1165,11 +1170,6 @@ _fm_composer_select_cursorless() {
   if [ "$FM_COMPOSER_SCAN_PI_PAIR_FOUND" = 0 ] \
      && [ "$FM_COMPOSER_SCAN_PI_LAST_SEPARATOR" -gt "$generic" ]; then
     FM_COMPOSER_SELECTED_KIND=
-    return 1
-  fi
-  if [ "$FM_COMPOSER_SCAN_SHELL_ROW" -gt "$generic" ]; then
-    FM_COMPOSER_SELECTED_KIND=
-    FM_COMPOSER_SELECT_REFUSAL=dead-shell
     return 1
   fi
   if [ "$FM_COMPOSER_SELECTED_KIND" = bare ]; then

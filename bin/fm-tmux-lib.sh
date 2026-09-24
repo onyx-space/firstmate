@@ -241,9 +241,10 @@ fm_pane_is_busy() {  # <target> [harness]
 # agent-state confirmation uses, read from the pane's verified busy footer.
 # The busy read is polled across the remaining retry budget because the turn
 # takes a beat to render. Without the baseline (a direct
-# fm_tmux_submit_enter_core caller, or a pane already busy before typing) an
-# `unknown` verdict is preserved untouched: busy conversion without the
-# transition evidence could mark an undelivered message delivered.
+# fm_tmux_submit_enter_core caller, or a pane already busy before typing) a
+# refusal verdict is preserved untouched, under its own label (unknown,
+# unknown-busy, or unknown-shape): busy conversion without the transition
+# evidence could mark an undelivered message delivered.
 fm_tmux_submit_enter_core() {  # <target> <retries> <enter-sleep> [baseline-idle]
   local target=$1 retries=$2 sleep_s=$3 baseline_idle=${4:-} i=0 j state busy_state
   while :; do
@@ -252,7 +253,7 @@ fm_tmux_submit_enter_core() {  # <target> <retries> <enter-sleep> [baseline-idle
     state=$(fm_tmux_composer_state "$target")
     case "$state" in
       pending|pending-unproven) ;;
-      unknown)
+      unknown|unknown-busy|unknown-shape)
         if [ "$baseline_idle" = 1 ]; then
           j=0
           while [ "$j" -lt "$retries" ]; do
@@ -264,7 +265,7 @@ fm_tmux_submit_enter_core() {  # <target> <retries> <enter-sleep> [baseline-idle
             [ "$j" -ge "$retries" ] || sleep "$sleep_s"
           done
         fi
-        printf 'unknown'
+        printf '%s' "$state"
         return 0
         ;;
       *) printf '%s' "$state"; return 0 ;;
