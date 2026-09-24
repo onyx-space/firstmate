@@ -1,0 +1,4 @@
+default_w1G_p2: head(pi working)=unknown-busy head(pi idle)=unknown-shape base(pi working)=unknown
+default_w1C_p2: head(pi working)=unknown-busy head(pi idle)=unknown-shape base(pi working)=unknown
+default_w1_pB: head(pi working)=unknown-busy head(pi idle)=empty base(pi working)=unknown
+default_w17_p2: head(pi working)=unknown-busy head(pi idle)=empty base(pi working)=unknown

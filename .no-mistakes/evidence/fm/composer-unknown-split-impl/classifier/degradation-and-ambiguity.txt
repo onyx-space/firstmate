@@ -1,0 +1,4 @@
+content-degradation typed box styled=0 pi idle -> pending
+content-degradation typed box styled=0 pi working -> pending
+ambiguous box geometry pi idle -> unknown
+ambiguous box geometry pi working -> unknown

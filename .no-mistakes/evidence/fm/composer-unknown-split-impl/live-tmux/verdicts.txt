@@ -1,0 +1,5 @@
+pane=deadshell cursor_y=4 verdict=unknown
+pane=deadshell_closed_box cursor_y=4 verdict=unknown
+pane=box_empty cursor_y=1 verdict=empty
+pane=box_pending cursor_y=1 verdict=pending
+pane=blank cursor_y=2 verdict=unknown

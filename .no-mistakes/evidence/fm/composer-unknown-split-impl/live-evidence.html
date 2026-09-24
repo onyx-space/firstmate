@@ -1,0 +1,258 @@
+<!doctype html><html><head><meta charset="utf-8"><title>composer-unknown-split-impl live evidence</title>
+<style>body{font-family:sans-serif;margin:2rem;max-width:80rem}pre{background:#111;color:#eee;padding:.75rem;overflow:auto;font-size:12px;line-height:1.25}table{border-collapse:collapse}td,th{border:1px solid #999;padding:.3rem .6rem;font-size:13px}code{background:#eee;padding:0 .2rem}</style></head><body>
+<h1>composer-unknown-split-impl &mdash; live validation evidence</h1>
+<p>branch <code>fm/composer-unknown-split-impl</code>, base <code>94407c2</code>, target <code>0442481</code>.
+The product surface is the composer classifier inside the firstmate bash fleet harness; it has no GUI.
+Evidence below is real adapter reads against the running <code>herdr</code> server / real <code>pi</code> panes and real <code>tmux</code> panes, plus the real shared classifier driven over the captured bytes.</p>
+
+<h2>1. Live herdr adapter over real pi panes</h2>
+<p>Command: <code>. bin/backends/herdr.sh; fm_backend_herdr_composer_state &lt;session:pane&gt;</code></p>
+<pre>target=default:w1:pB identity=pi	idle verdict=empty frame_bytes=2163
+target=default:w1G:p2 identity=pi	working verdict=unknown-busy frame_bytes=3305
+target=default:w1C:p2 identity=pi	working verdict=unknown-busy frame_bytes=3353
+target=default:w17:p2 identity=pi	done verdict=empty frame_bytes=3377
+</pre>
+<p><b>Result:</b> real idle pi &rarr; <code>empty</code>; real working pi &rarr; <code>unknown-busy</code>; real done pi &rarr; <code>empty</code>.</p>
+<h3>Captured frames (real panes)</h3>
+<details open><summary>default_w17_p2.ansi</summary><pre> firstmate 要的那行原文（m 的 data/projects.md 第 18 行，未改动）：                                            
+                                                                                                               
+ ```                                                                                                           
+   - Ghostty [local-only] - Ghostty 终端（Zig + GPU，macOS 原生 UI）的自家 fork（onyx-space/ghostty）；用途＝  
+ 本机自编自签后装到 /Applications，**不开 PR**（交付物是本机 app + 构建脚本）(added 2026-09-17)                
+ ```                                                                                                           
+                                                                                                               
+ 未动（不在本 lane 授权）：m 的 data/projects.md（上面那行）、data/done-archive.md、                           
+ data/ghostty-macos-build-install/*（该任务报告，建议保留）、state/branch-session/*.jsonl；以及 ~/memory 的    
+ vault 笔记（其中「未推」与「Ghostty.app 已装、你在用」两句与实况不符，留给 firstmate）。                      
+                                                                                                               
+ 记录：report-ghostty.md 已改为「已执行完毕」并附结果表与丢弃声明；cleanup-log.md 仓 06 节含批准原话、逐字节归 
+ 档复核、guard 与删后核查；inbox 012 已确认（队列空，handled 001–012）。status 追加 resolved                   
+ [key=ghostty-cleanup-approval] + paused:。                                                                    
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                               
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~/.treehouse/firstmate-9b33b6/3/firstmate (fm/retired-repo-cleanup-x1)  -                            DF • high
+37.5%                                                                                                    DS --</pre></details>
+<details open><summary>default_w1C_p2.ansi</summary><pre> - options: (a) re-run again (low odds, ~45 min each), (b) no-mistakes axi run --skip test ... so the          
+   pipeline&#x27;s own ci step gates on the same suite sharded in GitHub Actions ✓, (c) leave the branch at the     
+   reconciled head for firstmate/later.                                                                        
+                                                                                                               
+ Let me poll the run and the full suite.                                                                       
+
+                                                                                                               
+ $ sleep 270; cd /home/onyx/.treehouse/firstmate-9b33b6/7/firstmate &amp;&amp; timeout 60 no-mistakes axi status 2&gt;&amp;1  
+ | grep -E &quot;status:|findings:|review,|test,|document,|round:&quot; | head -8; echo &quot;--- fullsuite:&quot;; grep -E        
+ &quot;FULLSUITE EXIT&quot; /tmp/fullsuite.log || { echo &quot;elapsed: $(( $(date +%s) - $(cat /tmp/fullsuite.start) ))s&quot;;   
+ tail -1 /tmp/fullsuite.log; }                                                                                 
+                                                                                                               
+ Elapsed 38.9s                                                                                                 
+                                                                                                               
+
+── ⠙ Working ──────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                               
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~/.treehouse/firstmate-9b33b6/7/firstmate (fm/stale-readout-three-states-d1d2)  -                    DF • high
+63.4%                                                                                                    DS --</pre></details>
+<details open><summary>default_w1G_p2.ansi</summary><pre>                                                                                                                
+ job_output                                                                                                     
+ [job b43b0311 stdout (failed)]                                                                                 
+ error: wait of 15m0s elapsed while driving the run                                                             
+ help[3]: This bounded hold ended; it is not a pipeline failure and does not mean the daemon is dead.,Run       
+ `no-mistakes axi status` to inspect progress,Re-run `no-mistakes axi run` to reattach for another 15m0s        
+                                                                                                                
+                                                                                                                
+
+ The review step completed (findings: 1 info — the no-op info finding, no ask-user!). The run has advanced to   
+ test. So the round-3 fix satisfied the reviewer — no fourth same-topic finding. So I don&#x27;t need the stop       
+ condition.                                                                                                     
+                                                                                                                
+ The respond call&#x27;s wait elapsed                                                                                
+
+── ⠧ Working ───────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                                
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+~/.treehouse/firstmate-9b33b6/8/firstmate (fm/composer-unknown-split-impl)  -                         DF • high
+31.3%                                                                                                     DS --</pre></details>
+<details open><summary>default_w1_pB.ansi</summary><pre> 判类别按位置决定），管线正跑第 3 轮评审修复，无待决项。             
+
+ ⛵ stale-readout-three-states-d1d2: D1/D2 的量测跑出一个要留意的结  
+ 果：全套测试 16 个套件绿，但 tests/fm-afk-launch.test.sh 失败（9 条 
+ 断言、exit=1，是那个在 herdr/tmux 实验室里起 away 守护进程的套件    
+ ）—— 目前还分不清是这次改动带的还是环境/并发运行造成的，lane 的量测 
+ 仍在继续，分支与提交完好。                                          
+
+ ⛵ composer-unknown-split-impl: unknown 拆分那条无变化：第三轮裁决  
+ 已落，仍在第 3 轮评审修复中，无待决项。                             
+
+ ⛵ stale-readout-three-states-d1d2: D1/D2 的量测仍在跑：约 18 分钟  
+ 、17 个套件完成，唯一红的仍是 tests/fm-afk-launch.test.sh，当前还在 
+ 真实 herdr 实验室那几组里；分支与提交完好，无待决项。               
+
+─────────────────────────────────────────────────────────────────────
+                                                                     
+─────────────────────────────────────────────────────────────────────
+~/code/firstmate (main)          -                    (DA) DF • high
+39.5%                                                          DS --</pre></details>
+
+<h2>2. Live tmux adapter over real tmux panes</h2>
+<p>Command: <code>. bin/fm-tmux-lib.sh; fm_tmux_composer_state &lt;target&gt;</code></p>
+<pre>pane=deadshell cursor_y=4 verdict=unknown
+pane=deadshell_closed_box cursor_y=4 verdict=unknown
+pane=box_empty cursor_y=1 verdict=empty
+pane=box_pending cursor_y=1 verdict=pending
+pane=blank cursor_y=2 verdict=unknown
+</pre>
+<p><b>Result:</b> a pane whose bottom row is a dead shell prompt (with a closed box or an unclosed table above it) &rarr; <code>unknown</code>; a real bordered empty composer &rarr; <code>empty</code>; typed input &rarr; <code>pending</code>; blank row &rarr; <code>unknown</code>.</p>
+<h3>Captured frames (real panes)</h3>
+<details open><summary>blank.ansi</summary><pre>transcript line one
+transcript line two
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</pre></details>
+<details open><summary>box_empty.ansi</summary><pre>╭────────╮
+│ &gt;      │
+╰────────╯
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</pre></details>
+<details open><summary>box_pending.ansi</summary><pre>╭──────────╮
+│ &gt; fix it │
+╰──────────╯
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</pre></details>
+<details open><summary>deadshell.ansi</summary><pre>transcript
+$ make build
+┌─────┬─────┐
+│ a   │ b   │
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</pre></details>
+<details open><summary>deadshell_closed_box.ansi</summary><pre>transcript
+╭────────────────────╮
+│                    │
+╰────────────────────╯
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</pre></details>
+
+<h2>3. Real dispatch entry point (bin/fm-backend.sh)</h2>
+<pre>tmux fmtest_deadshell:0.0             -&gt; unknown
+tmux fmtest_box_empty:0.0             -&gt; empty
+tmux fmtest_box_pending:0.0           -&gt; pending
+tmux fmtest_deadshell_closed_box:0.0  -&gt; unknown
+herdr default:w1:pB                    -&gt; empty
+herdr default:w1G:p2                   -&gt; unknown-busy
+herdr default:w1C:p2                   -&gt; unknown-busy
+herdr default:w17:p2                   -&gt; empty
+</pre>
+
+<h2>4. Refusal matrix (real shared classifier over real + boundary frames)</h2>
+<pre>LIVE tmux deadshell, cursorless, pi idle                   = unknown
+LIVE tmux deadshell, cursorless, pi working                = unknown
+LIVE tmux deadshell, cursorless, no identity               = unknown
+LIVE herdr working-pane bytes, pi working                  = unknown-busy
+LIVE herdr working-pane bytes, pi idle                     = unknown-shape
+transcript \044 line above unpaired rule, pi working       = unknown-busy
+transcript \044 line above unpaired rule, pi idle          = unknown-shape
+transcript \044 line above unpaired rule, pi blocked       = unknown
+bottom shell under unclosed table, pi idle                 = unknown
+bottom shell under unclosed table, pi working              = unknown
+table above valid empty pi pair, pi idle                   = empty
+settled cursorless refusal, pi idle -&gt; shape               = unknown-shape
+settled cursorless refusal, pi done -&gt; shape               = unknown-shape
+cursorless refusal, pi blocked -&gt; umbrella                 = unknown
+cursorless refusal, probe-absent -&gt; umbrella               = unknown
+cursorless refusal, no identity capability                 = unknown
+pi pair, working -&gt; busy (2nd busy path)                   = unknown-busy
+pi pair, idle -&gt; empty                                     = empty
+pi pair, blocked -&gt; umbrella                               = unknown
+</pre>
+
+<h2>5. Positive-proof invariance sweep (base vs head, 288 combinations)</h2>
+<pre>sweep: total=288 base_empty=26 head_empty=26 changed=34 violations=0
+</pre>
+<p>Exactly the 26 base <code>empty</code> cases stay <code>empty</code> at head; every change is <code>unknown</code> &rarr; a named refusal or the lazy <code>need-identity</code> sentinel resolved by the adapter.</p>
+
+<h2>6. Same-frame base vs head transitions</h2>
+<pre>default_w1G_p2: head(pi working)=unknown-busy head(pi idle)=unknown-shape base(pi working)=unknown
+default_w1C_p2: head(pi working)=unknown-busy head(pi idle)=unknown-shape base(pi working)=unknown
+default_w1_pB: head(pi working)=unknown-busy head(pi idle)=empty base(pi working)=unknown
+default_w17_p2: head(pi working)=unknown-busy head(pi idle)=empty base(pi working)=unknown
+</pre>
+</body></html>

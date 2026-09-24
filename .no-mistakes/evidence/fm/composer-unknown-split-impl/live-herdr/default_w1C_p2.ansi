@@ -1,0 +1,20 @@
+ [0m[38;2;138;190;183m- [0m[3m[38;2;128;128;128moptions: (a) re-run again (low odds, ~45 min each), (b) [0m[38;2;138;190;183mno-mistakes axi run --skip test ...[0m[3m[38;2;128;128;128m so the          [0m
+   [0m[3m[38;2;128;128;128mpipeline's own [0m[38;2;138;190;183mci[0m[3m[38;2;128;128;128m step gates on the same suite sharded in GitHub Actions ✓, (c) leave the branch at the     [0m
+   [0m[3m[38;2;128;128;128mreconciled head for firstmate/later.[0m                                                                        
+                                                                                                               
+ [0m[3m[38;2;128;128;128mLet me poll the run and the full suite.[0m                                                                       
+
+[0m[48;2;40;40;50m                                                                                                               [0m
+[0m[48;2;40;40;50m [0m[1m[38;2;212;212;212m[48;2;40;40;50m$ sleep 270; cd /home/onyx/.treehouse/firstmate-9b33b6/7/firstmate && timeout 60 no-mistakes axi status 2>&1  [0m
+[0m[48;2;40;40;50m [0m[1m[38;2;212;212;212m[48;2;40;40;50m| grep -E "status:|findings:|review,|test,|document,|round:" | head -8; echo "--- fullsuite:"; grep -E        [0m
+[0m[48;2;40;40;50m [0m[1m[38;2;212;212;212m[48;2;40;40;50m"FULLSUITE EXIT" /tmp/fullsuite.log || { echo "elapsed: $(( $(date +%s) - $(cat /tmp/fullsuite.start) ))s";   [0m
+[0m[48;2;40;40;50m [0m[1m[38;2;212;212;212m[48;2;40;40;50mtail -1 /tmp/fullsuite.log; }[0m[48;2;40;40;50m                                                                                 [0m
+[0m[48;2;40;40;50m                                                                                                               [0m
+[0m[48;2;40;40;50m [0m[38;2;128;128;128m[48;2;40;40;50mElapsed 38.9s[0m[48;2;40;40;50m                                                                                                 [0m
+[0m[48;2;40;40;50m                                                                                                               [0m
+
+[0m[38;2;105;249;249m── ⠙[0m [0m[38;2;105;249;249mWorking ──────────────────────────────────────────────────────────────────────────────────────────────────[0m
+[0m[7m [0m                                                                                                              
+[0m[38;2;105;249;249m───────────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+[0m[38;2;102;102;102m~/.treehouse/firstmate-9b33b6/7/firstmate (fm/stale-readout-three-states-d1d2)[0m  [0m[38;2;102;102;102m-[0m                    [0m[38;2;102;102;102mDF • high[0m
+63.4%                                                                                                    [0m[38;2;102;102;102mDS --[0m

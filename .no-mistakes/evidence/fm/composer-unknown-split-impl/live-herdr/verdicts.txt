@@ -1,0 +1,4 @@
+target=default:w1:pB identity=pi	idle verdict=empty frame_bytes=2163
+target=default:w1G:p2 identity=pi	working verdict=unknown-busy frame_bytes=3305
+target=default:w1C:p2 identity=pi	working verdict=unknown-busy frame_bytes=3353
+target=default:w17:p2 identity=pi	done verdict=empty frame_bytes=3377
