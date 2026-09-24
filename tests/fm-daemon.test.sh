@@ -878,27 +878,140 @@ SH
 }
 
 test_stale_quiet_external_wait_takes_pause_cadence_in_away_mode() {
-  local dir state win key out
+  local dir state win watcher_key key pane out name crewline class age n
   for spec in \
-    'away-quiet-advancing|state: working · source: run-step · validating (running)' \
-    'away-quiet-monitoring|state: working · source: run-step · ci running' \
-    'away-quiet-landed|state: done · source: run-step · run passed: PR held for merge'
+    'away-quiet-advancing|state: working · source: run-step · validating (running)|advancing' \
+    'away-quiet-monitoring|state: working · source: run-step · ci running|monitoring' \
+    'away-quiet-landed|state: done · source: run-step · run passed: PR held for merge|landed'
   do
-    dir=$(away_quiet_case "${spec%%|*}" 'working: handed to the pipeline')
-    state="$dir/state"; win="sess:fm-quiet-w1"; key=$(printf '%s' quiet-w1 | tr ':/.' '___')
+    IFS='|' read -r name crewline class <<<"$spec"
+    dir=$(away_quiet_case "$name" 'working: handed to the pipeline')
+    state="$dir/state"; win="sess:fm-quiet-w1"; pane="$dir/pane.txt"
+    printf 'idle prompt $\n' > "$pane"
+    key=$(printf '%s' quiet-w1 | tr ':/.' '___')
+    watcher_key=$(printf '%s' "$win" | tr ':/.' '___')
     export FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh"
-    export FM_FAKE_CREW_STATE="${spec#*|}"
+    export FM_FAKE_CREW_STATE="$crewline"
     out=$(FM_STATE_OVERRIDE="$state" classify_stale "$win" "$state")
-    case "$out" in pause\|*) ;; *) fail "${spec%%|*}: a quiet external wait was not pause-classified: $out" ;; esac
-    case "$out" in 'pause|quiet external wait - '?*) ;; *) fail "${spec%%|*}: the pause reason did not name the wait: $out" ;; esac
+    case "$out" in pause\|*) ;; *) fail "$name: a quiet external wait was not pause-classified: $out" ;; esac
+    case "$out" in 'pause|quiet external wait - '?*) ;; *) fail "$name: the pause reason did not name the wait: $out" ;; esac
     FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999 handle_wake "stale: $win" "$state"
     [ -e "$state/.subsuper-paused-$key" ] \
-      || fail "${spec%%|*}: the quiet wait recorded no pause cadence"
+      || fail "$name: the quiet wait recorded no pause cadence"
     [ ! -e "$state/.subsuper-stale-$key" ] \
-      || fail "${spec%%|*}: the quiet wait was also aged as a wedge"
+      || fail "$name: the quiet wait was also aged as a wedge"
+    [ "$(cat "$state/.subsuper-derivedwait-$key" 2>/dev/null || true)" = "$class" ] \
+      || fail "$name: the derived wait did not record why it exists"
+    # The watcher's per-hash stale suppressor (in away mode it enqueues the wake
+    # and records this) must survive the daemon's housekeeping, or the same wait is
+    # re-enqueued and re-derived on every supervision cycle.
+    printf 'panehash-%s\n' "$name" > "$state/.stale-$watcher_key"
+    PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+      FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999 FM_PAUSE_RESURFACE_SECS=240 \
+      housekeeping "$state"
+    [ -e "$state/.subsuper-paused-$key" ] \
+      || fail "$name: housekeeping cleared the derived wait instead of aging it"
+    [ -e "$state/.stale-$watcher_key" ] \
+      || fail "$name: housekeeping cleared the watcher's stale suppressor, re-enqueueing the wait every cycle"
+    [ ! -s "$state/.subsuper-escalations" ] \
+      || fail "$name: the derived wait re-surfaced before its window was due: $(cat "$state/.subsuper-escalations")"
+    # Cross the window: the wait delivers its bounded recheck exactly once, then
+    # resets its window instead of firing (or never firing) on every tick.
+    printf '%s' "$(( $(date +%s) - 5000 ))" > "$state/.subsuper-paused-$key"
+    PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+      FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999 FM_PAUSE_RESURFACE_SECS=240 \
+      housekeeping "$state"
+    if [ "$class" = landed ]; then
+      grep -F "work already landed" "$state/.subsuper-escalations" >/dev/null 2>&1 \
+        || fail "$name: the landed wait never re-surfaced its bounded recheck: $(cat "$state/.subsuper-escalations" 2>/dev/null || true)"
+    else
+      grep -F "confirm it is still advancing" "$state/.subsuper-escalations" >/dev/null 2>&1 \
+        || fail "$name: the derived wait never re-surfaced its bounded 'still advancing?' recheck: $(cat "$state/.subsuper-escalations" 2>/dev/null || true)"
+    fi
+    grep -F "possible wedge" "$state/.subsuper-escalations" >/dev/null 2>&1 \
+      && fail "$name: the derived wait was mislabeled a possible wedge"
+    [ -e "$state/.subsuper-paused-$key" ] \
+      || fail "$name: the derived wait's marker was not kept for the next window"
+    [ -e "$state/.subsuper-derivedwait-$key" ] \
+      || fail "$name: the derived wait's reason was dropped on re-surface"
+    [ -e "$state/.stale-$watcher_key" ] \
+      || fail "$name: the re-surface dropped the watcher's stale suppressor"
+    age=$(( $(date +%s) - $(cat "$state/.subsuper-paused-$key" 2>/dev/null || echo 0) ))
+    [ "$age" -lt 60 ] || fail "$name: the derived wait window was not reset after re-surfacing (age ${age}s)"
+    n=$(wc -l < "$state/.subsuper-escalations")
+    PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+      FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999 FM_PAUSE_RESURFACE_SECS=240 \
+      housekeeping "$state"
+    [ "$(wc -l < "$state/.subsuper-escalations")" -eq "$n" ] \
+      || fail "$name: the derived wait re-surfaced again inside its window instead of once per window"
+    # Guard 1 counterexample: the cause vanishing is not absorbed forever. The
+    # derived wait clears, and a genuinely dead quiet lane goes back to ordinary
+    # wedge aging and escalates.
+    export FM_FAKE_CREW_STATE='state: unknown · source: none · worktree gone (torn down?)'
+    printf '%s' "$(( $(date +%s) - 5000 ))" > "$state/.subsuper-paused-$key"
+    PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+      FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999 FM_PAUSE_RESURFACE_SECS=240 \
+      housekeeping "$state"
+    [ ! -e "$state/.subsuper-paused-$key" ] \
+      || fail "$name: a derived wait whose cause vanished was aged forever instead of cleared"
+    [ ! -e "$state/.subsuper-derivedwait-$key" ] \
+      || fail "$name: the derived wait's reason outlived the wait"
+    out=$(FM_STATE_OVERRIDE="$state" classify_stale "$win" "$state")
+    case "$out" in self\|*) ;; *) fail "$name: a dead quiet lane was absorbed as a wait: $out" ;; esac
+    FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999 handle_wake "stale: $win" "$state"
+    [ -e "$state/.subsuper-stale-$key" ] \
+      || fail "$name: a dead quiet lane was not aged for the persistence recheck"
+    printf '%s' "$(( $(date +%s) - 5000 ))" > "$state/.subsuper-stale-$key"
+    : > "$state/.subsuper-escalations"
+    PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+      FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999 FM_STALE_ESCALATE_SECS=240 FM_PAUSE_RESURFACE_SECS=3600 \
+      housekeeping "$state"
+    grep -F "stale persisted" "$state/.subsuper-escalations" >/dev/null 2>&1 \
+      || fail "$name: a dead quiet lane never escalated as a possible wedge"
   done
   unset FM_FAKE_CREW_STATE FM_CREW_STATE_BIN
-  pass "an away-mode lane whose own run is advancing, waiting, or already landed takes the bounded pause cadence, never wedge aging"
+  pass "an away-mode lane whose own run is advancing, waiting, or already landed takes the bounded pause cadence, re-surfacing once per window without losing the watcher's stale suppression"
+}
+
+# An actionable/terminal stale escalation ends any wait the pane was absorbed on,
+# including a DERIVED one: otherwise a lane that escalated would keep re-surfacing
+# a "still advancing?" recheck it no longer has.
+test_away_mode_escalation_drops_a_derived_wait() {
+  local dir state win key out
+  dir=$(away_quiet_case away-quiet-escalate 'working: handed to the pipeline')
+  state="$dir/state"; win="sess:fm-quiet-w1"
+  key=$(printf '%s' quiet-w1 | tr ':/.' '___')
+  export FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh"
+  export FM_FAKE_CREW_STATE='state: working · source: run-step · ci running'
+  FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999 handle_wake "stale: $win" "$state"
+  [ -e "$state/.subsuper-derivedwait-$key" ] || fail "fixture did not record a derived wait"
+  printf '%s\n' 'blocked: upstream contract unresolved, captain decision needed' >> "$state/quiet-w1.status"
+  out=$(FM_STATE_OVERRIDE="$state" classify_stale "$win" "$state")
+  case "$out" in escalate\|*) ;; *) fail "an actionable status did not escalate: $out" ;; esac
+  FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999 handle_wake "stale: $win" "$state"
+  [ ! -e "$state/.subsuper-derivedwait-$key" ] || fail "a derived wait outlived an escalation"
+  [ ! -e "$state/.subsuper-paused-$key" ] || fail "the pause cadence outlived an escalation"
+  unset FM_FAKE_CREW_STATE FM_CREW_STATE_BIN
+  pass "an away-mode escalation drops the derived wait it interrupted"
+}
+
+# A DECLARED pause is unchanged by the derived-wait machinery: the same bounded
+# re-surface cadence as before, and no derived-reason sidecar is invented for it.
+test_away_mode_declared_pause_keeps_its_own_cadence() {
+  local dir state win key
+  dir=$(away_quiet_case away-quiet-declared-pause 'paused: waiting on the vendor release')
+  state="$dir/state"; win="sess:fm-quiet-w1"
+  key=$(printf '%s' quiet-w1 | tr ':/.' '___')
+  printf 'idle prompt $\n' > "$dir/pane.txt"
+  echo $(( $(date +%s) - 5000 )) > "$state/.subsuper-paused-$key"
+  PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" \
+    FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999 FM_PAUSE_RESURFACE_SECS=240 \
+    housekeeping "$state"
+  grep -F "awaiting external" "$state/.subsuper-escalations" >/dev/null 2>&1 \
+    || fail "a declared pause was not re-surfaced on its long cadence"
+  [ ! -e "$state/.subsuper-derivedwait-$key" ] \
+    || fail "a declared pause was tagged as a derived wait"
+  pass "a declared pause keeps its own bounded cadence and is never tagged as a derived wait"
 }
 
 test_stale_undecidable_or_no_progress_still_ages_as_a_wedge_in_away_mode() {
@@ -2926,6 +3039,8 @@ test_enriched_wedge_under_declared_wait_uses_pause_cadence
 test_stale_terminal_escalates
 test_stale_actionable_wait_escalates_and_keeps_pause_cadence
 test_stale_quiet_external_wait_takes_pause_cadence_in_away_mode
+test_away_mode_escalation_drops_a_derived_wait
+test_away_mode_declared_pause_keeps_its_own_cadence
 test_stale_undecidable_or_no_progress_still_ages_as_a_wedge_in_away_mode
 test_stale_paused_classifies_pause
 test_stale_captain_held_classifies_pause
