@@ -188,7 +188,11 @@ fm_backend_herdr_cli() {
 
 fm_backend_herdr_projection_close_pane_focus_preserving() {
   [ ! -e "$FIXTURE_DIR/focus-refuse" ] || return 1
-  [ "${3:-}" = no-agent ] || return 1
+  # The sweep requires the backend's AGENT-FREE set (the close helper's own
+  # `agent-free` value: no registration, or the registration that outlived its
+  # process), never one literal reading, so the stub pins that requirement rather
+  # than a single value.
+  [ "${3:-}" = agent-free ] || return 1
   printf '%s\n' "$*" >> "$CLOSE_LOG"
   : > "$FIXTURE_DIR/closed"
 }
@@ -252,6 +256,59 @@ pass "exact stale projection closes one exact pane under task then presentation 
 fm_herdr_session_cleanup >/dev/null 2>&1
 [ "$(wc -l < "$CLOSE_LOG" | tr -d ' ')" = 1 ] || fail "repeat cleanup closed again"
 pass "successful cleanup is idempotent on repeat"
+
+# (b) The crew shape's post-agent-exit reading: Herdr keeps a registration over a
+# pane whose processes are nothing but shells (issue #4115), which
+# bin/backends/herdr.sh's own contract names "the explicit agent-free reason". The
+# sweep must take it exactly as it takes no-agent - the lone idle childless shell
+# proof is what keeps that honest, so it is required in both readings.
+reset_fixture
+write_v1 "$ID"
+# The stub reports the post-agent-exit registration while the pane is open and the
+# pane's real post-close death once it is closed, which is what the sweep's own
+# confirmation step reads.
+# shellcheck disable=SC2329 # invoked indirectly by the sweep under test.
+( fm_backend_herdr_pane_agent_state() {
+    if [ -e "$FIXTURE_DIR/closed" ]; then printf 'dead\n'; else printf 'stale-agent\n'; fi
+  }
+  fm_herdr_session_cleanup >/dev/null 2>&1 )
+[ ! -e "$FM_STATE_OVERRIDE/$ID.herdr-presentation" ] || fail "stale-agent candidate kept the journal"
+[ "$(wc -l < "$CLOSE_LOG" | tr -d ' ')" = 1 ] || fail "stale-agent candidate was not closed exactly once"
+pass "the sweep treats the registered post-agent-exit reading as agent-free, with the idle shell proof"
+
+reset_fixture
+write_v1 "$ID"
+: > "$FIXTURE_DIR/process-unsafe"
+# shellcheck disable=SC2329 # invoked indirectly by the sweep under test.
+( fm_backend_herdr_pane_agent_state() { printf 'stale-agent\n'; }
+  fm_herdr_session_cleanup >/dev/null 2>&1 )
+[ -f "$FM_STATE_OVERRIDE/$ID.herdr-presentation" ] || fail "stale-agent candidate without an idle shell proof was closed"
+[ ! -s "$CLOSE_LOG" ] || fail "stale-agent candidate without an idle shell proof was closed"
+pass "a registered post-agent-exit reading still needs the lone idle childless shell proof"
+
+# --candidate-ready: the read-only answer bin/fm-teardown.sh licenses a deferred
+# close with. It must say yes only for the exact requested id, only when the record
+# is flagged as about to be removed, only when the focus refusal is the licensed one,
+# and only while every other requirement still holds.
+reset_fixture
+write_v1 "$ID"
+: > "$FM_STATE_OVERRIDE/$ID.meta"
+FM_HERDR_CLEANUP_IGNORE_FOCUS=1 FM_HERDR_CLEANUP_PENDING_META=1 fm_herdr_cleanup_candidate_ready "$ID" \
+  || fail "candidate-ready refused a candidate whose only obstruction is the focus refusal"
+FM_HERDR_CLEANUP_IGNORE_FOCUS=1 FM_HERDR_CLEANUP_PENDING_META=1 fm_herdr_cleanup_candidate_ready other-task \
+  && fail "candidate-ready answered for a different task id"
+FM_HERDR_CLEANUP_IGNORE_FOCUS=1 fm_herdr_cleanup_candidate_ready "$ID" \
+  && fail "candidate-ready accepted a record the caller was not about to remove"
+rm -f "$FM_STATE_OVERRIDE/$ID.meta"
+printf '%s\n' "$TAB" > "$FIXTURE_DIR/active-tab"
+FM_HERDR_CLEANUP_PENDING_META=1 fm_herdr_cleanup_candidate_ready "$ID" \
+  && fail "candidate-ready ignored the focus refusal the caller had not licensed"
+FM_HERDR_CLEANUP_IGNORE_FOCUS=1 FM_HERDR_CLEANUP_PENDING_META=1 fm_herdr_cleanup_candidate_ready "$ID" \
+  || fail "candidate-ready refused the active-tab candidate it must license"
+: > "$FIXTURE_DIR/process-unsafe"
+FM_HERDR_CLEANUP_IGNORE_FOCUS=1 FM_HERDR_CLEANUP_PENDING_META=1 fm_herdr_cleanup_candidate_ready "$ID" \
+  && fail "candidate-ready accepted a pane with no idle childless shell proof"
+pass "candidate-ready answers only for the exact licensed resumable candidate"
 
 reset_fixture; printf '%s\n' '└ malformed p:AbCdEfGhIjKlMnOpQrStUv' > "$FIXTURE_DIR/title"; assert_preserved "malformed title"
 reset_fixture; printf '%s\n' '└ missing-token' > "$FIXTURE_DIR/title"; assert_preserved "missing token"

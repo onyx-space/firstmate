@@ -21,6 +21,34 @@
 # The script never closes a workspace. It removes only the matching journal,
 # and only after the exact pane is confirmed gone. Every error warns and returns
 # success so session startup continues conservatively.
+#
+# Usage: fm-herdr-session-cleanup.sh [--candidate-ready <task-id> [--ignore-focus] [--pending-meta]]
+#
+# --candidate-ready answers ONE read-only question for bin/fm-teardown.sh's deferred
+# close: would this exact candidate be taken by the next sweep, once the only
+# remaining obstruction is gone? It exits 0 only when every requirement this file's
+# own close path enforces passes for that task id, and 1 otherwise, and it mutates
+# nothing (no locks, no close, no journal removal). Two requirements are relaxed
+# only here, because they are exactly what a deferral means:
+#   --ignore-focus   the candidate's tab IS the captain's active one. The sweep
+#                    itself still refuses that, and that refusal is the deferral's
+#                    cause, not a content defect of the candidate.
+#   --pending-meta   state/<id>.meta still exists because the calling teardown is
+#                    about to remove it. The sweep's own path still requires it
+#                    gone, and the deferral is licensed only by the caller's own
+#                    record cleanup completing.
+# Every other requirement - the journal binding, the label/token grammar, the exact
+# single-tab/single-pane topology, the agent-free reading, and the lone idle
+# childless shell proof - is enforced identically in both modes, by the same
+# functions, so the two cannot drift.
+#
+# The agent-free reading accepts BOTH agent-free values
+# fm_backend_herdr_pane_agent_state can prove - no-agent and stale-agent - because
+# that function's own contract in bin/backends/herdr.sh names stale-agent the crew
+# shape's post-agent-exit reading and calls it "the explicit agent-free reason": the
+# registered process has EXITED and only Herdr's registration lingers. What actually
+# rules out a live agent - and the nested-shell case the husk rule refuses - is the
+# proof that follows it: a lone, childless, idle, recognized shell.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -122,7 +150,7 @@ fm_herdr_cleanup_snapshot_candidate() { # <snapshot> <workspace> <title> <token>
   record=$(printf '%s' "$snapshot" | jq -er \
     --arg workspace "$workspace" --arg title "$title" --arg token "$token" \
     --arg bound_workspace "$bound_workspace" --arg bound_tab "$bound_tab" \
-    --arg bound_pane "$bound_pane" '
+    --arg bound_pane "$bound_pane" --arg ignore_focus "${FM_HERDR_CLEANUP_IGNORE_FOCUS:-0}" '
     .result.snapshot as $s
     | [$s.workspaces[]? | select(.workspace_id == $workspace)] as $workspaces
     | [$s.tabs[]? | select(.workspace_id == $workspace)] as $tabs
@@ -142,7 +170,7 @@ fm_herdr_cleanup_snapshot_candidate() { # <snapshot> <workspace> <title> <token>
     | select(($s.focused_workspace_id | type) == "string")
     | select(($s.focused_tab_id | type) == "string")
     | select(($s.focused_pane_id | type) == "string")
-    | select($s.focused_tab_id != $tabs[0].tab_id)
+    | select(($ignore_focus == "1") or ($s.focused_tab_id != $tabs[0].tab_id))
     | [$tabs[0].tab_id, $panes[0].pane_id] | @tsv
   ' 2>/dev/null) || return 1
   [ -n "$record" ] && [ "${record#*$'\t'}" != "$record" ] || return 1
@@ -151,11 +179,22 @@ fm_herdr_cleanup_snapshot_candidate() { # <snapshot> <workspace> <title> <token>
   [ -n "$FM_HERDR_CLEANUP_TAB" ] && [ -n "$FM_HERDR_CLEANUP_PANE" ]
 }
 
+# Which agent readings count as agent-free is bin/backends/herdr.sh's own
+# fm_backend_herdr_pane_agent_free, shared with the close helper's `agent-free`
+# requirement so this sweep and every close it drives cannot disagree about it.
+
 fm_herdr_cleanup_revalidate() { # <session> <workspace> <tab> <pane> <title> <token> <home-real> <journal> <task-id> <version> <bound-workspace> <bound-tab> <bound-pane>
   local session=$1 workspace=$2 tab=$3 pane=$4 title=$5 token=$6 home_real=$7
   local journal=$8 id=$9 version=${10} bound_workspace=${11} bound_tab=${12} bound_pane=${13}
   local workspaces workspace_info tabs panes focus
-  [ ! -e "$STATE/$id.meta" ] && [ ! -L "$STATE/$id.meta" ] || return 1
+  # The meta must be gone for the SWEEP's own close: its journal is only
+  # non-authoritative bookkeeping beside the task record, so closing against a
+  # record that still exists is not this sweep's job. The check mode is the one
+  # caller allowed to relax it (--pending-meta), and only because the teardown
+  # asking is about to remove that record itself.
+  if [ "${FM_HERDR_CLEANUP_PENDING_META:-0}" != 1 ]; then
+    [ ! -e "$STATE/$id.meta" ] && [ ! -L "$STATE/$id.meta" ] || return 1
+  fi
   fm_herdr_cleanup_unique_match "$title" "$session" "$home_real" || return 1
   [ "$FM_HERDR_CLEANUP_JOURNAL" = "$journal" ] \
     && [ "$FM_HERDR_CLEANUP_ID" = "$id" ] \
@@ -193,19 +232,67 @@ fm_herdr_cleanup_revalidate() { # <session> <workspace> <tab> <pane> <title> <to
     and .result.panes[0].tab_id == $tab
     and .result.panes[0].pane_id == $pane
   ' >/dev/null 2>&1 || return 1
-  [ "$(fm_backend_herdr_pane_agent_state "$session" "$pane")" = no-agent ] || return 1
+  fm_backend_herdr_pane_agent_free "$session" "$pane" || return 1
   fm_backend_herdr_pane_idle_shell_pid "$session" "$pane" >/dev/null || return 1
-  focus=$(fm_backend_herdr_projection_focus_snapshot "$session") || return 1
-  [ "${focus#*$'\t'}" != "$tab" ]
+  # Only the candidate's tab being the captain's ACTIVE one is relaxed, and only
+  # for the check mode: that is the deferral's cause, and the sweep's own close
+  # still refuses it exactly as before.
+  if [ "${FM_HERDR_CLEANUP_IGNORE_FOCUS:-0}" != 1 ]; then
+    focus=$(fm_backend_herdr_projection_focus_snapshot "$session") || return 1
+    [ "${focus#*$'\t'}" != "$tab" ] || return 1
+  fi
+  return 0
 }
 
-fm_herdr_cleanup_one() { # <session> <workspace> <title> <home-real>
-  local session=$1 workspace=$2 title=$3 home_real=$4 token journal id task_lock
-  local version bound_workspace bound_tab bound_pane presentation_lock snapshot
-  local tab pane state close_status=0
-  token=$(fm_herdr_cleanup_title_token "$title") || return 0
+# The single owner of "is this exact candidate ready to be closed": the candidate
+# snapshot, the agent-free reading, the lone idle childless shell proof, and the
+# locked revalidation. Warns with the same preservation text the sweep has always
+# used for the step that failed, so one wording covers both the sweep and the
+# read-only check. Callers supply the already-resolved journal bindings; on success
+# FM_HERDR_CLEANUP_TAB/_PANE name the proven tab and pane.
+# 0 ready, 1 not ready for any reason.
+fm_herdr_cleanup_candidate_proof() { # <session> <workspace> <title> <token> <home-real> <journal> <task-id> <version> <bound-workspace> <bound-tab> <bound-pane>
+  local session=$1 workspace=$2 title=$3 token=$4 home_real=$5 journal=$6 id=$7
+  local version=$8 bound_workspace=$9 bound_tab=${10} bound_pane=${11}
+  local snapshot tab pane
+  snapshot=$(fm_backend_herdr_cli "$session" api snapshot 2>/dev/null) || snapshot=
+  if [ -z "$snapshot" ] \
+    || ! fm_herdr_cleanup_snapshot_candidate \
+      "$snapshot" "$workspace" "$title" "$token" \
+      "$bound_workspace" "$bound_tab" "$bound_pane"; then
+    fm_herdr_cleanup_warn "$id preserved because its candidate snapshot was ambiguous"
+    return 1
+  fi
+  tab=$FM_HERDR_CLEANUP_TAB
+  pane=$FM_HERDR_CLEANUP_PANE
+  if ! fm_backend_herdr_pane_agent_free "$session" "$pane" \
+    || ! fm_backend_herdr_pane_idle_shell_pid "$session" "$pane" >/dev/null; then
+    fm_herdr_cleanup_warn "$id preserved because its pane is not a provably idle childless shell"
+    return 1
+  fi
+  if ! fm_herdr_cleanup_revalidate \
+    "$session" "$workspace" "$tab" "$pane" "$title" "$token" "$home_real" \
+    "$journal" "$id" "$version" "$bound_workspace" "$bound_tab" "$bound_pane"; then
+    fm_herdr_cleanup_warn "$id preserved because immediate revalidation changed or was unreadable"
+    return 1
+  fi
+  FM_HERDR_CLEANUP_TAB=$tab
+  FM_HERDR_CLEANUP_PANE=$pane
+  return 0
+}
+
+fm_herdr_cleanup_one() { # <session> <workspace> <title> <home-real> [close|check]
+  local session=$1 workspace=$2 title=$3 home_real=$4 mode=${5:-close} token journal id task_lock=
+  local version bound_workspace bound_tab bound_pane presentation_lock=''
+  local snapshot
+  local tab pane state close_status=0 unready=0
+  # Every path that would SKIP a candidate answers 1 in check mode: there the caller
+  # is asking whether THIS candidate is ready, and "not the one I was asked about" is
+  # not readiness.
+  [ "$mode" = check ] && unready=1
+  token=$(fm_herdr_cleanup_title_token "$title") || return "$unready"
   if ! fm_herdr_cleanup_unique_match "$title" "$session" "$home_real"; then
-    return 0
+    return "$unready"
   fi
   journal=$FM_HERDR_CLEANUP_JOURNAL
   id=$FM_HERDR_CLEANUP_ID
@@ -213,7 +300,19 @@ fm_herdr_cleanup_one() { # <session> <workspace> <title> <home-real>
   bound_workspace=$FM_HERDR_CLEANUP_BOUND_WORKSPACE
   bound_tab=$FM_HERDR_CLEANUP_BOUND_TAB
   bound_pane=$FM_HERDR_CLEANUP_BOUND_PANE
-  [ "$FM_HERDR_CLEANUP_TOKEN" = "$token" ] || return 0
+  [ "$FM_HERDR_CLEANUP_TOKEN" = "$token" ] || return "$unready"
+  if [ "$mode" = check ]; then
+    # Read-only, and deliberately unlocked: the caller (bin/fm-teardown.sh) may
+    # already hold the shared presentation lock it is asking about, and the sweep
+    # re-proves everything itself under its own locks when it later acts on this
+    # candidate. The record the caller says it is about to remove is excluded by
+    # --pending-meta; nothing else is relaxed here except the focus refusal that
+    # caused the deferral.
+    fm_herdr_cleanup_candidate_proof \
+      "$session" "$workspace" "$title" "$token" "$home_real" \
+      "$journal" "$id" "$version" "$bound_workspace" "$bound_tab" "$bound_pane"
+    return $?
+  fi
   task_lock="$STATE/.spawn-$id.lock"
   if ! fm_lock_try_acquire "$task_lock"; then
     fm_herdr_cleanup_warn "$id skipped because its task lock is busy"
@@ -235,38 +334,26 @@ fm_herdr_cleanup_one() { # <session> <workspace> <title> <home-real>
     fm_lock_release "$task_lock" || true
     return 0
   fi
-  snapshot=$(fm_backend_herdr_cli "$session" api snapshot 2>/dev/null) || snapshot=
-  if [ -z "$snapshot" ] \
-    || ! fm_herdr_cleanup_snapshot_candidate \
-      "$snapshot" "$workspace" "$title" "$token" \
-      "$bound_workspace" "$bound_tab" "$bound_pane"; then
-    fm_herdr_cleanup_warn "$id preserved because its locked candidate snapshot was ambiguous"
+  # One proof sequence for the close path and the read-only check mode, so the two
+  # cannot drift: whatever this returns is exactly what licenses bin/fm-teardown.sh
+  # to defer a close to this sweep.
+  if ! fm_herdr_cleanup_candidate_proof \
+    "$session" "$workspace" "$title" "$token" "$home_real" \
+    "$journal" "$id" "$version" "$bound_workspace" "$bound_tab" "$bound_pane"; then
     fm_lock_release "$presentation_lock" || true
     fm_lock_release "$task_lock" || true
     return 0
   fi
   tab=$FM_HERDR_CLEANUP_TAB
   pane=$FM_HERDR_CLEANUP_PANE
-  if [ "$(fm_backend_herdr_pane_agent_state "$session" "$pane")" != no-agent ] \
-    || ! fm_backend_herdr_pane_idle_shell_pid "$session" "$pane" >/dev/null; then
-    fm_herdr_cleanup_warn "$id preserved because its pane is not a provably idle childless shell"
-    fm_lock_release "$presentation_lock" || true
-    fm_lock_release "$task_lock" || true
-    return 0
-  fi
-  if ! fm_herdr_cleanup_revalidate \
-    "$session" "$workspace" "$tab" "$pane" "$title" "$token" "$home_real" \
-    "$journal" "$id" "$version" "$bound_workspace" "$bound_tab" "$bound_pane"; then
-    fm_herdr_cleanup_warn "$id preserved because immediate revalidation changed or was unreadable"
-    fm_lock_release "$presentation_lock" || true
-    fm_lock_release "$task_lock" || true
-    return 0
-  fi
 
   # This unconditional retirement is the authorized containment documented
   # with the presentation floor ownership in bin/backends/herdr.sh.
+  # `agent-free` is the backend's own set of readings that license closing (its
+  # fm_backend_herdr_pane_agent_free), which the proof above has already established
+  # for this pane together with the lone idle childless shell proof.
   fm_backend_herdr_projection_close_pane_focus_preserving \
-    "$session" "$pane" no-agent || close_status=$?
+    "$session" "$pane" agent-free || close_status=$?
   state=$(fm_backend_herdr_pane_agent_state "$session" "$pane")
   if [ "$state" = dead ]; then
     if [ -f "$journal" ] && [ ! -L "$journal" ] \
@@ -290,6 +377,42 @@ fm_herdr_cleanup_one() { # <session> <workspace> <title> <home-real>
   fm_lock_release "$presentation_lock" || true
   fm_lock_release "$task_lock" || true
   return 0
+}
+
+# Read-only answer for bin/fm-teardown.sh's deferred close: is <task-id>'s candidate
+# one this sweep would take, once the record the caller is about to remove is gone
+# and the captain's focus has moved? 0 ready, 1 not ready (including "no such
+# candidate"). Mutates nothing and takes no locks; the sweep re-proves everything
+# itself, under its own locks, when it later acts.
+# The two relaxations are read from the caller's environment
+# (FM_HERDR_CLEANUP_IGNORE_FOCUS, FM_HERDR_CLEANUP_PENDING_META) and are documented
+# with this file's usage; nothing else is relaxed.
+fm_herdr_cleanup_candidate_ready() { # <task-id>
+  local id=$1 session home_real list candidates workspace title
+  [ -n "$id" ] || return 1
+  [ -d "$STATE" ] && [ ! -L "$STATE" ] || return 1
+  command -v herdr >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 1
+  home_real=$(fm_herdr_cleanup_home_identity) || return 1
+  session=$(fm_backend_herdr_session)
+  list=$(fm_backend_herdr_cli "$session" workspace list 2>/dev/null) || return 1
+  candidates=$(printf '%s' "$list" | jq -er '
+    .result.workspaces
+    | select(type == "array")
+    | .[]
+    | select((.workspace_id | type) == "string" and (.workspace_id | length) > 0)
+    | select((.label | type) == "string" and (.label | length) > 0)
+    | [.workspace_id, .label] | @tsv
+  ' 2>/dev/null) || return 1
+  while IFS=$'\t' read -r workspace title; do
+    [ -n "$workspace" ] && [ -n "$title" ] || continue
+    # Bind the candidate to the requested id BEFORE proving it: fm_herdr_cleanup_one
+    # answers about the candidate it is handed, not about a caller's id.
+    fm_herdr_cleanup_unique_match "$title" "$session" "$home_real" || continue
+    [ "$FM_HERDR_CLEANUP_ID" = "$id" ] || continue
+    fm_herdr_cleanup_one "$session" "$workspace" "$title" "$home_real" check
+    return $?
+  done <<< "$candidates"
+  return 1
 }
 
 fm_herdr_session_cleanup() {
@@ -332,6 +455,25 @@ fm_herdr_session_cleanup() {
 }
 
 if [ "${FM_HERDR_SESSION_CLEANUP_SOURCE_ONLY:-0}" != 1 ]; then
+  case "${1:-}" in
+    --candidate-ready)
+      shift
+      fm_herdr_cleanup_ready_id=
+      while [ "$#" -gt 0 ]; do
+        case "$1" in
+          --ignore-focus) FM_HERDR_CLEANUP_IGNORE_FOCUS=1 ;;
+          --pending-meta) FM_HERDR_CLEANUP_PENDING_META=1 ;;
+          -*) printf 'fm-herdr-session-cleanup.sh: unknown flag %s\n' "$1" >&2; exit 2 ;;
+          *) [ -z "$fm_herdr_cleanup_ready_id" ] || { printf 'fm-herdr-session-cleanup.sh: --candidate-ready takes exactly one task id\n' >&2; exit 2; }
+             fm_herdr_cleanup_ready_id=$1 ;;
+        esac
+        shift
+      done
+      [ -n "$fm_herdr_cleanup_ready_id" ] || { printf 'usage: fm-herdr-session-cleanup.sh --candidate-ready <task-id> [--ignore-focus] [--pending-meta]\n' >&2; exit 2; }
+      fm_herdr_cleanup_candidate_ready "$fm_herdr_cleanup_ready_id"
+      exit $?
+      ;;
+  esac
   fm_herdr_session_cleanup
   exit 0
 fi

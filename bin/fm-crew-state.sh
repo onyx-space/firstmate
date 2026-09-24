@@ -39,6 +39,14 @@
 #   "validating (running|fixing)"  a live validation round is under way.
 #   "ci running"              the run is waiting on checks.
 #   "run failed"              the run's own verdict is failure.
+#   " · no recent step activity"
+#                     appended to an ACTIVE step's detail when the client's own
+#                     last_activity verdict is `quiet`: the run still claims a
+#                     step but nothing has progressed past its configured quiet
+#                     warning. bin/fm-classify-lib.sh's crew_stale_class reads it
+#                     as its no-progress verdict, never as a quiet external wait.
+#                     Never appended to the ci MONITOR, whose silence is the wait
+#                     itself; a ci FIX round carries it like any other step.
 # HARD RULE: a no-mistakes terminal `outcome: passed` means the PIPELINE
 # finished, never that the PR merged - with merge authority off, the merge is
 # still the captain's to give. So no run-outcome detail line (source: run-step)
@@ -449,6 +457,21 @@ nm_run_activity_is_recent() {
   ! printf '%s\n' "$rows" | grep -q 'quiet'
 }
 
+# 0 when the pipeline reports an active step the client ITSELF calls quiet - its
+# own no-progress verdict, emitted once no step log or native-agent lifecycle event
+# has arrived for longer than the configured quiet warning. An absent active_steps
+# table is NOT quiet: it carries no verdict either way, so the caller keeps its
+# conservative reading. Same table, same owner as nm_run_activity_is_recent above,
+# and the same proof requirement: the caller must have established that $RUN_OUT is
+# THIS crew's own run detail (RUN_SOURCE=full) before treating the verdict as the
+# crew's, because a coarse lane carries another branch's table.
+nm_run_activity_is_quiet() {
+  local rows
+  rows=$(nm_active_steps_rows)
+  [ -n "$rows" ] || return 1
+  printf '%s\n' "$rows" | grep -q 'quiet'
+}
+
 # 0 when a terminal FAILED run's only failure is the ci monitor step and the
 # ci log's last recognized marker reads checks green. Requires the exact
 # shape, all on positive evidence: a steps[] table where every step completed
@@ -793,6 +816,20 @@ if [ "$HAVE_RUN" = 1 ]; then
         esac
       fi
     fi
+  fi
+
+  # The pipeline's own no-progress verdict, carried into the detail line so the
+  # stale readout (bin/fm-classify-lib.sh's crew_stale_class) can tell a run that
+  # is still advancing from one that has stopped reporting without another probe.
+  # The ci MONITOR is exempt: it polls GitHub silently by design for the whole
+  # merge window, so its silence is a wait, never a no-progress verdict (a ci FIX
+  # round is a real step and carries the marker like any other).
+  # Gated on RUN_SOURCE=full: only a full axi-status reads THIS crew's own
+  # active_steps table. A coarse lane's $RUN_OUT is another branch's payload, and
+  # a foreign run's quiet verdict must not be asserted against this crew.
+  if [ "$RUN_STATE" = working ] && [ "$CI_STEP_STATUS" != running ] \
+     && [ "$RUN_SOURCE" = full ] && nm_run_activity_is_quiet; then
+    RUN_DETAIL="$RUN_DETAIL${SEP}no recent step activity"
   fi
 
   if [ "$RUN_STATE" = working ] && log_reports_ci_ready; then

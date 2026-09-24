@@ -2411,6 +2411,45 @@ test_projection_close_emptying_before_focus_repositions_then_uses_pane_death() {
   pass "herdr presentation cleanup: emptying close before focus moves the doomed workspace to the end and ends its exact shell"
 }
 
+# The plan is always read through a command substitution, so a refusal reason
+# assigned inside it never reaches the caller. The plan echoes its checkpoint's
+# reason instead - the only thing that lets bin/fm-teardown.sh license its durable
+# deferral when the refusal really is the captain's own active tab (D1).
+test_projection_close_refusal_carries_the_plans_checkpoint_reason() {
+  local dir log resp fb out status
+  dir="$TMP_ROOT/close-refuse-reason"; mkdir -p "$dir/responses"
+  log="$dir/log"; resp="$dir/responses"; : > "$log"
+  # Target w1 sits BEFORE the focused w2 and is not last, so the plan takes its
+  # repositioning branch, whose focus checkpoint is the plan's only refusal source.
+  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","active_tab_id":"w1:t1","focused":false},{"workspace_id":"w2","active_tab_id":"w2:t1","focused":true},{"workspace_id":"w3","active_tab_id":"w3:t1","focused":false}]}}' > "$resp/1.out"
+  printf '%s\n' '{"result":{"tabs":[{"tab_id":"w2:t1","focused":true}]}}' > "$resp/2.out"
+  printf '%s\n' '{"result":{"pane":{"pane_id":"w1:p1","tab_id":"w1:t1","workspace_id":"w1"}}}' > "$resp/3.out"
+  printf '%s\n' '{"result":{"tabs":[{"tab_id":"w1:t1","workspace_id":"w1"}]}}' > "$resp/4.out"
+  printf '%s\n' '{"result":{"panes":[{"pane_id":"w1:p1","tab_id":"w1:t1"}]}}' > "$resp/5.out"
+  cp "$resp/1.out" "$resp/6.out"
+  printf '%s\n' '{"client":{"version":"0.7.5","protocol":16},"server":{"running":true}}' > "$resp/7.out"
+  # shellcheck disable=SC2016 # $defs is a literal JSON Schema key.
+  printf '%s\n' '{"schemas":{"request":{"oneOf":[{"properties":{"method":{"const":"workspace.move"}}}],"$defs":{"WorkspaceMoveParams":{"required":["workspace_id","insert_index"],"properties":{"insert_index":{"type":"integer"}}}}}}}' > "$resp/8.out"
+  printf '%s\n' '{"sessions":[{"name":"fmtest","running":true,"socket_path":"/tmp/fmtest.sock"}]}' > "$resp/9.out"
+  # The captain moves focus onto the task pane's own tab inside the planning window.
+  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","active_tab_id":"w1:t1","focused":true},{"workspace_id":"w2","active_tab_id":"w2:t1","focused":false},{"workspace_id":"w3","active_tab_id":"w3:t1","focused":false}]}}' > "$resp/10.out"
+  printf '%s\n' '{"result":{"tabs":[{"tab_id":"w1:t1","focused":true}]}}' > "$resp/11.out"
+  make_death_lab "$dir" 1
+  fb=$(make_herdr_fakebin "$dir")
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_HERDR_SCRIPT_STATUS=1 \
+    FM_FAKE_HERDR_FOREGROUND_REASON=cleared \
+    FM_BACKEND_HERDR_WORKSPACE_MOVER="$dir/mover" \
+    FM_FAKE_MOVER_LOG="$dir/mover.log" FM_FAKE_MOVER_RESPONSE="$dir/no-response" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_projection_close_pane_focus_preserving fmtest w1:p1; rc=$?; printf "rc=%s reason=%s\n" "$rc" "$FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL"' "$ROOT" 2>&1)
+  status=$?
+  [ "$status" -eq 0 ] || fail "the refusal probe itself should not fail: $out"
+  assert_contains "$out" 'rc=1 reason=active-tab' \
+    "the plan's checkpoint refusal did not carry the gate's own active-tab reason to the caller"
+  [ ! -s "$dir/mover.log" ] || fail "a refused plan still moved the doomed workspace"
+  assert_not_contains "$(cat "$log")" $'pane\x1fclose' "a refused plan still closed the pane"
+  pass "herdr presentation cleanup: a plan refusal carries the focus checkpoint's own reason to the caller"
+}
+
 test_projection_close_emptying_before_last_focus_needs_no_move() {
   local dir log resp fb out status bgpid
   dir="$TMP_ROOT/close-death-focus-last"; mkdir -p "$dir/responses"
@@ -5415,6 +5454,7 @@ test_projection_close_rechecks_target_focus_after_planning
 test_projection_close_preserves_live_focus_that_switched_away_from_target
 test_projection_close_emptying_after_focus_uses_pane_death_without_move
 test_projection_close_emptying_before_focus_repositions_then_uses_pane_death
+test_projection_close_refusal_carries_the_plans_checkpoint_reason
 test_projection_close_emptying_before_last_focus_needs_no_move
 test_projection_close_emptying_last_workspace_needs_no_move
 test_projection_close_non_emptying_stays_plain_without_proof_or_move

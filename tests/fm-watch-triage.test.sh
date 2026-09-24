@@ -4949,6 +4949,91 @@ test_paused_until_that_passed_is_rechecked_before_the_cadence() {
 }
 
 
+
+# The three-state readout behind a silent pane: busy, a quiet external wait, or
+# nothing left to wait for. It is the readout's own unit contract; the watcher's
+# stale decision does not consume it in this release.
+test_crew_stale_three_state_readout() {
+  local dir state fakebin id win spec
+  dir=$(make_case stale-three-state); state="$dir/state"; fakebin="$dir/fakebin"
+  export FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh"
+  export FM_FAKE_CREW_STATE
+  id=crew; win="test:fm-$id"
+  mkdir -p "$dir/home" "$state"
+  printf 'window=%s\nkind=ship\nbackend=tmux\n' "$win" > "$state/$id.meta"
+  # The readout answers from the crew's own current state; the watcher's stale
+  # decision does not consume it in this release.
+  printf 'working: implementing\n' > "$state/$id.status"
+
+  # The readout's token for every interesting input, one read each.
+  assert_class() {  # <fake-line> <expected-class> <why>
+    FM_FAKE_CREW_STATE="$1"
+    [ "$(crew_stale_class "$id")" = "$2" ] \
+      || fail "crew_stale_class read '$1' as $(crew_stale_class "$id"), not $2 ($3)"
+  }
+  assert_class 'state: working · source: pane · harness busy (native)' busy \
+    'a busy pane is the agent working now'
+  assert_class 'state: working · source: run-step · validating (running)' advancing \
+    'an actively working run step'
+  assert_class 'state: working · source: run-step · validating (fixing)' advancing \
+    'an actively fixing run step'
+  assert_class 'state: working · source: run-step · validating (background run)' advancing \
+    'the coarse runs-ledger reading of an active run'
+  assert_class 'state: working · source: run-step · ci running' monitoring \
+    'the pipeline waiting on checks'
+  assert_class 'state: working · source: run-step · run active' monitoring \
+    'an active run whose step the client does not name'
+  assert_class 'state: parked · source: run-step · parked at review gate' monitoring \
+    'a run parked at a gate'
+  assert_class 'state: parked · source: run-step · parked at gate: 2 finding(s) (ask-user: authority decision)' monitoring \
+    'a run parked at an ask-user gate'
+  assert_class 'state: parked · source: status-log · needs-decision: the captain must pick a route' none \
+    "a needs-decision status line is not this readout's to absorb"
+  assert_class 'state: done · source: run-step · run passed: PR held for merge' landed \
+    'a delivered PR with the merge left to the captain'
+  assert_class 'state: done · source: run-step · run passed: PR merged: https://example.test/pr/7' landed \
+    'a proven merge'
+  assert_class 'state: done · source: status-log · PR https://example.test/pr/7 checks green' landed \
+    "the crew's own delivery line with no attributed run"
+  assert_class 'state: paused · source: status-log · awaiting upstream' paused \
+    'a declared external wait'
+  assert_class 'state: working · source: run-step · validating (running) · no recent step activity' none \
+    "the pipeline's own no-progress verdict"
+  assert_class 'state: working · source: run-step · validating (running) · status-log superseded by active run' advancing \
+    'an unrecognised active-step detail keeps the conservative active reading'
+  assert_class 'state: working · source: status-log · working: compiling' none \
+    'a stale status line is not liveness'
+  assert_class 'state: failed · source: run-step · run failed' none 'a failed run'
+  assert_class 'state: unknown · source: none · worktree gone (torn down?)' none \
+    'a torn-down worktree'
+  assert_class 'state: unknown · source: pane · harness state unavailable (unknown codex-unverified)' none \
+    'an unreadable harness verdict'
+  assert_class '' none 'no current-state line at all'
+  assert_class 'state: done · source: pane · whatever' landed \
+    'a terminal verdict outranks the source it arrived with'
+
+  # The terminal-status override's own predicate: only the crew working right now
+  # may supersede a captain-relevant status line the log still carries.
+  for spec in \
+    'busy|state: working · source: pane · harness busy (native)|0' \
+    'advancing|state: working · source: run-step · validating (running)|0' \
+    'monitoring|state: working · source: run-step · ci running|1' \
+    'parked|state: parked · source: run-step · parked at review gate|1' \
+    'landed|state: done · source: run-step · run passed: PR held for merge|1' \
+    'paused|state: paused · source: status-log · awaiting upstream|1' \
+    'dead|state: unknown · source: none · worktree gone|1'
+  do
+    FM_FAKE_CREW_STATE=${spec%|*}; FM_FAKE_CREW_STATE=${FM_FAKE_CREW_STATE#*|}
+    if [ "${spec##*|}" = 0 ]; then
+      crew_stale_is_actively_working "$id" \
+        || fail "${spec%%|*} was not treated as actively working"
+    else
+      ! crew_stale_is_actively_working "$id" \
+        || fail "${spec%%|*} was treated as actively working"
+    fi
+  done
+  pass "crew_stale_class: busy, the quiet external waits (advancing/monitoring/paused), landed, and the dead/no-progress cases each read as their own state"
+}
 test_status_span_actionable_classifier
 test_status_span_survives_a_later_routine_append
 test_status_span_respects_decision_closure
@@ -5065,6 +5150,8 @@ test_afk_one_shot_never_hands_off_captain_held_under_away_record
 test_paused_until_near_future_is_quiet_before_the_cadence
 test_paused_until_wrong_year_is_bounded_by_the_cadence
 test_paused_until_that_passed_is_rechecked_before_the_cadence
+test_crew_stale_three_state_readout
+
 
 # A watcher this suite started and never reaped keeps polling a fixture state
 # directory that cleanup is about to remove, which is how an earlier run left

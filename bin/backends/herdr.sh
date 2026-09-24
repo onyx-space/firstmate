@@ -992,9 +992,19 @@ fm_backend_herdr_foreground_client_present() {  # <session>
 fm_backend_herdr_projection_target_tab_mutation_allowed() {  # <session> <tab-id>
   local session=$1 target_tab=$2 foreground_rc=0 focus active_tab
   FM_BACKEND_HERDR_PROJECTION_MUTATION_FOCUS=""
+  # Why this gate refused, for the one caller that must act on the reason rather
+  # than only on the refusal: a close that cannot happen because the pane sits in
+  # the captain's own active tab is deferred durably (bin/fm-teardown.sh), while
+  # every other refusal stays a hard hold on the task's records. `active-tab` is
+  # the only value that licenses that deferral; an unreadable focus is
+  # `unknown-focus` and never is.
+  FM_BACKEND_HERDR_PROJECTION_MUTATION_REFUSAL=""
   fm_backend_herdr_foreground_client_present "$session" || foreground_rc=$?
   [ "$foreground_rc" -eq 1 ] && return 0
-  focus=$(fm_backend_herdr_projection_focus_snapshot "$session") || return 1
+  focus=$(fm_backend_herdr_projection_focus_snapshot "$session") || {
+    FM_BACKEND_HERDR_PROJECTION_MUTATION_REFUSAL='unknown-focus'
+    return 1
+  }
   active_tab=${focus#*$'\t'}
   if [ "$target_tab" != "$active_tab" ]; then
     # Let the close owner preserve the live viewer's fresh non-target focus,
@@ -1003,8 +1013,10 @@ fm_backend_herdr_projection_target_tab_mutation_allowed() {  # <session> <tab-id
     return 0
   fi
   if [ "$foreground_rc" -eq 0 ]; then
+    FM_BACKEND_HERDR_PROJECTION_MUTATION_REFUSAL='active-tab'
     echo "warning: herdr presentation cleanup target is the captain's active tab; refusing a close that cannot preserve focus" >&2
   else
+    FM_BACKEND_HERDR_PROJECTION_MUTATION_REFUSAL='unknown-focus'
     echo "warning: herdr presentation cleanup could not verify whether a foreground client is viewing the target tab; refusing a focus-unsafe mutation" >&2
   fi
   return 1
@@ -1031,13 +1043,25 @@ fm_backend_herdr_projection_close_pane_focus_preserving() {  # <session> <pane-i
   local before active_tab info target_pane target_tab target_ws close_status state plan plan_shell_pid plan_move_record workspace_presence
   local skip_restore=0
   FM_BACKEND_HERDR_PROJECTION_CLOSE_AGENT_STATE=""
+  # WHY this call did not close the pane, for the caller that must treat one
+  # reason differently from all the others: `active-tab` is the captain's live
+  # viewer sitting on the pane's own tab, the one refusal that cannot be fixed by
+  # retrying under the same conditions, and the only one bin/fm-teardown.sh may
+  # defer to the durable resumable close instead of holding every record. Every
+  # other value (`unverified-focus`, `unknown-focus`, `unverified-pane`,
+  # `agent-state-mismatch`, `plan-refused`, `close-failed`,
+  # `workspace-removal-unconfirmed`, `focus-restore-failed`) keeps today's
+  # refusal-to-remove exactly as it was.
+  FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL=""
   [ -n "$pane_id" ] || return 0
   before=$(fm_backend_herdr_projection_focus_snapshot "$session") || {
+    FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL='unverified-focus'
     echo "warning: herdr presentation cleanup could not capture exact active workspace and tab; refusing focus-unsafe pane close" >&2
     return 1
   }
   active_tab=${before#*$'\t'}
   info=$(fm_backend_herdr_cli "$session" pane get "$pane_id" 2>/dev/null) || {
+    FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL='unverified-pane'
     echo "warning: herdr presentation cleanup could not verify the exact pane; refusing focus-unsafe pane close" >&2
     return 1
   }
@@ -1045,13 +1069,29 @@ fm_backend_herdr_projection_close_pane_focus_preserving() {  # <session> <pane-i
   target_tab=$(printf '%s' "$info" | jq -r '.result.pane.tab_id // empty' 2>/dev/null)
   target_ws=$(printf '%s' "$info" | jq -r '.result.pane.workspace_id // empty' 2>/dev/null)
   if [ "$target_pane" != "$pane_id" ] || [ -z "$target_tab" ]; then
+    FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL='unverified-pane'
     echo "warning: herdr presentation cleanup received an ambiguous exact-pane response; refusing focus-unsafe pane close" >&2
     return 1
   fi
   if [ -n "$required_agent_state" ]; then
-    state=$(fm_backend_herdr_pane_agent_state "$session" "$pane_id")
-    FM_BACKEND_HERDR_PROJECTION_CLOSE_AGENT_STATE=$state
-    [ "$state" = "$required_agent_state" ] || return 1
+    # `agent-free` is the set of readings that license closing an agentless pane
+    # (fm_backend_herdr_pane_agent_free owns it); every other required state keeps
+    # the exact-equality check.
+    if [ "$required_agent_state" = agent-free ]; then
+      state=$(fm_backend_herdr_pane_agent_state "$session" "$pane_id")
+      FM_BACKEND_HERDR_PROJECTION_CLOSE_AGENT_STATE=$state
+      fm_backend_herdr_pane_agent_free "$session" "$pane_id" || {
+        FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL='agent-state-mismatch'
+        return 1
+      }
+    else
+      state=$(fm_backend_herdr_pane_agent_state "$session" "$pane_id")
+      FM_BACKEND_HERDR_PROJECTION_CLOSE_AGENT_STATE=$state
+      [ "$state" = "$required_agent_state" ] || {
+        FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL='agent-state-mismatch'
+        return 1
+      }
+    fi
   fi
   [ "$target_tab" != "$active_tab" ] || skip_restore=1
   plan=plain
@@ -1070,7 +1110,13 @@ fm_backend_herdr_projection_close_pane_focus_preserving() {  # <session> <pane-i
         plan_shell_pid=${plan#death }
         plan=death
         ;;
-      refuse)
+      refuse|refuse\ *)
+        # The plan always runs in a command substitution, so its focus checkpoint's
+        # own FM_BACKEND_HERDR_PROJECTION_MUTATION_REFUSAL assignment cannot reach
+        # this shell; the plan carries that reason out on its last line instead.
+        FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL=${plan#refuse}
+        FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL=${FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL# }
+        FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL=${FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL:-plan-refused}
         return 1
         ;;
       *)
@@ -1096,9 +1142,11 @@ fm_backend_herdr_projection_close_pane_focus_preserving() {  # <session> <pane-i
       if fm_backend_herdr_explicit_close_pane_confirmed "$session" "$pane_id"; then
         close_status=0
       else
+        FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL='close-failed'
         close_status=1
       fi
     else
+      FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL=${FM_BACKEND_HERDR_PROJECTION_MUTATION_REFUSAL:-unknown-focus}
       close_status=1
     fi
   elif fm_backend_herdr_projection_target_tab_mutation_allowed "$session" "$target_tab"; then
@@ -1109,15 +1157,18 @@ fm_backend_herdr_projection_close_pane_focus_preserving() {  # <session> <pane-i
     if fm_backend_herdr_explicit_close_pane_confirmed "$session" "$pane_id"; then
       close_status=0
     else
+      FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL='close-failed'
       close_status=1
     fi
   else
+    FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL=${FM_BACKEND_HERDR_PROJECTION_MUTATION_REFUSAL:-unknown-focus}
     close_status=1
   fi
   if [ "$close_status" -eq 0 ] && [ -n "$plan_move_record" ]; then
     workspace_presence=$(fm_backend_herdr_workspace_presence_state "$session" "$target_ws")
     if [ "$workspace_presence" != dead ]; then
       echo "warning: herdr presentation cleanup did not confirm removal of the repositioned workspace" >&2
+      FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL='workspace-removal-unconfirmed'
       close_status=1
     fi
   fi
@@ -1125,7 +1176,10 @@ fm_backend_herdr_projection_close_pane_focus_preserving() {  # <session> <pane-i
     fm_backend_herdr_emptying_move_rollback "$plan_move_record" "$session" "$target_tab" || true
   fi
   if [ "$skip_restore" -eq 0 ]; then
-    fm_backend_herdr_projection_focus_restore "$session" "$before" "pane close" || return 2
+    fm_backend_herdr_projection_focus_restore "$session" "$before" "pane close" || {
+      FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL='focus-restore-failed'
+      return 2
+    }
   fi
   [ "$close_status" -eq 0 ]
 }
@@ -1196,8 +1250,11 @@ fm_backend_herdr_workspace_move_capable() {  # <session>
 # exact pane. The LAST echoed line is the plan: "plain" (use the ordinary
 # explicit close; below the presentation version floor the exact-tab restore
 # backstop masks the focus move it causes when it empties a non-focused
-# workspace) or "death <shell-pid>" (end the proved lone idle shell so Herdr
-# removes the emptied workspace through its focus-preserving pane-death path).
+# workspace), "death <shell-pid>" (end the proved lone idle shell so Herdr
+# removes the emptied workspace through its focus-preserving pane-death path), or
+# "refuse <reason>" (this plan's own focus checkpoint refused; the reason is that
+# checkpoint's, echoed here because the checkpoint's assignment inside this
+# command substitution can never reach the caller).
 # Whenever the repositioning mover was invoked, a preceding
 # "moved<TAB><ws><TAB><original-index><TAB><socket><TAB><focused><TAB><pre-move-order-json>"
 # record line is echoed first so the caller can hand it to
@@ -1270,7 +1327,11 @@ fm_backend_herdr_emptying_close_plan() {  # <session> <pane-id> <workspace-id> <
     before_order=$(printf '%s' "$list" | jq -c '[.result.workspaces[].workspace_id]' 2>/dev/null)
     if [ -n "$guard_tab" ] \
       && ! fm_backend_herdr_projection_target_tab_mutation_allowed "$session" "$guard_tab"; then
-      printf 'refuse\n'
+      # The caller reads its plan through a command substitution, so the
+      # checkpoint's own refusal-reason variable dies with this subshell; echo the
+      # reason as the plan's last line so the caller can still tell `active-tab`
+      # (the one refusal it may defer to the durable resumable close) apart.
+      printf 'refuse %s\n' "${FM_BACKEND_HERDR_PROJECTION_MUTATION_REFUSAL:-plan-refused}"
       return 0
     fi
     if response=$("$mover" "$socket" "$ws_id" "$len" 2>/dev/null); then
@@ -2295,6 +2356,24 @@ fm_backend_herdr_pane_agent_state() {  # <session> <pane_id>
     shell) printf 'stale-agent' ;;
     *) printf 'unknown' ;;
   esac
+}
+
+# fm_backend_herdr_pane_agent_free: 0 when <pane>'s reading is one of the two
+# AGENT-FREE values fm_backend_herdr_pane_agent_state can prove: `no-agent` (no
+# registration at all) or `stale-agent` (a registration that outlived its process -
+# see that function's contract, where it is named the crew shape's post-agent-exit
+# reading and "the explicit agent-free reason"). One owner for that set, because
+# both the close helper's `agent-free` requirement below and
+# bin/fm-herdr-session-cleanup.sh's candidate proof must agree about it.
+# It is never sufficient on its own to close a pane: callers pair it with a
+# process-level proof (fm_backend_herdr_pane_idle_shell_pid) that rules out both a
+# running agent and the nested shell the husk rule refuses.
+# 1 for `live`, `unknown`, and every unmodelled reading.
+fm_backend_herdr_pane_agent_free() {  # <session> <pane-id>
+  case "$(fm_backend_herdr_pane_agent_state "$1" "$2")" in
+    no-agent|stale-agent) return 0 ;;
+  esac
+  return 1
 }
 
 # fm_backend_herdr_tab_is_husk: true (0) only for the two conservative husk
