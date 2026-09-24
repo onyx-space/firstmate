@@ -728,9 +728,10 @@ test_dead_shell_outranks_earlier_shape_refusals() {
   # BOTTOM-MOST structure (the composer's own position). A shell-looking row in
   # the transcript body must not suppress the busy/shape refusal: on the same
   # frame a working pi stays unknown-busy and a settled one unknown-shape.
-  # When the shell row really is the lowest structure, it still wins over a
-  # stale box and a leftover separator rule and stays the umbrella `unknown`.
-  local pi_idle pi_working box rule dead stale pair_dead transcript
+  # When the shell row really is the lowest structure, it wins over a stale
+  # box, a leftover separator rule, and an unclosed border/table above it, and
+  # stays the umbrella `unknown`.
+  local pi_idle pi_working box rule dead stale pair_dead transcript unclosed pair_table
   pi_idle=$(printf 'pi\tidle'); pi_working=$(printf 'pi\tworking')
   box=$'╭────────────────────────╮\n│                        │\n╰────────────────────────╯'
   rule='────────────────────────'
@@ -742,6 +743,13 @@ test_dead_shell_outranks_earlier_shape_refusals() {
   assert_screen "dead shell with a stale box and rule stays unknown while working" unknown "$CAPS_STYLED" "$dead" '' "$pi_working"
   assert_screen "dead shell with a stale box and rule stays unknown without identity" unknown "$CAPS_STYLED" "$dead"
   assert_screen "stale box plus rule with no shell keeps its shape refusal" unknown-shape "$CAPS_STYLED" "$stale" '' "$pi_idle"
+  # An UNCLOSED border/table above the prompt must not mask it either: an upper
+  # border is not the composer's position, so the bottom shell row is still the
+  # agent-exited fact.
+  unclosed=$'transcript\n┌─────┬─────┐\n│ a   │ b   │\n$ '
+  assert_screen "shell below an unclosed table stays unknown" unknown "$CAPS_STYLED" "$unclosed" '' "$pi_idle"
+  assert_screen "shell below an unclosed table stays unknown while working" unknown "$CAPS_STYLED" "$unclosed" '' "$pi_working"
+  assert_screen "shell below an unclosed table stays unknown without identity" unknown "$CAPS_STYLED" "$unclosed"
   # A shell-looking transcript row above the bottom structure is NOT a dead
   # shell: the unpaired rule below it is the lowest structure, so the refusal
   # is named by the pane's own state.
@@ -753,6 +761,10 @@ test_dead_shell_outranks_earlier_shape_refusals() {
   pair_dead=$'transcript\n────────────────────────\n\n────────────────────────\n$ '
   assert_screen "valid pi pair above a dead shell stays unknown" unknown "$CAPS_STYLED" "$pair_dead" '' "$pi_idle"
   assert_screen "valid pi pair above a dead shell stays unknown while working" unknown "$CAPS_STYLED" "$pair_dead" '' "$pi_working"
+  # Fix A's outcome is untouched: a markdown table ABOVE a valid empty pi pair
+  # is not a refusal structure below the pair, so the pair still reads empty.
+  pair_table=$'┌─────┬─────┐\n│ a   │ b   │\n├─────┼─────┤\n│ c   │ d   │\n└─────┴─────┘\n────────────────────────\n\n────────────────────────\n footer'
+  assert_screen "table above a valid empty pi pair still reads empty" empty "$CAPS_STYLED" "$pair_table" '' "$pi_idle"
   pass "fm_composer_classify_screen: only a bottom-most shell row is the dead-shell fact"
 }
 

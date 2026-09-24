@@ -742,10 +742,12 @@ _fm_composer_scan_screen() {  # <plain-screen> <cursor-or-empty> [extract-wrap]
         ;;
       *) leftbar_start=-1 ;;
     esac
-    # Bare agent-glyph rows: the glyph itself is the container proof. Bare
-    # shell glyphs are deliberately not candidates (dead-shell rule). Keep
-    # lower shell prompts as staleness evidence for cursorless selection.
-    if [ "$top" -lt 0 ] && fm_composer_leading_shell_glyph_var glyph "$trimmed"; then
+    # Bare agent-glyph rows: the glyph itself is the container proof. A bare
+    # shell glyph is never a composer candidate; its ROW is recorded as the
+    # agent-exited fact and as position evidence for the cursorless rule, even
+    # while an unclosed border sits above it - an upper border is not the
+    # composer's position and must not mask the prompt.
+    if fm_composer_leading_shell_glyph_var glyph "$trimmed"; then
       FM_COMPOSER_SCAN_SHELL_ROW=$row
     elif fm_composer_leading_agent_glyph_var glyph "$trimmed"; then
       FM_COMPOSER_SCAN_BARE_ROW=$row
@@ -1119,7 +1121,7 @@ _fm_composer_leftbar_floor_row() {  # <trimmed-row>
 # lower bare shell-prompt rule) is a third fact - the agent exited - and stays
 # `unknown`.
 _fm_composer_select_cursorless() {
-  local plain=$1 generic=-1 next boundary raw trimmed
+  local plain=$1 generic=-1 lowest next boundary raw trimmed
   FM_COMPOSER_SELECTED_KIND=
   FM_COMPOSER_SELECTED_FIRST=-1
   FM_COMPOSER_SELECTED_LAST=-1
@@ -1158,9 +1160,25 @@ _fm_composer_select_cursorless() {
     FM_COMPOSER_SELECTED_FIRST=$((FM_COMPOSER_SCAN_PI_OPEN + 1))
     FM_COMPOSER_SELECTED_LAST=$((FM_COMPOSER_SCAN_PI_CLOSE - 1))
   fi
-  if [ "$FM_COMPOSER_SCAN_SHELL_ROW" -gt "$generic" ] \
-     && [ "$FM_COMPOSER_SCAN_SHELL_ROW" -gt "$FM_COMPOSER_SCAN_PI_LAST_SEPARATOR" ] \
-     && [ "$FM_COMPOSER_SCAN_SHELL_ROW" -gt "$FM_COMPOSER_SCAN_INCOMPLETE_BOX_FROM" ]; then
+  # POSITION PRIORITY (the core invariant of this rule set): the refusal class
+  # is decided by the BOTTOM-MOST structure row on the screen, never by a
+  # shell-looking row in the transcript body. The selectable candidate shapes
+  # (box, bare row, left bar, pi separator pair) are already folded into
+  # `generic`; PI_LAST_SEPARATOR and INCOMPLETE_BOX_FROM mark the remaining
+  # structures (an unpaired separator rule, an unclosed border). Only when the
+  # shell prompt row is lower than every one of them is it the agent-exited
+  # fact (dead-shell) - a closed box or an unclosed border ABOVE it may not
+  # mask it, because that border is not the composer's position. A structure
+  # that reaches below the shell row makes the shell row transcript text, so
+  # the existing refusals decide instead.
+  lowest=$generic
+  if [ "$FM_COMPOSER_SCAN_PI_LAST_SEPARATOR" -gt "$lowest" ]; then
+    lowest=$FM_COMPOSER_SCAN_PI_LAST_SEPARATOR
+  fi
+  if [ "$FM_COMPOSER_SCAN_INCOMPLETE_BOX_FROM" -gt "$lowest" ]; then
+    lowest=$FM_COMPOSER_SCAN_INCOMPLETE_BOX_FROM
+  fi
+  if [ "$FM_COMPOSER_SCAN_SHELL_ROW" -gt "$lowest" ]; then
     FM_COMPOSER_SELECTED_KIND=
     FM_COMPOSER_SELECT_REFUSAL=dead-shell
     return 1
