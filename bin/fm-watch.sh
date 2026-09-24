@@ -2622,8 +2622,12 @@ EOF
         # is cleared - but not in the same poll the declared-pause cadence just
         # recorded it, or the re-surface throttle it depends on would be erased and
         # the pause would re-surface every poll instead of once per long cadence.
-        if [ "$paused_bound" -ne 0 ] && [ -e "$pf" ] && { [ "$n" -ge 2 ] || ! status_is_paused_or_captain_held "$(last_status_line "$STATE/$(window_to_task "$w" "$STATE").status")"; }; then
-          clear_pause_tracking "$key"
+        if [ "$paused_bound" -ne 0 ] && [ -e "$pf" ]; then
+          if pane_derived_wait_marker "$key"; then
+            clear_stale_hash_tracking "$key"
+          elif [ "$n" -ge 2 ] || ! status_is_paused_or_captain_held "$(last_status_line "$STATE/$(window_to_task "$w" "$STATE").status")"; then
+            clear_pause_tracking "$key"
+          fi
         fi
       fi
     else

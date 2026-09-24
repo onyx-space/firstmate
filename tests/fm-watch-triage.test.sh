@@ -2132,6 +2132,67 @@ test_nonterminal_stale_quiet_external_wait_takes_the_pause_cadence() {
   pass "a quiet external wait is absorbed on first sight without a wedge timer, then re-surfaced on the bounded cadence"
 }
 
+# --- derived wait: pane churn must not reset its cadence window -------------
+# A derived wait's anchor is its own first derivation, not the status file's age. A
+# pane whose render ticks (a clock, a token counter) changes hash between stable
+# polls; if that churn - or the n<2 poll right after it - cleared the anchor, the
+# FM_PAUSE_RESURFACE_SECS window would restart forever and the "run in progress ...
+# confirm it is still advancing" recheck would never be delivered. This drives the
+# real watcher through one changed-hash poll, then the same hash at n<2, then the
+# stable n>=2 poll, and asserts the aged anchor survives and the recheck fires.
+test_derived_wait_anchor_survives_pane_churn() {
+  local dir state fakebin out capture_file window key old_hash new_hash sig pid back
+  dir=$(make_case derived-wait-churn); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:fm-derived-churn"
+  printf 'idle, pipeline owns the branch' > "$capture_file"
+  printf 'window=%s\nkind=ship\n' "$window" > "$state/churn.meta"
+  printf 'working: implementation handed to the pipeline\n' > "$state/churn.status"
+  sig=$(seen_sig "$state/churn.status"); printf '%s' "$sig" > "$state/.seen-churn_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  old_hash=$(hash_text "the previous frame of the ticking pane")
+  new_hash=$(hash_text "idle, pipeline owns the branch")
+  printf '%s' "$old_hash" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  printf 'waiting' > "$state/.paused-$key"
+  back=$(( $(date +%s) - 500 ))
+  date +%s > "$state/.wait-since-$key"
+  set_mtime "$back" "$state/.wait-since-$key"
+  export FM_FAKE_CREW_STATE='state: working · source: run-step · ci running'
+
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
+    FM_PAUSE_RESURFACE_SECS=240 FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 200 || fail "a derived wait whose pane ticked never delivered its cadence recheck: $(cat "$out")"
+  grep -F "stale: $window" "$out" >/dev/null || fail "the churned derived wait recheck printed no stale wake"
+  grep -F "run in progress" "$out" >/dev/null || fail "the churned derived wait was not re-surfaced as a run still in progress"
+  grep -F "confirm it is still advancing" "$out" >/dev/null || fail "the churned derived wait recheck did not ask whether it is still advancing"
+  grep -F "possible wedge" "$out" >/dev/null && fail "a churned derived wait was mislabeled a possible wedge"
+  [ ! -e "$state/.stale-since-$key" ] || fail "a derived wait re-surface must not arm the wedge timer"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the derived-wait recheck"
+
+  # The wait ending - the readout no longer explains the silence - clears its marker
+  # and anchor instead of absorbing the pane forever.
+  export FM_FAKE_CREW_STATE='state: working · source: pane · harness busy (native)'
+  printf '%s' "$new_hash" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  : > "$out"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
+    FM_PAUSE_RESURFACE_SECS=240 FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_poll_cycle "$state" "$pid" || { reap "$pid"; fail "watcher exited while the pane's wait reading ended: $(cat "$out")"; }
+  reap "$pid"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the intentional churn-phase watcher stop"
+  [ ! -e "$state/.paused-$key" ] || fail "the derived wait marker survived the wait ending"
+  [ ! -e "$state/.wait-since-$key" ] || fail "the derived wait anchor survived the wait ending"
+  unset FM_FAKE_CREW_STATE
+  pass "a derived wait keeps its cadence anchor across pane churn and clears it once the readout no longer explains the silence"
+}
+
 # --- non-terminal stale, crew NO progress: surfaced at once -------------------
 # The other half of the same readout. A run that still CLAIMS an active step while
 # the pipeline itself reports no progress is no longer a wait: it is the case the
@@ -5249,6 +5310,7 @@ test_permission_recovery_surfaces_preserved_status
 test_terminal_stale_surfaced
 test_stale_terminal_status_overridden_by_active_run
 test_nonterminal_stale_quiet_external_wait_takes_the_pause_cadence
+test_derived_wait_anchor_survives_pane_churn
 test_nonterminal_stale_run_with_no_progress_surfaces
 test_nonterminal_stale_busy_pane_still_takes_the_wedge_timer
 test_wedge_escalation_marks_demand_deep_inspection_after_threshold
