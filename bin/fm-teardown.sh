@@ -3976,10 +3976,9 @@ elif [ "$BACKEND" != orca ]; then
 fi
 if [ "$HERDR_PRESENTATION_RETIRE_CANDIDATE" = 1 ]; then
   # The journal is retired only against the ONE fact it exists to witness: this
-  # exact pane is gone. An agentless pane that is still present is NOT a closed
-  # pane - reading the pane's agent state as "closed" dropped the only durable
-  # record of an open pane as soon as its agent exited, which is exactly the
-  # unowned live endpoint this task exists to stop leaving behind.
+  # exact pane is gone, which is the pane-presence reading itself. Reading the
+  # agent state instead would name the same fact indirectly; the presence read is
+  # the direct form of it.
   HERDR_PRESENTATION_PRESENCE=$(fm_backend_herdr_pane_presence_state \
     "$HERDR_PRESENTATION_SESSION" "$HERDR_PRESENTATION_PANE") \
     || HERDR_PRESENTATION_PRESENCE=unknown

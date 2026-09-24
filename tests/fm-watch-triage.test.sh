@@ -2193,6 +2193,74 @@ test_derived_wait_anchor_survives_pane_churn() {
   pass "a derived wait keeps its cadence anchor across pane churn and clears it once the readout no longer explains the silence"
 }
 
+# --- busy pane + a lingering derived-wait marker: the busy-turn bound must win ---
+# 忙 ≠ 等. A pane that has gone BUSY is the crew working, so any derived wait it
+# was absorbed on is over: its marker and anchor go, but the hash-scoped busy-turn
+# wedge timer must be left alone to accumulate and escalate. A derived arm that
+# only reset the hash-scoped half would delete the freshly armed `.stale-since` on
+# every poll, so a hung foreground call behind a busy signature (the 2026-07
+# incident this bound exists for) would never escalate. Both the stable-hash poll
+# and the first-sight changed-hash poll are covered, since both arms could starve.
+test_busy_pane_with_derived_marker_still_escalates_past_turn_age_bound() {
+  local shape dir state fakebin out capture_file window key pane_hash sig pid since_first
+  for shape in stable changing; do
+    dir=$(make_case "busy-derived-marker-$shape"); state="$dir/state"; fakebin="$dir/fakebin"
+    out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:fm-busy-derived"
+    printf 'Working...' > "$capture_file"
+    printf 'window=%s\nkind=ship\nharness=pi\n' "$window" > "$state/busy-derived-$shape.meta"
+    record_pi_busy "$state" "busy-derived-$shape"
+    printf 'working: setup complete\n' > "$state/busy-derived-$shape.status"
+    sig=$(seen_sig "$state/busy-derived-$shape.status"); printf '%s' "$sig" > "$state/.seen-busy-derived-${shape}_status"
+    key=$(printf '%s' "$window" | tr ':/.' '___')
+    pane_hash=$(hash_text "Working...")
+    # A lingering derived wait from before the crew resumed: the idle pane's
+    # external-wait marker plus the cadence anchor its arm manages.
+    printf 'waiting' > "$state/.paused-$key"
+    date +%s > "$state/.wait-since-$key"
+    touch -t 200001010000 "$state/busy-derived-$shape.meta"
+    if [ "$shape" = stable ]; then
+      printf '%s' "$pane_hash" > "$state/.hash-$key"
+      printf '1\n' > "$state/.count-$key"
+    fi
+
+    # Phase A: the busy pane ends the derived wait, and the busy-turn wedge timer
+    # survives from poll to poll instead of being wiped by the marker.
+    PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+      FM_STATE_OVERRIDE="$state" FM_BUSY_TURN_MAX_SECS=1 FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+      FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+    pid=$!
+    if ! wait_poll_cycle "$state" "$pid"; then
+      reap "$pid"; fail "[$shape] busy pane with a lingering derived marker escalated before the wedge threshold: $(cat "$out")"
+    fi
+    [ -s "$state/.stale-since-$key" ] \
+      || { reap "$pid"; fail "[$shape] a busy pane carrying a derived marker never armed the busy-turn wedge timer"; }
+    [ ! -e "$state/.paused-$key" ] \
+      || { reap "$pid"; fail "[$shape] the derived wait marker survived a busy pane"; }
+    [ ! -e "$state/.wait-since-$key" ] \
+      || { reap "$pid"; fail "[$shape] the derived wait anchor survived a busy pane"; }
+    since_first=$(cat "$state/.stale-since-$key")
+    if ! wait_poll_cycle "$state" "$pid"; then
+      reap "$pid"; fail "[$shape] busy pane with a lingering derived marker escalated before the wedge threshold: $(cat "$out")"
+    fi
+    [ "$(cat "$state/.stale-since-$key" 2>/dev/null || true)" = "$since_first" ] \
+      || { reap "$pid"; fail "[$shape] the busy-turn wedge timer was reset while the pane stayed busy"; }
+    reap "$pid"
+    ack_stopped_cycle "$state" || fail "[$shape] could not acknowledge the intentional busy phase-A stop"
+
+    # Phase B: the accumulated timer crosses the threshold and escalates.
+    echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+    : > "$out"
+    PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+      FM_STATE_OVERRIDE="$state" FM_BUSY_TURN_MAX_SECS=1 FM_STALE_ESCALATE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+      FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+    pid=$!
+    wait_for_exit "$pid" 100 || fail "[$shape] a busy pane carrying a derived marker never wedge-escalated past the turn-age bound"
+    grep -F "stale: $window" "$out" >/dev/null || fail "[$shape] busy turn-age escalation printed no stale wake"
+    grep -F "possible wedge" "$out" >/dev/null || fail "[$shape] busy turn-age escalation did not flag a possible wedge"
+  done
+  pass "a busy pane carrying a lingering derived-wait marker ends the wait and still arms and escalates the busy-turn wedge timer"
+}
+
 # --- non-terminal stale, crew NO progress: surfaced at once -------------------
 # The other half of the same readout. A run that still CLAIMS an active step while
 # the pipeline itself reports no progress is no longer a wait: it is the case the
@@ -5311,6 +5379,7 @@ test_terminal_stale_surfaced
 test_stale_terminal_status_overridden_by_active_run
 test_nonterminal_stale_quiet_external_wait_takes_the_pause_cadence
 test_derived_wait_anchor_survives_pane_churn
+test_busy_pane_with_derived_marker_still_escalates_past_turn_age_bound
 test_nonterminal_stale_run_with_no_progress_surfaces
 test_nonterminal_stale_busy_pane_still_takes_the_wedge_timer
 test_wedge_escalation_marks_demand_deep_inspection_after_threshold

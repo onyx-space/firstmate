@@ -1182,6 +1182,20 @@ clear_pause_tracking() {  # <window-key>
   clear_stale_hash_tracking "$key"
 }
 
+# End a DERIVED wait on a pane that has gone busy: a busy native identity is the
+# crew working, so its idle external wait is over and the marker, anchor, and
+# throttle go. The hash-scoped busy-turn wedge timer (`.stale-since`, its
+# escalation count) is deliberately left in place so it accumulates and can
+# escalate; resetting it on every poll is exactly how a lingering wait marker
+# starves the busy-turn bound.
+clear_derived_wait_on_busy() {  # <window-key>
+  local key=$1
+  clear_pause_state "$key"
+  clear_wait_tracking "$key"
+  clear_write_tracking "$key"
+  rm -f "$STATE/.stale-$key"
+}
+
 # Reconcile a silent pane against the crew's authoritative current state, and say
 # which of the three states the silence is: the crew itself working (忙), an
 # external wait expected to idle (静着等 - its derived face `waiting`, its declared
@@ -2624,7 +2638,11 @@ EOF
         # the pause would re-surface every poll instead of once per long cadence.
         if [ "$paused_bound" -ne 0 ] && [ -e "$pf" ]; then
           if pane_derived_wait_marker "$key"; then
-            clear_stale_hash_tracking "$key"
+            if [ "$busy_now" -eq 0 ]; then
+              clear_derived_wait_on_busy "$key"
+            else
+              clear_stale_hash_tracking "$key"
+            fi
           elif [ "$n" -ge 2 ] || ! status_is_paused_or_captain_held "$(last_status_line "$STATE/$(window_to_task "$w" "$STATE").status")"; then
             clear_pause_tracking "$key"
           fi
@@ -2662,10 +2680,15 @@ EOF
         # across pane churn, exactly as the declared path does: a render that ticks
         # (a clock, a token counter) changes the hash without changing what is being
         # waited on, and clearing the anchor would hand the same wait a brand-new
-        # window on every tick until it never re-surfaced at all. Only its per-hash
-        # half is reset here.
+        # window on every tick until it never re-surfaced at all. An idle pane
+        # resets only its per-hash half here, keeping the anchor; a busy reading
+        # ends the wait outright.
         if pane_derived_wait_marker "$key"; then
-          clear_stale_hash_tracking "$key"
+          if [ "$busy_now" -eq 0 ]; then
+            clear_derived_wait_on_busy "$key"
+          else
+            clear_stale_hash_tracking "$key"
+          fi
         else
           clear_pause_tracking "$key"
         fi
