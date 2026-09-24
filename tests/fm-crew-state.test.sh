@@ -2606,6 +2606,40 @@ EOF
   pass "runs-list continuation attribution works when axi answers another branch"
 }
 
+# A foreign branch's quiet active step must never be read as THIS crew's
+# no-progress verdict. In the coarse path $RUN_OUT is another branch's TOON, so
+# without the RUN_SOURCE guard the client's quiet marker from that table would
+# wrongly surface this crew's own healthy run. The crew's OWN quiet run still
+# carries the marker.
+test_coarse_foreign_quiet_run_is_not_this_crews_no_progress() {
+  reset_fakes
+  local d short out
+  d=$(new_case coarse-foreign-quiet)
+  make_repo_on_branch "$d/wt" fm/feat-cq
+  short=$(git -C "$d/wt" rev-parse --short=8 HEAD)
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-cq.meta" "window=fm:fm-feat-cq" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_fixing_active_quiet fm/other-crew)"
+  FM_FAKE_RUNS_LIST="$(cat <<EOF
+  running    fm/other-crew aaaaaaa  2026-08-27 14:00
+  running    fm/feat-cq ${short}  2026-08-27 13:53
+EOF
+)"
+  out=$(run_crew_state "$d" feat-cq)
+  assert_contains "$out" "source: run-step" "the ledger row still attributes a coarse run"
+  assert_contains "$out" "validating (background run)" "coarse detail is kept"
+  assert_not_contains "$out" "no recent step activity" \
+    "a foreign branch's quiet step cannot become this crew's no-progress verdict"
+
+  # Positive control: the marker is still carried for this crew's own full run.
+  FM_FAKE_AXI_STATUS="$(run_fixing_active_quiet fm/feat-cq)"
+  out=$(run_crew_state "$d" feat-cq)
+  assert_contains "$out" "validating (fixing)" "the crew's own quiet run keeps full detail"
+  assert_contains "$out" "no recent step activity" \
+    "the crew's own no-progress verdict is still carried into the detail"
+  pass "a foreign quiet run cannot mark this crew, its own quiet run still does"
+}
+
 test_active_run_is_authoritative
 test_stale_needs_decision_superseded
 test_stale_blocked_superseded
@@ -2695,6 +2729,7 @@ test_active_fix_round_unfetched_pipeline_head_reports_current
 test_unanchored_unfetched_active_row_does_not_match
 test_unresolved_terminal_row_is_history_not_current
 test_runs_list_continuation_found_when_axi_answers_other_branch
+test_coarse_foreign_quiet_run_is_not_this_crews_no_progress
 test_no_run_herdr_stale_registration_over_shell_reads_agent_gone
 test_no_run_herdr_stale_working_record_is_never_busy
 

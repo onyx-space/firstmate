@@ -2273,11 +2273,14 @@ crew_is_paused() {  # <id>
 # One fm-crew-state.sh read, keyed on the state, the source, and the detail
 # vocabulary bin/fm-crew-state.sh's header owns - never a second probe of its own.
 # A detail this list does not recognize keeps the reading its own source implies: an
-# unrecognized ACTIVE run step stays `advancing`, never a silent absorb, so a future
-# vocabulary cannot turn an unexplained silence into a quiet wait. The opposite
-# asymmetry is deliberate too: the no-progress marker is matched BEFORE the
-# monitoring shapes, so a step the pipeline itself calls quiet is never read as a
-# wait (that marker is the client's own no-progress verdict).
+# unrecognized ACTIVE run step stays `advancing` rather than being folded into
+# `monitoring`, so a future step vocabulary is never read as a NAMED wait. It is
+# still a quiet external wait to the watcher, which gives `advancing` the same
+# bounded-cadence derived-wait absorb as `monitoring` (pause_state_class); the
+# token keeps its own meaning for crew_stale_is_actively_working, the
+# terminal-status override. The genuine no-progress case is the client's own
+# marker: matched BEFORE the monitoring shapes, so a step the pipeline itself calls
+# quiet is never read as a wait.
 # NOT a pure read, exactly like crew_absorb_class: callers run it on the stale and
 # first-sight paths, never on every wake.
 crew_stale_class() {  # <id>

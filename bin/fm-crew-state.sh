@@ -461,7 +461,10 @@ nm_run_activity_is_recent() {
 # own no-progress verdict, emitted once no step log or native-agent lifecycle event
 # has arrived for longer than the configured quiet warning. An absent active_steps
 # table is NOT quiet: it carries no verdict either way, so the caller keeps its
-# conservative reading. Same table, same owner as nm_run_activity_is_recent above.
+# conservative reading. Same table, same owner as nm_run_activity_is_recent above,
+# and the same proof requirement: the caller must have established that $RUN_OUT is
+# THIS crew's own run detail (RUN_SOURCE=full) before treating the verdict as the
+# crew's, because a coarse lane carries another branch's table.
 nm_run_activity_is_quiet() {
   local rows
   rows=$(nm_active_steps_rows)
@@ -821,8 +824,11 @@ if [ "$HAVE_RUN" = 1 ]; then
   # The ci MONITOR is exempt: it polls GitHub silently by design for the whole
   # merge window, so its silence is a wait, never a no-progress verdict (a ci FIX
   # round is a real step and carries the marker like any other).
+  # Gated on RUN_SOURCE=full: only a full axi-status reads THIS crew's own
+  # active_steps table. A coarse lane's $RUN_OUT is another branch's payload, and
+  # a foreign run's quiet verdict must not be asserted against this crew.
   if [ "$RUN_STATE" = working ] && [ "$CI_STEP_STATUS" != running ] \
-     && nm_run_activity_is_quiet; then
+     && [ "$RUN_SOURCE" = full ] && nm_run_activity_is_quiet; then
     RUN_DETAIL="$RUN_DETAIL${SEP}no recent step activity"
   fi
 
