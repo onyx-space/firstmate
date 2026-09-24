@@ -3979,7 +3979,7 @@ test_composer_state_pi_separator_real_text_is_pending() {
   pass "fm_backend_herdr_composer_state: real Pi composer text remains pending"
 }
 
-test_composer_state_pi_incomplete_separator_below_stale_generic_is_unknown() {
+test_composer_state_pi_incomplete_separator_below_stale_generic_is_unknown_shape() {
   local dir log resp fb out
   dir="$TMP_ROOT/composer-pi-separated-incomplete"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
   printf '│   │\n─────────────────────────────────────────────────────\n\n' > "$resp/1.out"
@@ -3987,12 +3987,12 @@ test_composer_state_pi_incomplete_separator_below_stale_generic_is_unknown() {
   fb=$(make_herdr_fakebin "$dir")
   out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
     bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_composer_state lab:w1:p2' "$ROOT" )
-  [ "$out" = unknown ] || fail "an incomplete Pi separator below a stale generic row should remain unknown, got '$out'"
-  pass "fm_backend_herdr_composer_state: an incomplete lower Pi separator cannot inherit a stale empty row"
+  [ "$out" = unknown-shape ] || fail "an incomplete Pi separator below a stale generic row must read the named refusal unknown-shape (settled pane, no selectable shape), got '$out'"
+  pass "fm_backend_herdr_composer_state: an incomplete lower Pi separator cannot inherit a stale empty row (now unknown-shape)"
 }
 
 test_composer_state_pi_separator_requires_safe_native_identity() {
-  local dir log resp fb out status case_id idx=0
+  local dir log resp fb out status case_id want idx=0
   for case_id in working non-pi unreadable over-tall; do
     dir="$TMP_ROOT/composer-pi-separated-$case_id"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
     if [ "$case_id" = over-tall ]; then
@@ -4010,10 +4010,17 @@ test_composer_state_pi_separator_requires_safe_native_identity() {
       unreadable) printf '1\n' > "$resp/2.exit" ;;
       over-tall) printf '{"result":{"agent":{"agent":"pi","agent_status":"idle"}}}\n' > "$resp/2.out" ;;
     esac
+    # The working pane is mid-turn, so its refusal is the named, retryable
+    # `unknown-busy`; the other three cases have no such witness and stay the
+    # umbrella. None of them may authorize injection.
+    case "$case_id" in
+      working) want=unknown-busy ;;
+      *) want=unknown ;;
+    esac
     fb=$(make_herdr_fakebin "$dir")
     out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
       bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_composer_state lab:w1:p2' "$ROOT" )
-    [ "$out" = unknown ] || fail "unsafe Pi separator case '$case_id' must remain unknown, got '$out'"
+    [ "$out" = "$want" ] || fail "unsafe Pi separator case '$case_id' must read '$want', got '$out'"
   done
   pass "fm_backend_herdr_composer_state: Pi separators never authorize working, non-Pi, unreadable, or over-tall targets"
 }
@@ -4681,6 +4688,37 @@ test_send_text_submit_unknown_on_composer_capture_failure() {
   enter_count=$(grep -c $'\x1f''pane'$'\x1f''send-keys'$'\x1f''w1:p2'$'\x1f''enter' "$log")
   [ "$enter_count" -eq 1 ] || fail "send_text_submit must not retry Enter after composer verification becomes unreadable, sent $enter_count Enter(s)"
   pass "fm_backend_herdr_send_text_submit: an unreadable composer stops Enter retries after native status stays idle"
+}
+
+test_send_text_submit_named_refusals_return_on_first_read() {
+  # A pre-Enter native `working` baseline routes through the else branch. Its
+  # composer refusal used to be the umbrella `unknown`, which returned on the
+  # first read; after the split it is `unknown-busy` (or `unknown-shape` on a
+  # settled read) and must still return immediately instead of falling out of
+  # the case into the Enter-retry loop. Observable: exactly one Enter and the
+  # umbrella verdict.
+  local dir log resp fb enter_log out enter_count state
+  for state in unknown-busy unknown-shape; do
+    dir="$TMP_ROOT/submit-named-refusal-$state"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+    enter_log="$dir/enters"; : > "$enter_log"
+    fb=$(make_herdr_fakebin "$dir")
+    out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_TEST_ENTER_LOG="$enter_log" FM_TEST_REFUSAL="$state" \
+      bash -c '
+        . "$0/bin/backends/herdr.sh"
+        fm_backend_herdr_send_literal() { return 0; }
+        fm_backend_herdr_agent_status_raw() { printf "working"; }
+        fm_backend_herdr_rendered_busy_state() { printf "idle"; }
+        fm_backend_herdr_send_key() { printf "enter\n" >> "$FM_TEST_ENTER_LOG"; return 0; }
+        fm_backend_herdr_composer_state() { printf "%s" "$FM_TEST_REFUSAL"; }
+        fm_backend_herdr_send_text_submit default:w1:p2 "hello captain" 3 0.01 0.01
+      ' "$ROOT" )
+    [ "$out" = unknown ] \
+      || fail "a named $state refusal must return the umbrella on the first read, got '$out'"
+    enter_count=$(grep -c . "$enter_log")
+    [ "$enter_count" -eq 1 ] \
+      || fail "a named $state refusal must not consume the Enter retry budget, sent $enter_count Enter(s)"
+  done
+  pass "fm_backend_herdr_send_text_submit: named refusals return immediately instead of retrying Enter"
 }
 
 # --- fm-backend.sh dispatch wiring -------------------------------------------
@@ -5434,7 +5472,7 @@ test_composer_state_unknown_when_no_composer_row_found
 test_composer_state_pi_parked_prompt_is_not_empty
 test_composer_state_pi_separator_idle_is_empty
 test_composer_state_pi_separator_real_text_is_pending
-test_composer_state_pi_incomplete_separator_below_stale_generic_is_unknown
+test_composer_state_pi_incomplete_separator_below_stale_generic_is_unknown_shape
 test_composer_state_pi_separator_requires_safe_native_identity
 test_composer_state_claude_unbordered_prompt_is_empty
 test_composer_state_claude_unbordered_prompt_is_pending
@@ -5473,6 +5511,7 @@ test_send_text_submit_slow_transition_within_one_enter_needs_no_extra_enter
 test_send_text_submit_send_failed
 test_send_text_submit_unknown_on_capture_failure
 test_send_text_submit_unknown_on_composer_capture_failure
+test_send_text_submit_named_refusals_return_on_first_read
 test_dispatch_routes_herdr_backend
 test_dispatch_busy_state_unknown_for_tmux
 test_dispatch_composer_state_routes_by_backend

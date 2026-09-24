@@ -255,6 +255,75 @@ test_unrecognized_state_skips_busy_conversion() {
   pass "fm_tmux_submit_enter_core: unrecognized states skip busy conversion"
 }
 
+test_idle_baseline_named_busy_refusal_preserves_turn_started_confirmation() {
+  # The split renamed the old umbrella `unknown` into `unknown-busy` for a
+  # working pi, and the tmux submit core's turn-started confirmation matched
+  # the umbrella by name. An idle baseline plus the busy transition across our
+  # own Enter must still confirm the delivery, exactly as before the rename.
+  local dir fakebin composer busy_called vfile
+  dir="$TMP_ROOT/baseline-named-busy"; fakebin=$(make_submit_mock "$dir")
+  composer="$dir/composer"; busy_called="$dir/busy-called"; vfile="$dir/verdict"
+  printf 'composer\n' > "$composer"
+  (
+    # shellcheck disable=SC2329
+    fm_pane_busy_state() { printf 'idle'; }
+    # shellcheck disable=SC2329
+    fm_tmux_composer_state() { printf 'unknown-busy'; }
+    # shellcheck disable=SC2329
+    fm_pane_is_busy() { touch "$busy_called"; return 0; }
+    PATH="$fakebin:$PATH" FM_FAKE_COMPOSER="$composer" \
+      fm_tmux_submit_core "win" "fix" 3 0.05 0.05 > "$vfile" 2>/dev/null
+  ) || fail "idle-baseline named-busy confirmation check failed"
+  [ "$(cat "$vfile")" = empty ] \
+    || fail "an idle baseline plus an unknown-busy frame must still confirm the delivery, got '$(cat "$vfile")'"
+  [ -e "$busy_called" ] || fail "the busy poll was not consulted for the named busy refusal"
+  pass "fm_tmux_submit_core: unknown-busy still confirms the turn started after an idle baseline"
+}
+
+test_idle_baseline_named_busy_refusal_without_transition_keeps_label() {
+  # With no observed idle-to-busy transition the named refusal must be
+  # preserved faithfully rather than flattened back to `unknown`.
+  local dir fakebin composer vfile
+  dir="$TMP_ROOT/baseline-named-busy-noconfirm"; fakebin=$(make_submit_mock "$dir")
+  composer="$dir/composer"; vfile="$dir/verdict"
+  printf 'composer\n' > "$composer"
+  (
+    # shellcheck disable=SC2329
+    fm_pane_busy_state() { printf 'idle'; }
+    # shellcheck disable=SC2329
+    fm_tmux_composer_state() { printf 'unknown-busy'; }
+    # shellcheck disable=SC2329
+    fm_pane_is_busy() { return 1; }
+    PATH="$fakebin:$PATH" FM_FAKE_COMPOSER="$composer" \
+      fm_tmux_submit_core "win" "fix" 2 0.05 0.05 > "$vfile" 2>/dev/null
+  ) || fail "idle-baseline named-busy non-confirmation check failed"
+  [ "$(cat "$vfile")" = unknown-busy ] \
+    || fail "without an observed transition the label must be preserved, got '$(cat "$vfile")'"
+  pass "fm_tmux_submit_core: an unobserved transition preserves the unknown-busy label"
+}
+
+test_idle_baseline_named_shape_refusal_preserves_turn_started_confirmation() {
+  # unknown-shape is the other new spelling of the old umbrella; it must join
+  # the same confirmation path rather than fall past it to a loud refusal.
+  local dir fakebin composer vfile
+  dir="$TMP_ROOT/baseline-named-shape"; fakebin=$(make_submit_mock "$dir")
+  composer="$dir/composer"; vfile="$dir/verdict"
+  printf 'composer\n' > "$composer"
+  (
+    # shellcheck disable=SC2329
+    fm_pane_busy_state() { printf 'idle'; }
+    # shellcheck disable=SC2329
+    fm_tmux_composer_state() { printf 'unknown-shape'; }
+    # shellcheck disable=SC2329
+    fm_pane_is_busy() { return 0; }
+    PATH="$fakebin:$PATH" FM_FAKE_COMPOSER="$composer" \
+      fm_tmux_submit_core "win" "fix" 3 0.05 0.05 > "$vfile" 2>/dev/null
+  ) || fail "idle-baseline named-shape confirmation check failed"
+  [ "$(cat "$vfile")" = empty ] \
+    || fail "an idle baseline plus an unknown-shape frame must still confirm the delivery, got '$(cat "$vfile")'"
+  pass "fm_tmux_submit_core: unknown-shape joins the turn-started confirmation path"
+}
+
 test_claude_busy_signature_uses_real_capture_shapes() {
   local dir fakebin composer
   dir="$TMP_ROOT/claude-signature"
@@ -352,4 +421,7 @@ test_busy_pane_unknown_stays_unknown
 test_failed_baseline_capture_keeps_busy_unknown_unconfirmed
 test_busy_pane_ambiguous_pending_retries_without_conversion
 test_unrecognized_state_skips_busy_conversion
+test_idle_baseline_named_busy_refusal_preserves_turn_started_confirmation
+test_idle_baseline_named_busy_refusal_without_transition_keeps_label
+test_idle_baseline_named_shape_refusal_preserves_turn_started_confirmation
 test_claude_busy_signature_uses_real_capture_shapes

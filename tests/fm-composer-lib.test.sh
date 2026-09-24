@@ -368,11 +368,14 @@ test_matrix_pi_separated_needs_identity() {
     || fail "an identity-capable profile should request the lazy identity probe"
   # No identity capability (cmux/orca/zellij): the shape is unprovable.
   assert_screen "pi pair without identity capability" unknown "$CAPS_PLAIN" "$screen"
-  # A working pi cannot authorize injection into the blank region.
-  assert_screen "working pi defers" unknown "$CAPS_STYLED" "$screen" '' "$pi_working"
+  # A working pi cannot authorize injection into the blank region, and the
+  # refusal is named: the pane is mid-turn, so retrying later is the remedy.
+  assert_screen "working pi is busy" unknown-busy "$CAPS_STYLED" "$screen" '' "$pi_working"
   # A pi parked on an interactive prompt reports `blocked`: it is waiting on a
   # human keystroke, so the blank region is a menu's, not a free composer's.
   # Typing there answers the prompt and the text is discarded (issue #2797).
+  # This is the regression guard that keeps `blocked` out of `unknown-busy`:
+  # "anything that is not idle/done" is not the definition.
   assert_screen "blocked pi defers" unknown "$CAPS_STYLED" "$screen" '' "$pi_blocked"
   # The audit's live counterexample: a plain shell running sleep, cursor
   # parked on a blank line between two rules, NO pi process. The permissive
@@ -566,12 +569,12 @@ test_cursorless_bare_wrap_region_classifies() {
 test_cursorless_container_rejects_contiguous_lower_activity() {
   local box leftbar grok kimi opencode
   box=$'╭────────────────────────╮\n│ ❯                      │\n╰────────────────────────╯\nWorking on request...'
-  assert_screen "stale box above activity on herdr" unknown "$CAPS_STYLED" "$box"
+  assert_screen "stale box above activity on herdr" need-identity "$CAPS_STYLED" "$box"
   assert_screen "stale box above activity on zellij" unknown "$CAPS_STYLED_NOID" "$box"
   assert_screen "stale box above activity on cmux/orca" unknown "$CAPS_PLAIN" "$box"
 
   leftbar=$'┃\n┃  Ask anything...\n┃\n┃  Build · GPT-5.5 Fast OpenAI · high\n╹▀▀▀▀▀▀▀▀\nWorking on request...'
-  assert_screen "stale left-bar above activity on herdr" unknown "$CAPS_STYLED" "$leftbar"
+  assert_screen "stale left-bar above activity on herdr" need-identity "$CAPS_STYLED" "$leftbar"
   assert_screen "stale left-bar above activity on zellij" unknown "$CAPS_STYLED_NOID" "$leftbar"
   assert_screen "stale left-bar above activity on cmux/orca" unknown "$CAPS_PLAIN" "$leftbar"
 
@@ -630,7 +633,7 @@ test_table_above_pi_pair_does_not_hide_the_composer() {
   # reads pending, and the identity/structure conjunction still decides.
   typed=$'transcript\n────────────────────────\nfix the flaky test\n────────────────────────\n footer'
   assert_screen "table above typed pi pair" pending "$CAPS_STYLED" "$table$typed" '' "$pi_idle"
-  assert_screen "table above a non-idle pi pair" unknown "$CAPS_STYLED" "$table$paired" '' "$(printf 'pi\tworking')"
+  assert_screen "table above a working pi pair" unknown-busy "$CAPS_STYLED" "$table$paired" '' "$(printf 'pi\tworking')"
   pass "fm_composer_classify_screen: a table above a valid empty pi pair no longer hides the composer"
 }
 
@@ -641,10 +644,128 @@ test_incomplete_box_below_pi_pair_still_refuses() {
   local pi_idle screen
   pi_idle=$(printf 'pi\tidle')
   screen=$'transcript\n────────────────────────\n\n────────────────────────\n footer\n┌─────┬─────┐\n│ a   │ b   │'
-  assert_screen "unclosed table below idle pi pair" unknown "$CAPS_STYLED" "$screen" '' "$pi_idle"
+  # The refusal survives, now NAMED: a settled pane whose structure yields no
+  # selectable composer reads unknown-shape (waiting is not the remedy, the
+  # screen must change), which is still not the `empty` the reorder must not
+  # manufacture.
+  assert_screen "unclosed table below idle pi pair" unknown-shape "$CAPS_STYLED" "$screen" '' "$pi_idle"
   screen=$'transcript\n────────────────────────\n\n────────────────────────\n footer\n╭────────────────────────╮\n│ ❯ clipped live draft  '
-  assert_screen "clipped box below idle pi pair" unknown "$CAPS_STYLED" "$screen" '' "$pi_idle"
-  pass "fm_composer_classify_screen: an incomplete box below the pi pair still refuses"
+  assert_screen "clipped box below idle pi pair" unknown-shape "$CAPS_STYLED" "$screen" '' "$pi_idle"
+  pass "fm_composer_classify_screen: an incomplete box below the pi pair still refuses, now as unknown-shape"
+}
+
+test_refined_refusal_vocabulary() {
+  # Task composer-unknown-split-impl, contract report §4. `unknown` flattened
+  # two unrelated refusal causes - "a turn is running, retry later" and "the
+  # pane is settled but its screen yields no selectable composer" - so the
+  # reason a caller could act on was ambiguous. Two named refusals replace that
+  # flattening (unknown-busy and unknown-shape), with `unknown` kept as the
+  # umbrella. `empty` stays the ONLY positive proof, so both new values are
+  # `!= empty` and every exact-empty consumer is unchanged.
+  local pi_idle pi_done pi_working pi_blocked ident out frame
+  pi_idle=$(printf 'pi\tidle'); pi_done=$(printf 'pi\tdone')
+  pi_working=$(printf 'pi\tworking'); pi_blocked=$(printf 'pi\tblocked')
+
+  # Route 1: the cursorless shape-selection refused the frame. The pane is
+  # settled, but its structure yields no selectable composer (an unclosed box
+  # BELOW a valid pi pair - exactly the refusal fix A deliberately preserved).
+  # Waiting will not help: a later capture differs only if the screen changed.
+  local shape=$'transcript\n────────────────────────\n\n────────────────────────\n footer\n┌─────┬─────┐\n│ a   │ b   │'
+  assert_screen "settled cursorless refusal is unknown-shape" unknown-shape "$CAPS_STYLED" "$shape" '' "$pi_idle"
+  assert_screen "done cursorless refusal is unknown-shape" unknown-shape "$CAPS_STYLED" "$shape" '' "$pi_done"
+  # The same refusal on a mid-turn pane is the other actionable answer.
+  assert_screen "working cursorless refusal is unknown-busy" unknown-busy "$CAPS_STYLED" "$shape" '' "$pi_working"
+  # A blocked pane is parked on an interactive prompt (issue #2797): a keystroke
+  # answers it and waiting does not, so it is NOT busy and stays the umbrella.
+  assert_screen "blocked cursorless refusal stays unknown" unknown "$CAPS_STYLED" "$shape" '' "$pi_blocked"
+  # Identity stays a lazy second pass: an identity-capable profile that has not
+  # probed yet is asked to, and the sentinel resolves under the same frame.
+  [ "$(fm_composer_classify_screen "$CAPS_STYLED" "$shape")" = need-identity ] \
+    || fail "a cursorless refusal on an identity-capable profile must request the lazy probe"
+  # Third class: an unreadable identity and a backend with no identity
+  # primitive at all keep the umbrella value.
+  assert_screen "cursorless refusal without a probe result" unknown "$CAPS_STYLED" "$shape" '' probe-absent
+  assert_screen "cursorless refusal without identity capability" unknown "$CAPS_STYLED_NOID" "$shape"
+
+  # Route 2: the pi separated pair was selected, but the native state already
+  # says working. This is the second busy path (the pi shape's own verdict).
+  local pair=$'transcript\n────────────────────────\n\n────────────────────────\n footer'
+  assert_screen "working pi pair is unknown-busy" unknown-busy "$CAPS_STYLED" "$pair" '' "$pi_working"
+  assert_screen "blocked pi pair stays unknown" unknown "$CAPS_STYLED" "$pair" '' "$pi_blocked"
+  assert_screen "idle pi pair stays empty" empty "$CAPS_STYLED" "$pair" '' "$pi_idle"
+
+  # Third-class refusals must never fold into a new value. A lower bare shell
+  # prompt is the agent-exited fact, even beside a working identity; a pi pair
+  # more than FM_COMPOSER_PI_MAX_LINES apart is structurally invalid.
+  local dead=$'transcript above\n$ '
+  assert_screen "dead shell stays unknown" unknown "$CAPS_STYLED" "$dead" '' "$pi_idle"
+  assert_screen "dead shell beside a working identity stays unknown" unknown "$CAPS_STYLED" "$dead" '' "$pi_working"
+  local invalid=$'transcript\n────────────────────────' i
+  for i in 1 2 3 4 5 6 7 8 9 10; do invalid+=$'\ngap row '"$i"; done
+  invalid+=$'\n────────────────────────\n footer'
+  assert_screen "structurally invalid pi pair stays unknown" unknown "$CAPS_STYLED" "$invalid" '' "$pi_idle"
+
+  # The invariant every exact-empty consumer relies on: naming these refusals
+  # can never widen the injection surface, so no refusal frame may read `empty`
+  # under ANY identity, and every verdict stays in the declared vocabulary.
+  for frame in "$shape" "$dead" "$invalid"; do
+    for ident in '' probe-absent "$pi_idle" "$pi_working" "$pi_blocked"; do
+      out=$(fm_composer_classify_screen "$CAPS_STYLED" "$frame" '' "$ident")
+      [ "$out" != empty ] \
+        || fail "a refusal frame must never read empty (identity='${ident:-<unfetched>}')"
+      case "$out" in
+        empty|pending|pending-unproven|unknown|unknown-busy|unknown-shape|need-identity) ;;
+        *) fail "undeclared verdict '$out' (identity='${ident:-<unfetched>}')" ;;
+      esac
+    done
+  done
+
+  pass "fm_composer_classify_screen: the refined refusals are named, actionable, and never the positive proof"
+}
+
+test_dead_shell_outranks_earlier_shape_refusals() {
+  # A dead shell is only the agent-exited fact when the shell prompt is the
+  # BOTTOM-MOST structure (the composer's own position). A shell-looking row in
+  # the transcript body must not suppress the busy/shape refusal: on the same
+  # frame a working pi stays unknown-busy and a settled one unknown-shape.
+  # When the shell row really is the lowest structure, it wins over a stale
+  # box, a leftover separator rule, and an unclosed border/table above it, and
+  # stays the umbrella `unknown`.
+  local pi_idle pi_working box rule dead stale pair_dead transcript unclosed pair_table
+  pi_idle=$(printf 'pi\tidle'); pi_working=$(printf 'pi\tworking')
+  box=$'╭────────────────────────╮\n│                        │\n╰────────────────────────╯'
+  rule='────────────────────────'
+  # Shell occupying the bottom structure, with a stale box and a leftover rule
+  # above it.
+  dead=$box$'\n'$rule$'\n$ '
+  stale=$box$'\n'$rule
+  assert_screen "dead shell with a stale box and rule stays unknown" unknown "$CAPS_STYLED" "$dead" '' "$pi_idle"
+  assert_screen "dead shell with a stale box and rule stays unknown while working" unknown "$CAPS_STYLED" "$dead" '' "$pi_working"
+  assert_screen "dead shell with a stale box and rule stays unknown without identity" unknown "$CAPS_STYLED" "$dead"
+  assert_screen "stale box plus rule with no shell keeps its shape refusal" unknown-shape "$CAPS_STYLED" "$stale" '' "$pi_idle"
+  # An UNCLOSED border/table above the prompt must not mask it either: an upper
+  # border is not the composer's position, so the bottom shell row is still the
+  # agent-exited fact.
+  unclosed=$'transcript\n┌─────┬─────┐\n│ a   │ b   │\n$ '
+  assert_screen "shell below an unclosed table stays unknown" unknown "$CAPS_STYLED" "$unclosed" '' "$pi_idle"
+  assert_screen "shell below an unclosed table stays unknown while working" unknown "$CAPS_STYLED" "$unclosed" '' "$pi_working"
+  assert_screen "shell below an unclosed table stays unknown without identity" unknown "$CAPS_STYLED" "$unclosed"
+  # A shell-looking transcript row above the bottom structure is NOT a dead
+  # shell: the unpaired rule below it is the lowest structure, so the refusal
+  # is named by the pane's own state.
+  transcript=$'transcript\n$ make build\nmore transcript\n────────────────────────'
+  assert_screen "transcript shell line above an unpaired rule is unknown-busy" unknown-busy "$CAPS_STYLED" "$transcript" '' "$pi_working"
+  assert_screen "transcript shell line above an unpaired rule is unknown-shape" unknown-shape "$CAPS_STYLED" "$transcript" '' "$pi_idle"
+  # A valid pi pair with a dead shell below is still the dead-shell refusal, so
+  # the reordered check does not change the existing rejection.
+  pair_dead=$'transcript\n────────────────────────\n\n────────────────────────\n$ '
+  assert_screen "valid pi pair above a dead shell stays unknown" unknown "$CAPS_STYLED" "$pair_dead" '' "$pi_idle"
+  assert_screen "valid pi pair above a dead shell stays unknown while working" unknown "$CAPS_STYLED" "$pair_dead" '' "$pi_working"
+  # Fix A's outcome is untouched: a markdown table ABOVE a valid empty pi pair
+  # is not a refusal structure below the pair, so the pair still reads empty.
+  pair_table=$'┌─────┬─────┐\n│ a   │ b   │\n├─────┼─────┤\n│ c   │ d   │\n└─────┴─────┘\n────────────────────────\n\n────────────────────────\n footer'
+  assert_screen "table above a valid empty pi pair still reads empty" empty "$CAPS_STYLED" "$pair_table" '' "$pi_idle"
+  pass "fm_composer_classify_screen: only a bottom-most shell row is the dead-shell fact"
 }
 
 test_titled_bottom_requires_matching_width() {
@@ -736,6 +857,8 @@ test_bottom_most_candidate_wins
 test_incomplete_lower_box_invalidates_stale_candidate
 test_table_above_pi_pair_does_not_hide_the_composer
 test_incomplete_box_below_pi_pair_still_refuses
+test_refined_refusal_vocabulary
+test_dead_shell_outranks_earlier_shape_refusals
 test_titled_bottom_requires_matching_width
 test_cursor_on_proven_box_bottom_classifies_content
 test_selected_content_is_composer_scoped_and_wrap_normalized

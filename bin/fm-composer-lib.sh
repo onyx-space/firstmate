@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # bin/fm-composer-lib.sh - the ONE fleet-wide owner of composer classification:
 # every shape a verified harness draws, every glyph, every container proof, and
-# the empty|pending|pending-unproven|unknown verdict, shared by every
-# session-provider adapter (tmux via bin/fm-tmux-lib.sh, and
+# the empty|pending|pending-unproven|unknown|unknown-busy|unknown-shape verdict,
+# shared by every session-provider adapter (tmux via bin/fm-tmux-lib.sh, and
 # bin/backends/{herdr,orca,cmux,zellij}.sh) and by fm-spawn.sh's kimi
 # launch-readiness check.
 #
@@ -67,6 +67,35 @@
 #                get`; the tmux foreground-process probe), because a blank
 #                region between two transcript rules is otherwise exactly the
 #                strict rule's unidentifiable blank row.
+#
+# THE REFINED REFUSAL VOCABULARY (task composer-unknown-split-impl; contract
+# data/composer-unknown-split-feasibility/report.md §4): `empty` is unchanged
+# and remains the ONLY positive proof, so the two new values being refusals
+# (`!= empty`, byte-for-byte) leaves every exact-empty consumer's behaviour
+# untouched. Two unrelated causes were folded into the umbrella; naming them
+# makes the refusal actionable to a caller that must decide whether to wait.
+#   unknown-busy   the pane's native identity reports `working`: a turn is
+#                  running now, so retrying after it ends is the remedy. A
+#                  `blocked` pane is parked on an interactive prompt a keystroke
+#                  answers and waiting does not, so it stays `unknown` (issue
+#                  #2797) - "anything that is not idle/done" is explicitly NOT
+#                  the definition.
+#   unknown-shape  the pane's native identity is settled (`idle`/`done`) and the
+#                  cursorless shape-selection step refused the frame: the refusal
+#                  is a property of the captured bytes, so waiting is not the
+#                  remedy and the screen itself must change. Deliberately
+#                  shape-agnostic, so a future harness shape lands here instead
+#                  of falling back into the umbrella.
+#   unknown        unchanged: no usable evidence, or any refusal outside the two
+#                  above. The refusal classes that must NEVER take a new value
+#                  (report §6): a capture/transport failure, an adapter or
+#                  dispatch failure, a backend with no identity capability, an
+#                  unreadable (`probe-absent`) identity, an agent that is not the
+#                  harness whose shape applies, a structurally invalid pi pair, a
+#                  `blocked` pi, an unreadable container row or ambiguous box
+#                  geometry, styled=0 content degradation, an unidentified
+#                  stripped row, a bare shell-prompt glyph (the agent exited),
+#                  and the tmux cursor-mode oddities.
 #
 # THE SAFETY RULE for glyphs: a bare shell prompt glyph (`>` `$` `%` `#`) -
 # what a pane shows once its agent has exited to a plain login shell - is a
@@ -609,17 +638,19 @@ fm_composer_classify_content() {  # <bordered> <content> [idle_re] [idle_case] [
 #   [identity]   "<agent>\t<status>" from the backend's native identity probe,
 #                or `probe-absent` when the probe found no live identity; only
 #                meaningful when caps carry identity=1.
-# Prints exactly one verdict: empty | pending | pending-unproven | unknown,
-# or the internal sentinel `need-identity` when caps declare identity=1, no
-# identity result was supplied, and the verdict depends on it. Adapters answer
-# `need-identity` by running their identity probe once and re-calling with
-# either its result or `probe-absent`; the sentinel never escapes an adapter.
-# Identity stays a lazy second pass so the common non-pi read never pays for
-# the probe.
+# Prints exactly one verdict: empty | pending | pending-unproven | unknown |
+# unknown-busy | unknown-shape, or the internal sentinel `need-identity` when
+# caps declare identity=1, no identity result was supplied, and the verdict
+# depends on it (the pi separated shape, and now a cursorless shape-selection
+# refusal). Adapters answer `need-identity` by running their identity probe once
+# and re-calling with either its result or `probe-absent`; the sentinel never
+# escapes an adapter. Identity stays a lazy second pass so the common non-pi
+# read never pays for the probe.
 #
 # Consumers that can overwrite input or confirm delivery must accept only the
 # exact positive proof they require (`empty`), so unrecognized future verdicts
-# fail safe by default.
+# fail safe by default. The refined values are refusals, never proofs: each is
+# `!= empty`, so every exact-empty predicate is byte-for-byte unchanged.
 
 # _fm_composer_pi_separator_row: a solid pi separator - nothing but `─`, at
 # least 8 columns wide. The width floor is a literal substring test so it is
@@ -711,10 +742,12 @@ _fm_composer_scan_screen() {  # <plain-screen> <cursor-or-empty> [extract-wrap]
         ;;
       *) leftbar_start=-1 ;;
     esac
-    # Bare agent-glyph rows: the glyph itself is the container proof. Bare
-    # shell glyphs are deliberately not candidates (dead-shell rule). Keep
-    # lower shell prompts as staleness evidence for cursorless selection.
-    if [ "$top" -lt 0 ] && fm_composer_leading_shell_glyph_var glyph "$trimmed"; then
+    # Bare agent-glyph rows: the glyph itself is the container proof. A bare
+    # shell glyph is never a composer candidate; its ROW is recorded as the
+    # agent-exited fact and as position evidence for the cursorless rule, even
+    # while an unclosed border sits above it - an upper border is not the
+    # composer's position and must not mask the prompt.
+    if fm_composer_leading_shell_glyph_var glyph "$trimmed"; then
       FM_COMPOSER_SCAN_SHELL_ROW=$row
     elif fm_composer_leading_agent_glyph_var glyph "$trimmed"; then
       FM_COMPOSER_SCAN_BARE_ROW=$row
@@ -1081,12 +1114,19 @@ _fm_composer_leftbar_floor_row() {  # <trimmed-row>
   [ -z "${blocks//▀/}" ]
 }
 
+# _fm_composer_select_cursorless: pick the composer shape with no cursor, or
+# refuse. On refusal it records WHY in FM_COMPOSER_SELECT_REFUSAL, because the
+# caller names the refusal from it: `shape` (no shape was selectable) feeds
+# unknown-shape when the pane's identity is settled, while `dead-shell` (the
+# lower bare shell-prompt rule) is a third fact - the agent exited - and stays
+# `unknown`.
 _fm_composer_select_cursorless() {
-  local plain=$1 generic=-1 next boundary raw trimmed
+  local plain=$1 generic=-1 lowest next boundary raw trimmed
   FM_COMPOSER_SELECTED_KIND=
   FM_COMPOSER_SELECTED_FIRST=-1
   FM_COMPOSER_SELECTED_LAST=-1
   FM_COMPOSER_SELECTED_AMBIG=0
+  FM_COMPOSER_SELECT_REFUSAL=shape
   if [ "$FM_COMPOSER_SCAN_BOX_BOTTOM" -ge 0 ]; then
     generic=$FM_COMPOSER_SCAN_BOX_BOTTOM
     FM_COMPOSER_SELECTED_KIND=box
@@ -1120,16 +1160,35 @@ _fm_composer_select_cursorless() {
     FM_COMPOSER_SELECTED_FIRST=$((FM_COMPOSER_SCAN_PI_OPEN + 1))
     FM_COMPOSER_SELECTED_LAST=$((FM_COMPOSER_SCAN_PI_CLOSE - 1))
   fi
+  # POSITION PRIORITY (the core invariant of this rule set): the refusal class
+  # is decided by the BOTTOM-MOST structure row on the screen, never by a
+  # shell-looking row in the transcript body. The selectable candidate shapes
+  # (box, bare row, left bar, pi separator pair) are already folded into
+  # `generic`; PI_LAST_SEPARATOR and INCOMPLETE_BOX_FROM mark the remaining
+  # structures (an unpaired separator rule, an unclosed border). Only when the
+  # shell prompt row is lower than every one of them is it the agent-exited
+  # fact (dead-shell) - a closed box or an unclosed border ABOVE it may not
+  # mask it, because that border is not the composer's position. A structure
+  # that reaches below the shell row makes the shell row transcript text, so
+  # the existing refusals decide instead.
+  lowest=$generic
+  if [ "$FM_COMPOSER_SCAN_PI_LAST_SEPARATOR" -gt "$lowest" ]; then
+    lowest=$FM_COMPOSER_SCAN_PI_LAST_SEPARATOR
+  fi
+  if [ "$FM_COMPOSER_SCAN_INCOMPLETE_BOX_FROM" -gt "$lowest" ]; then
+    lowest=$FM_COMPOSER_SCAN_INCOMPLETE_BOX_FROM
+  fi
+  if [ "$FM_COMPOSER_SCAN_SHELL_ROW" -gt "$lowest" ]; then
+    FM_COMPOSER_SELECTED_KIND=
+    FM_COMPOSER_SELECT_REFUSAL=dead-shell
+    return 1
+  fi
   if [ "$FM_COMPOSER_SCAN_INCOMPLETE_BOX_FROM" -gt "$generic" ]; then
     FM_COMPOSER_SELECTED_KIND=
     return 1
   fi
   if [ "$FM_COMPOSER_SCAN_PI_PAIR_FOUND" = 0 ] \
      && [ "$FM_COMPOSER_SCAN_PI_LAST_SEPARATOR" -gt "$generic" ]; then
-    FM_COMPOSER_SELECTED_KIND=
-    return 1
-  fi
-  if [ "$FM_COMPOSER_SCAN_SHELL_ROW" -gt "$generic" ]; then
     FM_COMPOSER_SELECTED_KIND=
     return 1
   fi
@@ -1248,6 +1307,39 @@ EOF
   printf '%s\n' "$joined" | LC_ALL=C awk '{$1=$1; printf "%s", $0}'
 }
 
+# _fm_composer_refusal_verdict <has_identity> <identity>: name a cursorless
+# shape-selection refusal when the pane's own identity can witness why
+# (report §4's contract). Prints one verdict:
+#   unknown-busy   the identity reports `working`: a turn runs now, retry later
+#   unknown-shape  the identity is settled (idle/done) and the refusal was the
+#                  shape step, so waiting will not help - the screen must change
+#   unknown        no witness, a dead-shell refusal, or any other state
+#   need-identity  an identity capability exists but was not consulted yet
+# The lower dead-shell refusal never takes a new value (a different fact: the
+# agent exited), so it stays `unknown` and does not even pay for the probe.
+_fm_composer_refusal_verdict() {  # <has_identity> <identity>
+  local has_identity=$1 identity=$2 status
+  [ "$FM_COMPOSER_SELECT_REFUSAL" != dead-shell ] || { printf 'unknown'; return 0; }
+  if [ "$has_identity" != 1 ]; then
+    printf 'unknown'
+    return 0
+  fi
+  if [ -z "$identity" ]; then
+    printf 'need-identity'
+    return 0
+  fi
+  if [ "$identity" = probe-absent ]; then
+    printf 'unknown'
+    return 0
+  fi
+  status=${identity#*$'\t'}
+  case "$status" in
+    working) printf 'unknown-busy' ;;
+    idle|done) printf 'unknown-shape' ;;
+    *) printf 'unknown' ;;
+  esac
+}
+
 fm_composer_classify_screen() {  # <caps> <screen> [cursor_row] [identity]
   local caps=$1 screen=$2 cy=${3:-} identity=${4:-}
   local styled=0 cursor=0 has_identity=0 kv plain
@@ -1324,7 +1416,7 @@ EOF
   # rules layered on (a live pi composer pair below the generic candidate
   # proves that candidate stale).
   if ! _fm_composer_select_cursorless "$plain"; then
-    printf 'unknown'
+    _fm_composer_refusal_verdict "$has_identity" "$identity"
     return 0
   fi
   case "$FM_COMPOSER_SELECTED_KIND" in
@@ -1444,11 +1536,13 @@ _fm_composer_classify_bare_pi_overlap() {  # <screen> <styled> <has-identity> <i
 # rule, now fleet-wide). A missing identity capability keeps the shape
 # unknown; an unfetched identity on an identity-capable backend asks the
 # adapter to probe (lazily) and re-call. Proven input remains pending for every
-# live pi state, while only an idle/done pi proves an empty composer. A blocked
+# live pi state, while only an idle/done pi proves an empty composer. A working
+# pi is mid-turn and reads `unknown-busy` (retry after the turn ends). A blocked
 # pi is parked on an interactive prompt waiting for a human keystroke: its menu
 # is drawn above the separator pair, so the composer region looks free while the
 # keys would answer the prompt instead of composing (issue #2797). Structure
-# cannot disprove that, so a blocked pi defers rather than claiming empty.
+# cannot disprove that, so a blocked pi defers rather than claiming empty - and
+# it must never read `unknown-busy`, which would invite a retry that never helps.
 _fm_composer_pi_verdict() {  # <screen> <styled> <has_identity> <identity>
   local screen=$1 styled=$2 has_identity=$3 identity=$4 agent agent_status state
   if [ "$has_identity" != 1 ]; then
@@ -1476,6 +1570,7 @@ _fm_composer_pi_verdict() {  # <screen> <styled> <has_identity> <identity>
   fi
   case "$agent_status" in
     idle|done) printf 'empty' ;;
+    working) printf 'unknown-busy' ;;
     *) printf 'unknown' ;;
   esac
 }
