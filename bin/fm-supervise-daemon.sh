@@ -408,11 +408,36 @@ classify_signal() {  # <reason-after-colon> <state>
   fi
 }
 
+# The away posture's own ask of the three-state readout, so it classifies a quiet
+# lane exactly as the always-on watcher it replaces does: 0 with a reason on stdout
+# when the crew's OWN current state explains the silence as an external wait - its
+# run advancing, its pipeline waiting on the ci monitor or a gate, or a delivery
+# that already landed. bin/fm-classify-lib.sh's crew_stale_class is the single owner
+# of that readout, so the two paths cannot drift.
+#
+# Every other reading returns 1 and leaves the caller's existing wedge aging exactly
+# as it was, which is the whole point of the away posture's safety net: a busy pane,
+# a run step with no progress behind it, a stopped/torn-down/unknown crew, and any
+# unreadable verdict are all still aged and escalated by housekeeping. An
+# undecidable reading is never promoted to a quiet wait.
+fm_supervise_quiet_wait_reason() {  # <window> <state>
+  local win=$1 state=$2 task class
+  task=$(window_to_task "$win" "$state")
+  [ -n "$task" ] || return 1
+  class=$(FM_STATE_OVERRIDE="$state" crew_stale_class "$task" 2>/dev/null) || class=none
+  case "$class" in
+    advancing)  printf "%s" "the crew's own validation run is still advancing" ;;
+    monitoring) printf '%s' 'the pipeline is still holding this lane on its ci monitor or a gate' ;;
+    landed)     printf '%s' 'the work in this lane already landed' ;;
+    *)          return 1 ;;
+  esac
+}
+
 # classify_stale decides the WAKE itself (one-shot per distinct hash). On a
 # first sight of a non-terminal stale it returns "self" and the caller records a
 # timestamp marker; persistence is escalated by housekeeping's recheck, not here.
 classify_stale() {  # <window> <state> [<span-record> <span-status>]
-  local win=$1 state=$2 record=${3-} rc=${4-} task last event rest
+  local win=$1 state=$2 record=${3-} rc=${4-} task last event rest quiet_why
   task=$(window_to_task "$win" "$state")
   if [ -z "$rc" ]; then
     record=$(status_span_first_actionable_record "$state/$task.status" \
@@ -453,6 +478,14 @@ classify_stale() {  # <window> <state> [<span-record> <span-status>]
     if ! status_is_terminal_verb "$last"; then
       case "$(status_line_verb "$last")" in
         working|resolved|captain-held)
+          # A quiet pane whose crew's own state is an external wait is the same
+          # bounded wait here as it is in the always-on watcher: the pause cadence
+          # (housekeeping re-surfaces it once per PAUSE_RESURFACE_SECS, which the
+          # caller records by returning this action), never a wedge.
+          if quiet_why=$(fm_supervise_quiet_wait_reason "$win" "$state"); then
+            printf 'pause|quiet external wait - %s: %s' "$quiet_why" "$last"
+            return
+          fi
           printf 'self|transient stale (%s): %s' "$win" "$last"
           return
           ;;
@@ -462,7 +495,13 @@ classify_stale() {  # <window> <state> [<span-record> <span-status>]
     return
   fi
   # Non-terminal (or no status): defer to the persistence recheck. The caller
-  # records/refreshes the stale marker so housekeeping can age it.
+  # records/refreshes the stale marker so housekeeping can age it - unless the
+  # crew's own state explains the quiet as an external wait, which takes the bounded
+  # pause cadence instead of the wedge.
+  if quiet_why=$(fm_supervise_quiet_wait_reason "$win" "$state"); then
+    printf 'pause|quiet external wait - %s: %s' "$quiet_why" "${last:-no status}"
+    return
+  fi
   printf 'self|transient stale (%s): %s' "$win" "${last:-no status}"
 }
 

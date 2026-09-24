@@ -849,6 +849,95 @@ test_stale_actionable_wait_escalates_and_keeps_pause_cadence() {
   pass "stale escalation and current wait cadence remain independent"
 }
 
+# The away posture asks the SAME three-state readout the always-on watcher uses
+# (2026-09-24 D2, same root cause, and the posture where a false escalation costs
+# the most): a lane whose own run is still working the branch - advancing, holding
+# on its ci monitor or a gate, or a delivery that already landed - takes the bounded
+# pause cadence here too, instead of being aged and escalated as a possible wedge.
+# The three guards are pinned with it: a genuinely unexplained quiet still ages, an
+# undecidable reading is never promoted to a wait, and the declared-wait and
+# terminal paths are untouched. The non-away watcher's own behaviour is pinned by
+# tests/fm-watch-triage.test.sh, which this change does not touch.
+# Build one away-mode quiet-lane fixture and print its case dir. The caller sets
+# FM_CREW_STATE_BIN/FM_FAKE_CREW_STATE itself: this runs inside a command
+# substitution, so anything exported here would die with its subshell.
+away_quiet_case() {  # <name> <status-line>
+  local name=$1 line=$2 dir state fakebin
+  dir=$(make_supercase "$name"); state="$dir/state"; fakebin="$dir/fakebin"
+  cat > "$fakebin/fm-crew-state.sh" <<'SH'
+#!/usr/bin/env bash
+set -u
+printf '%s\n' "${FM_FAKE_CREW_STATE:-state: unknown · source: none · fake default}"
+SH
+  chmod +x "$fakebin/fm-crew-state.sh"
+  printf '%s\n' "$line" > "$state/quiet-w1.status"
+  # Housekeeping reconstructs a stale marker's window from metadata (the live tmux
+  # list is only the legacy fallback), so the fixture records the endpoint.
+  fm_write_meta "$state/quiet-w1.meta" "window=sess:fm-quiet-w1" "backend=tmux"
+  printf '%s\n' "$dir"
+}
+
+test_stale_quiet_external_wait_takes_pause_cadence_in_away_mode() {
+  local dir state win key out
+  for spec in \
+    'away-quiet-advancing|state: working · source: run-step · validating (running)' \
+    'away-quiet-monitoring|state: working · source: run-step · ci running' \
+    'away-quiet-landed|state: done · source: run-step · run passed: PR held for merge'
+  do
+    dir=$(away_quiet_case "${spec%%|*}" 'working: handed to the pipeline')
+    state="$dir/state"; win="sess:fm-quiet-w1"; key=$(printf '%s' quiet-w1 | tr ':/.' '___')
+    export FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh"
+    export FM_FAKE_CREW_STATE="${spec#*|}"
+    out=$(FM_STATE_OVERRIDE="$state" classify_stale "$win" "$state")
+    case "$out" in pause\|*) ;; *) fail "${spec%%|*}: a quiet external wait was not pause-classified: $out" ;; esac
+    case "$out" in 'pause|quiet external wait - '?*) ;; *) fail "${spec%%|*}: the pause reason did not name the wait: $out" ;; esac
+    FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999 handle_wake "stale: $win" "$state"
+    [ -e "$state/.subsuper-paused-$key" ] \
+      || fail "${spec%%|*}: the quiet wait recorded no pause cadence"
+    [ ! -e "$state/.subsuper-stale-$key" ] \
+      || fail "${spec%%|*}: the quiet wait was also aged as a wedge"
+  done
+  unset FM_FAKE_CREW_STATE FM_CREW_STATE_BIN
+  pass "an away-mode lane whose own run is advancing, waiting, or already landed takes the bounded pause cadence, never wedge aging"
+}
+
+test_stale_undecidable_or_no_progress_still_ages_as_a_wedge_in_away_mode() {
+  local dir state win key out fakebin
+  # Guard 1 + 2: a busy pane, a run step with no progress, a torn-down crew, and an
+  # unreadable verdict all keep the daemon's existing wedge aging.
+  for spec in \
+    'away-quiet-busy|state: working · source: pane · harness busy (native)' \
+    'away-quiet-no-progress|state: working · source: run-step · validating (running) · no recent step activity' \
+    'away-quiet-dead|state: unknown · source: none · worktree gone (torn down?)' \
+    'away-quiet-garbage|not-a-crew-state-line'
+  do
+    dir=$(away_quiet_case "${spec%%|*}" 'working: handed to the pipeline')
+    state="$dir/state"; win="sess:fm-quiet-w1"; key=$(printf '%s' quiet-w1 | tr ':/.' '___')
+    export FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh"
+    export FM_FAKE_CREW_STATE="${spec#*|}"
+    out=$(FM_STATE_OVERRIDE="$state" classify_stale "$win" "$state")
+    case "$out" in self\|*) ;; *) fail "${spec%%|*}: an unexplained quiet was absorbed as a wait: $out" ;; esac
+    FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999 handle_wake "stale: $win" "$state"
+    [ -e "$state/.subsuper-stale-$key" ] \
+      || fail "${spec%%|*}: the pane was not aged for the persistence recheck"
+    [ ! -e "$state/.subsuper-paused-$key" ] \
+      || fail "${spec%%|*}: the pane was promoted to a wait"
+    # Guard 1 at the behaviour level: the aged marker still escalates. The idle
+    # pane capture keeps housekeeping's own busy check reading "not busy", exactly
+    # as the existing wedge tests do.
+    printf '%s' "$(( $(date +%s) - 5000 ))" > "$state/.subsuper-stale-$key"
+    printf 'idle pane, nothing running\n' > "$state/pane.txt"
+    PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$state/pane.txt" \
+      FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999 FM_STALE_ESCALATE_SECS=240 FM_PAUSE_RESURFACE_SECS=3600 \
+      housekeeping "$state"
+    grep -F "stale persisted" "$state/.subsuper-escalations" >/dev/null \
+      || fail "${spec%%|*}: the aged pane never escalated as a possible wedge"
+    rm -f "$state/.subsuper-escalations"
+  done
+  unset FM_FAKE_CREW_STATE FM_CREW_STATE_BIN
+  pass "away mode still ages and escalates a busy, no-progress, dead, or unreadable quiet instead of absorbing it as a wait"
+}
+
 # A DECLARED external-wait pause (paused:) is neither a wedge nor a terminal
 # escalation: classify_stale returns the `pause` action so handle_wake records a
 # pause marker (long re-surface cadence) rather than a wedge stale marker.
@@ -2836,6 +2925,8 @@ test_stale_diagnostic_wedge_survives_busy_housekeeping
 test_enriched_wedge_under_declared_wait_uses_pause_cadence
 test_stale_terminal_escalates
 test_stale_actionable_wait_escalates_and_keeps_pause_cadence
+test_stale_quiet_external_wait_takes_pause_cadence_in_away_mode
+test_stale_undecidable_or_no_progress_still_ages_as_a_wedge_in_away_mode
 test_stale_paused_classifies_pause
 test_stale_captain_held_classifies_pause
 test_handle_wake_paused_records_pause_marker
