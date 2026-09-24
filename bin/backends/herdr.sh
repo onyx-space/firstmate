@@ -3096,9 +3096,10 @@ fm_backend_herdr_composer_identity() {  # <target> -> "<agent>\t<status>"
 # herdr, the plain capture degrades the descriptor to styled=0 rather than
 # letting ghost text be misread as typed input. Identity is fetched lazily,
 # only when the classifier reports the verdict depends on it (a pi separator
-# pair below every other candidate), preserving this adapter's original
-# consult-only-when-needed behavior.
-fm_backend_herdr_composer_state() {  # <target> -> empty|pending|pending-unproven|unknown
+# pair below every other candidate, or a cursorless shape-selection refusal
+# whose reason the pane's own state must separate), preserving this adapter's
+# original consult-only-when-needed behavior.
+fm_backend_herdr_composer_state() {  # <target> -> empty|pending|pending-unproven|unknown|unknown-busy|unknown-shape
   local target=$1 cap caps verdict identity
   fm_backend_herdr_parse_target "$target" || { printf 'unknown'; return 0; }
   if cap=$(fm_backend_herdr_capture_ansi "$target" "$FM_COMPOSER_CAPTURE_LINES" 2>/dev/null); then

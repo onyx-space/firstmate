@@ -810,7 +810,7 @@ fm_backend_busy_state() {  # <backend> <target>
 # fm_composer_classify_screen) - so no backend can hold a private shape
 # assumption; zellij's classifier reads `dump-screen --ansi`, which replaced
 # its old no-classifier content-diff reporting.
-fm_backend_composer_state() {  # <backend> <target> [expected-label] -> empty|pending|pending-unproven|unknown
+fm_backend_composer_state() {  # <backend> <target> [expected-label] -> empty|pending|pending-unproven|unknown|unknown-busy|unknown-shape
   local backend=$1
   shift
   fm_backend_source "$backend" || { printf 'unknown'; return 0; }
