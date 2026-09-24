@@ -1109,10 +1109,13 @@ fm_backend_herdr_projection_close_pane_focus_preserving() {  # <session> <pane-i
         plan_shell_pid=${plan#death }
         plan=death
         ;;
-      refuse)
-        # The only refusal this plan emits is its own focus checkpoint refusing, so
-        # the gate's own reason is the accurate one whenever it left one.
-        FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL=${FM_BACKEND_HERDR_PROJECTION_MUTATION_REFUSAL:-plan-refused}
+      refuse|refuse\ *)
+        # The plan always runs in a command substitution, so its focus checkpoint's
+        # own FM_BACKEND_HERDR_PROJECTION_MUTATION_REFUSAL assignment cannot reach
+        # this shell; the plan carries that reason out on its last line instead.
+        FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL=${plan#refuse}
+        FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL=${FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL# }
+        FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL=${FM_BACKEND_HERDR_PROJECTION_CLOSE_REFUSAL:-plan-refused}
         return 1
         ;;
       *)
@@ -1246,8 +1249,11 @@ fm_backend_herdr_workspace_move_capable() {  # <session>
 # exact pane. The LAST echoed line is the plan: "plain" (use the ordinary
 # explicit close; below the presentation version floor the exact-tab restore
 # backstop masks the focus move it causes when it empties a non-focused
-# workspace) or "death <shell-pid>" (end the proved lone idle shell so Herdr
-# removes the emptied workspace through its focus-preserving pane-death path).
+# workspace), "death <shell-pid>" (end the proved lone idle shell so Herdr
+# removes the emptied workspace through its focus-preserving pane-death path), or
+# "refuse <reason>" (this plan's own focus checkpoint refused; the reason is that
+# checkpoint's, echoed here because the checkpoint's assignment inside this
+# command substitution can never reach the caller).
 # Whenever the repositioning mover was invoked, a preceding
 # "moved<TAB><ws><TAB><original-index><TAB><socket><TAB><focused><TAB><pre-move-order-json>"
 # record line is echoed first so the caller can hand it to
@@ -1320,7 +1326,11 @@ fm_backend_herdr_emptying_close_plan() {  # <session> <pane-id> <workspace-id> <
     before_order=$(printf '%s' "$list" | jq -c '[.result.workspaces[].workspace_id]' 2>/dev/null)
     if [ -n "$guard_tab" ] \
       && ! fm_backend_herdr_projection_target_tab_mutation_allowed "$session" "$guard_tab"; then
-      printf 'refuse\n'
+      # The caller reads its plan through a command substitution, so the
+      # checkpoint's own refusal-reason variable dies with this subshell; echo the
+      # reason as the plan's last line so the caller can still tell `active-tab`
+      # (the one refusal it may defer to the durable resumable close) apart.
+      printf 'refuse %s\n' "${FM_BACKEND_HERDR_PROJECTION_MUTATION_REFUSAL:-plan-refused}"
       return 0
     fi
     if response=$("$mover" "$socket" "$ws_id" "$len" 2>/dev/null); then

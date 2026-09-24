@@ -2249,8 +2249,10 @@ crew_is_paused() {  # <id>
 # crew_absorb_class, which answers the WIDER "may this wake be absorbed at all"
 # question the no-verb and turn-end paths need; this one answers the narrower
 # question of what a silent pane actually is, and it is the one owner of that split.
-# bin/fm-crew-state.sh and the no-progress (真死) arm consume it; the stale/wedge
-# consumers keep their own open question pending a design decision. Prints one token:
+# It READS the ` · no recent step activity` marker bin/fm-crew-state.sh emits; no
+# production caller is wired to it in this release (the stale/wedge consumers keep
+# their own open question pending a design decision), so today it is exercised by
+# tests only and its wiring awaits that decision. Prints one token:
 #   busy       the harness itself reports the agent working right now (a busy
 #              pane): the pane is silent because the agent is mid-work.
 #   advancing  the crew's own run reports an actively working step (running/
