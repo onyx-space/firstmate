@@ -509,6 +509,10 @@
       "audience": "maintainer-verification"
     },
     {
+      "path": "docs/rule-enforcement-design.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": "skills/stow/SKILL.md",
       "audience": "public-product"
     }
