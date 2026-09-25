@@ -1,0 +1,50 @@
+sanitized PATH base: /usr/local/bin:/usr/bin:/bin (no wire reachable; each case stubs wire in its own fakebin)
+
+################ S1: merge note for a lane-served repo -> wire send to the lane, note dispatched
+queued 1790329677-0XRctw ; ~/AGENTS.md is a symlink: /tmp/fm-verify-s1.2R8gOb/machine-real.md
+dispatched 1790329677-0XRctw origmd-maintenance-lane
+exit=0
+wire invocation: argv: send --to h --session origmd-maintenance-lane --text merge wake: admin/origmd merged - firstmate dispatched this relay notification to the lane serving it (note 1790329677-0XRctw): 【中继变更】gitea admin/origmd#116：open → merged | 标题：core(route): 只写正确路线；路线不通就带调查回主管 firstmate | 时间：2026-09-25 09:57:24（北京时间） | 链接：http://10.0.99.5:3000/admin/origmd/pulls/116 | （这条来自轮询监测：没人在看板上点，是 PR 状态自己变的）
+destinations: 0 in inbox/, 0 in handled/, 1 in dispatched/
+
+################ S2: full wake-drain acknowledgement names the dispatch (count + id)
+ack exit=0
+acknowledgement stderr: wake drain: dispatched 1 notification note(s) to the lane serving the repository, with the wake row(s) just acknowledged: 1790329677-3a4Wng origmd-maintenance-lane
+wire invocation: argv: send --to h --session origmd-maintenance-lane --text merge wake: admin/origmd merged - firstmate dispatched this relay notification to the lane serving it (note 1790329677-3a4Wng): 【中继变更】gitea admin/origmd#116：open → merged | 标题：core(route): 只写正确路线；路线不通就带调查回主管 firstmate | 时间：2026-09-25 09:57:24（北京时间） | 链接：http://10.0.99.5:3000/admin/origmd/pulls/116 | （这条来自轮询监测：没人在看板上点，是 PR 状态自己变的）
+destinations: 0 in inbox/, 0 in handled/, 1 in dispatched/
+wake rows remaining after ack: 0
+
+################ S3: lane serves the repo but wire is not installed -> refusal, note retryable
+queued 1790329679-xzvbgQ
+exit=1
+stderr: dispatch refused 1790329679-xzvbgQ: lane origmd-maintenance-lane serves admin/origmd but wire is not installed on this endpoint
+destinations: 1 in inbox/, 0 in handled/, 0 in dispatched/
+
+################ S4: lane serves the repo but its name is not registered -> refusal, note retryable
+exit=1
+stderr: dispatch refused 1790329679-n3FlfY: lane origmd-maintenance-lane is not registered in /tmp/fm-verify-s4.zc6tMz/.config/wire/config.json, so this endpoint's key is unknown
+destinations: 1 in inbox/, 0 in handled/, 0 in dispatched/
+wire called: no
+
+################ S5: lane's own checkout serves another repo -> archive path
+stdout: archived 1790329679-N0U1oL
+destinations: 0 in inbox/, 1 in handled/, 0 in dispatched/
+wire called: no
+
+################ S6: endpoint declares no lane -> archive path
+stdout: archived 1790329680-EPbZBk
+destinations: 0 in inbox/, 1 in handled/, 0 in dispatched/
+wire called: no
+
+################ S7: non-merge relay note for a lane-served repo -> archive path
+stdout: archived 1790329680-wdmXWA
+destinations: 0 in inbox/, 1 in handled/, 0 in dispatched/
+wire called: no
+
+################ S8: full-path refusal keeps the wake row and its note together
+ack exit=1 (non-zero expected)
+ack stderr: wake drain: the note(s) of the rows being acknowledged could not be archived (dispatch refused 1790329680-agttgL: lane origmd-maintenance-lane is not registered in /tmp/fm-verify-s8.AOpdWw/.config/wire/config.json, so this endpoint's key is unknown); the rows stay queued to retry
+note still queued: 1 ; wake rows remaining: 1
+
+################ real machine file integrity after the run
+(empty above = untouched)
