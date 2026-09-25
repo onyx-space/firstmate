@@ -211,13 +211,14 @@ inbox_ack_ids_for_rows() { # <rows-file>
   ' "$FM_WAKE_QUEUE" | LC_ALL=C sort -u
 }
 
-# Archive the notes whose wake rows this acknowledgement consumes, and report
-# every automatic archival: a note disappearing without a line saying so would
-# be indistinguishable from a lost one. bin/fm-inbox.sh owns the record, its
-# sources, and the move into handled/, and it leaves a captain-authored note for
-# the explicit `drain --ack`. A failure fails the acknowledgement BEFORE the rows
-# are consumed, so the durable row and its note stay together and the next
-# acknowledgement retries rather than stranding a note nobody will look at again.
+# Archive or dispatch the notes whose wake rows this acknowledgement consumes,
+# and report every automatic archival or dispatch: a note disappearing without a
+# line saying so would be indistinguishable from a lost one. bin/fm-inbox.sh owns
+# the record, its sources, and the moves into handled/ and dispatched/, and it
+# leaves a captain-authored note for the explicit `drain --ack`. A failure fails
+# the acknowledgement BEFORE the rows are consumed, so the durable row and its
+# note stay together and the next acknowledgement retries rather than stranding a
+# note nobody will look at again.
 archive_consumed_inbox_notes() { # <id>...
   local inbox="$SCRIPT_DIR/fm-inbox.sh" out count list rc=0
   [ "$#" -gt 0 ] || return 0

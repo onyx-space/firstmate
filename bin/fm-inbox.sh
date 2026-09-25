@@ -185,9 +185,10 @@ dispatch_now() {  # <id>
 }
 
 # Sources whose records are notifications a firstmate integration queued rather
-# than the captain's own words. Only these are archived as a side effect of their
-# wake row being acknowledged; every other source, including a legacy record with
-# no source at all, is a captain note that stays until an explicit `drain --ack`.
+# than the captain's own words. Only these are archived or dispatched to a lane
+# as a side effect of their wake row being acknowledged; every other source,
+# including a legacy record with no source at all, is a captain note that stays
+# until an explicit `drain --ack`.
 # A new notification integration adds its source here; an unknown source is
 # deliberately treated as the captain's, because archiving the captain's words by
 # mistake is the failure this split exists to prevent.
