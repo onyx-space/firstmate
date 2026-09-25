@@ -42,7 +42,7 @@ Placement is decided by where the violation first becomes observable, not by whe
 5. **Nothing**: the rule is marked not mechanizable, and the smallest human practice is named.
 
 Two constraints hold at every rung.
-The rule's text stays owned by origmd — `~/code/origmd/rules/*.md` for most rules, the injected `~/code/origmd/inject/global-core.md` for the glyph rule and the write-root list (a checker cites the rule; it never restates it, and firstmate adds no second copy).
+The rule's text stays owned by origmd — `~/code/origmd/rules/*.md`, the injected `~/code/origmd/inject/global-core.md`, or the fleet skill that owns it — rather than copied here (a checker cites the rule; it never restates it, and firstmate adds no second copy).
 And no gate may block a *repair*: if the only way to return a system to a good state is the action the gate refuses, the gate is wrong, not the repair.
 
 ## 3. The table
@@ -97,6 +97,6 @@ Cheapest first, each with its acceptance.
 
 - No new resident process: every gate above runs per event (a tool call, a turn end, a CI job) and exits.
 - No new repository: the CI-side checks join `~/code/origmd/scripts/check.mjs`, the hook-side policies join `bin/` in the repository whose harness performs the action, and the vault's own rules are not restated anywhere.
-- The rule text stays owned by origmd — `~/code/origmd/rules/*.md` for most rules, the injected `~/code/origmd/inject/global-core.md` for the glyph rule and the write-root list; a checker cites it and a hook names it.
+- The rule text stays owned by origmd — `~/code/origmd/rules/*.md`, the injected `~/code/origmd/inject/global-core.md`, or the fleet skill that owns it — rather than copied here; a checker cites it and a hook names it.
 - The existing gates are read before a new one is written: `bin/fm-arm-pretool-check.sh` with `bin/fm-arm-command-policy.mjs` (shell policy), `bin/fm-cd-pretool-check.sh` (`docs/cd-guard.md`), `bin/fm-subagent-pretool-check.sh` (`docs/subagent-guard.md`), the turn-end hooks (`docs/turnend-guard.md`), `~/code/origmd/extensions/write-scope.ts` (the write-root refusal), and `~/code/origmd/scripts/check.mjs`.
 - This document designs; it implements nothing. Each item above is a task for a later, separately authorized change.
