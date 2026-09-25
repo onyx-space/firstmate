@@ -381,6 +381,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/rule-enforcement-design.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": "docs/secondmate-parent-channel.md",
       "audience": "maintainer-architecture"
     },
