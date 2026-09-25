@@ -223,10 +223,12 @@ fm_inbox_source_is_notification() {  # <source>
 # own config - so the machine key/endpoint pairing is never restated here.
 #
 # Refusal is fail-closed: a lane that serves the repository but cannot be reached
-# - no key for its registered name, no wire on the machine, or a refused send -
-# leaves the note and its wake row where they are, retryable, instead of
-# reporting a delivery that did not happen. A repository with no lane takes the
-# pre-existing archive path.
+# - no key for its registered name, no wire on the machine, or a send whose own
+# report does not put the payload in the mailbox - leaves the note and its wake
+# row where they are, retryable, instead of reporting a delivery that did not
+# happen. wire exits 0 even when it reports `mailbox: unreadable`, so its exit
+# status alone is not evidence; only its `mailbox: present` fact is. A repository
+# with no lane takes the pre-existing archive path.
 FM_MACHINE_FILE=${FM_MACHINE_FILE:-$HOME/AGENTS.md}
 FM_WIRE_CONFIG=${FM_WIRE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/wire/config.json}
 FM_INBOX_DISPATCH_LANE=
@@ -387,7 +389,7 @@ lane_for_note() {  # <note-file>
 # repository, 2 a lane does and the delivery could not be made
 # (FM_INBOX_DISPATCH_ERROR says why).
 dispatch_note_to_lane() {  # <id>
-  local id=$1 note="$INBOX/$1.note" match lane rest endpoint repo wire body out rc=0
+  local id=$1 note="$INBOX/$1.note" match lane rest endpoint repo wire body out mailbox rc=0
   FM_INBOX_DISPATCH_LANE=
   FM_INBOX_DISPATCH_ERROR=
   match=$(lane_for_note "$note")
@@ -406,8 +408,13 @@ dispatch_note_to_lane() {  # <id>
   out=$("$wire" send --to "$endpoint" --session "$lane" \
     --text "merge wake: $repo merged - firstmate dispatched this relay notification to the lane serving it (note $id)${body:+: $body}" 2>&1) \
     || rc=$?
-  if [ "$rc" -ne 0 ]; then
-    FM_INBOX_DISPATCH_ERROR="wire send to lane $lane failed: ${out:-no output}"
+  # wire reports two independent facts and exits 0 even when the mailbox write
+  # failed, so the delivery is read from its own report: only `mailbox: present`
+  # is a payload the lane can read. Anything else - an absent check, an
+  # unreadable one, a nonzero exit, or no fact at all - stays retryable.
+  mailbox=$(printf '%s\n' "$out" | sed -n 's/^  mailbox: //p')
+  if [ "$rc" -ne 0 ] || [ "$mailbox" != present ]; then
+    FM_INBOX_DISPATCH_ERROR="wire send to lane $lane did not put the payload in the mailbox (${mailbox:-no mailbox fact}): ${out:-no output}"
     return 2
   fi
   FM_INBOX_DISPATCH_LANE=$lane

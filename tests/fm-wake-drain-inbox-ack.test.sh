@@ -64,8 +64,10 @@ drain_then_ack() { # <state> <tag>
 # one "<lane map key>\t<lane>\t<endpoint key>" line per served repository, a
 # "<lane map key>\t!<reason>" line for a repository wire answers served:no about,
 # and any other key is wire's silent no-entry - so a test owns wire's answer while
-# fm-inbox's use of it is what runs. `send` only records. Every call lands in
-# <dir>/wire.log.
+# fm-inbox's use of it is what runs. `send` reports the mailbox fact the way real
+# wire does - `mailbox: present` unless <dir>/send-mailbox names another value -
+# and exits 0 either way, so a test can drive a delivery wire accepted but could
+# not make present. Every call lands in <dir>/wire.log.
 write_fake_wire() { # <dir>
   local dir=$1
   : > "$dir/routes"
@@ -96,6 +98,12 @@ if [ "\${1:-}" = route ]; then
   done < "$dir/routes"
   printf 'route:\n  repo: %s\n  served: no\n  lane: none\n  reason: no-entry\n  detail: no lane map entry for %s\n' \\
     "\$repo" "\$repo"
+  exit 0
+fi
+if [ "\${1:-}" = send ]; then
+  mailbox=present
+  [ -f "$dir/send-mailbox" ] && mailbox=\$(cat "$dir/send-mailbox")
+  printf 'delivery:\n  delivery_id: 00000000-0000-0000-0000-000000000000\n  recipient: endpoint\n  mailbox: %s\n  doorbell: rung\n  queued: no\n' "\$mailbox"
   exit 0
 fi
 exit 0
@@ -307,6 +315,44 @@ test_an_unregistered_lane_fails_the_acknowledgement_instead_of_losing_the_wake()
   awk -F '\t' 'NF >= 5 { found = 1 } END { exit !found }' "$state/.wake-queue" \
     || fail "a refused dispatch consumed the wake row it could not deliver"
   pass "a lane that serves the repository but cannot be reached keeps the note and its row retryable"
+}
+
+# The real wire exits 0 while reporting `mailbox: unreadable` when the write to
+# the recipient's own inbox failed, so an exit status alone is not delivery. A
+# send that reports anything but `mailbox: present` must leave the note and its
+# wake row retryable instead of recording a dispatch the lane never received.
+test_a_dispatch_wire_did_not_make_present_stays_retryable() {
+  local dir state id seq gen
+  dir=$(make_lane_case lane-mailbox-unreadable lane-a https://github.com/onyx-space/firstmate.git)
+  state="$dir/state"
+  printf 'unreadable\n' > "$dir/send-mailbox"
+  id=$(queue_note_now "$state" relay \
+    '【中继变更】github onyx-space/firstmate#37：open → merged | 标题：x | 链接：https://github.com/onyx-space/firstmate/pull/37') \
+    || fail "queueing the merge note failed"
+
+  PATH="$dir/fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_MACHINE_FILE="$dir/machine.md" \
+    FM_WIRE_CONFIG="$dir/wire-config.json" "$DRAIN" > "$dir/unreadable.drain.out" 2> "$dir/unreadable.drain.err" \
+    || fail "the drain failed: $(cat "$dir/unreadable.drain.err")"
+  seq=$(sed -n 's/^WAKE_ACK_REQUIRED:.*--ack-through \([0-9][0-9]*\) --recovery-generation [A-Za-z0-9._-]*$/\1/p' "$dir/unreadable.drain.err")
+  gen=$(sed -n 's/^WAKE_ACK_REQUIRED:.*--ack-through [0-9][0-9]* --recovery-generation \([A-Za-z0-9._-]*\)$/\1/p' "$dir/unreadable.drain.err")
+  [ -n "$seq" ] && [ -n "$gen" ] || fail "the drain printed no acknowledgement command"
+
+  if PATH="$dir/fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_MACHINE_FILE="$dir/machine.md" \
+    FM_WIRE_CONFIG="$dir/wire-config.json" "$DRAIN" --ack-through "$seq" --recovery-generation "$gen" \
+    > "$dir/unreadable.ack.out" 2> "$dir/unreadable.ack.err"; then
+    fail "an acknowledgement was accepted although wire reported the mailbox unreadable"
+  fi
+  grep -F 'lane-a' "$dir/unreadable.ack.err" >/dev/null \
+    || fail "the refusal did not name the lane whose delivery failed: $(cat "$dir/unreadable.ack.err")"
+  grep -F 'unreadable' "$dir/unreadable.ack.err" >/dev/null \
+    || fail "the refusal did not carry wire's own mailbox fact: $(cat "$dir/unreadable.ack.err")"
+  [ -f "$state/inbox/$id.note" ] \
+    || fail "a delivery wire did not make present lost the note instead of leaving it retryable"
+  [ ! -e "$state/inbox/dispatched/$id.note" ] \
+    || fail "a delivery wire did not make present was still recorded as dispatched"
+  awk -F '\t' 'NF >= 5 { found = 1 } END { exit !found }' "$state/.wake-queue" \
+    || fail "a delivery wire did not make present consumed the wake row it did not deliver"
+  pass "a send wire did not make present leaves the note and its wake row retryable"
 }
 
 # A routing table that names a lane dispatches with no lane declared in the
@@ -574,6 +620,7 @@ test_a_non_merge_relay_note_archives_without_dispatch
 test_a_symlinked_machine_file_is_read
 test_a_tilde_lane_directory_is_resolved
 test_an_unregistered_lane_fails_the_acknowledgement_instead_of_losing_the_wake
+test_a_dispatch_wire_did_not_make_present_stays_retryable
 test_mixed_batch_archives_only_the_notification
 test_explicit_ack_still_archives_every_source
 test_a_source_that_could_break_the_record_header_is_refused
