@@ -1,0 +1,48 @@
+# Real `wire route` against the fleet's joined map (read-only)
+
+## This machine's lane line in the joined map
+{
+  "gitea admin/glitter-relay": {
+    "endpoint": "mac-mini",
+    "lane": "relay-maintenance-lane"
+  },
+  "gitea admin/origmd": {
+    "endpoint": "server",
+    "lane": "origmd-maintenance-lane"
+  },
+  "github onyx-space/firstmate": {
+    "endpoint": "server",
+    "lane": "firstmate-maintenance-lane"
+  },
+  "github onyx-space/pi-user-extensions": {
+    "endpoint": "server",
+    "lane": "extensions-maintenance-lane"
+  },
+  "github onyx-space/wire": {
+    "endpoint": "server",
+    "lane": "wire-maintenance-lane"
+  }
+}
+
+## A repository this endpoint serves (github onyx-space/firstmate)
+route:
+  repo: github/onyx-space/firstmate
+  served: yes
+  lane: firstmate-maintenance-lane
+  endpoint: h
+  key: github onyx-space/firstmate
+  registration: checked
+help[2]:
+  The lane map is read from /home/onyx/code/origmd/ref/lanes.json
+  The registration is checked against /home/onyx/.config/wire/config.json
+
+## A repository the map places on mac-mini (gitea admin/glitter-relay)
+route:
+  repo: gitea admin/glitter-relay
+  served: no
+  lane: none
+  reason: lane-not-registered
+  detail: "\"relay-maintenance-lane\" is not registered under endpoints.m.sessions in /home/onyx/.config/wire/config.json"
+help[2]:
+  The lane map is read from /home/onyx/code/origmd/ref/lanes.json
+  The registration is checked against /home/onyx/.config/wire/config.json

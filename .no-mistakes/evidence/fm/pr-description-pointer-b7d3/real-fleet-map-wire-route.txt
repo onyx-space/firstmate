@@ -1,0 +1,71 @@
+# Real fleet lane map resolves through the real wire binary
+## ref/lanes.json on this endpoint (real):
+{
+  "gitea admin/glitter-relay": {
+    "endpoint": "mac-mini",
+    "lane": "relay-maintenance-lane"
+  },
+  "gitea admin/origmd": {
+    "endpoint": "server",
+    "lane": "origmd-maintenance-lane"
+  },
+  "github onyx-space/firstmate": {
+    "endpoint": "server",
+    "lane": "firstmate-maintenance-lane"
+  },
+  "github onyx-space/pi-user-extensions": {
+    "endpoint": "server",
+    "lane": "extensions-maintenance-lane"
+  },
+  "github onyx-space/wire": {
+    "endpoint": "server",
+    "lane": "wire-maintenance-lane"
+  }
+}
+
+## wire route --repo github/onyx-space/wire (real HOME):
+route:
+  repo: github/onyx-space/wire
+  served: yes
+  lane: wire-maintenance-lane
+  endpoint: h
+  key: github onyx-space/wire
+  registration: checked
+help[2]:
+  The lane map is read from /home/onyx/code/origmd/ref/lanes.json
+  The registration is checked against /home/onyx/.config/wire/config.json
+
+## wire route --repo admin/origmd (map has it; not registered here):
+route:
+  repo: admin/origmd
+  served: yes
+  lane: origmd-maintenance-lane
+  endpoint: h
+  key: gitea admin/origmd
+  registration: checked
+help[2]:
+  The lane map is read from /home/onyx/code/origmd/ref/lanes.json
+  The registration is checked against /home/onyx/.config/wire/config.json
+
+## wire route --repo github/onyx-space/pi-user-extensions:
+route:
+  repo: github/onyx-space/pi-user-extensions
+  served: yes
+  lane: extensions-maintenance-lane
+  endpoint: h
+  key: github onyx-space/pi-user-extensions
+  registration: checked
+help[2]:
+  The lane map is read from /home/onyx/code/origmd/ref/lanes.json
+  The registration is checked against /home/onyx/.config/wire/config.json
+
+## wire route --repo admin/glitter-relay (map places it on mac-mini => not registered here):
+route:
+  repo: admin/glitter-relay
+  served: no
+  lane: none
+  reason: lane-not-registered
+  detail: "\"relay-maintenance-lane\" is not registered under endpoints.m.sessions in /home/onyx/.config/wire/config.json"
+help[2]:
+  The lane map is read from /home/onyx/code/origmd/ref/lanes.json
+  The registration is checked against /home/onyx/.config/wire/config.json

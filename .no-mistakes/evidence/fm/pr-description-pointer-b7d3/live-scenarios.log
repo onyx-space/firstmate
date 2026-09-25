@@ -1,0 +1,99 @@
+
+################ S1 joined-map-first dispatch (no machine file at all) ################
+ack rc=0
+wake drain: dispatched 1 notification note(s) to the lane serving the repository, with the wake row(s) just acknowledged: 1790332025-IHN8bf firstmate-maintenance-lane
+inbox tree:
+state/inbox/dispatched/1790332025-IHN8bf.note
+real wire mailbox files: 1
+merge wake: onyx-space/firstmate merged - firstmate dispatched this relay notification to the lane serving it (note 1790332025-IHN8bf): 【中继变更】github onyx-space/firstmate#37：open → merged | 标题：x | 链接：https://github.com/onyx-space/firstmate/pull/37
+RESULT S1: pass
+
+################ S2 map entry naming another machine is not dispatched from here ################
+ack rc=0
+wake drain: archived 1 notification note(s) with the wake row(s) just acknowledged: 1790332027-VgG4cE
+inbox tree:
+state/inbox/handled/1790332027-VgG4cE.note
+real wire mailbox files: 0
+RESULT S2: pass
+
+################ S3 map silent about the repository -> machine-file fallback dispatches ################
+ack rc=0
+wake drain: dispatched 1 notification note(s) to the lane serving the repository, with the wake row(s) just acknowledged: 1790332029-qYW9Pb fallback-lane
+inbox tree:
+state/inbox/dispatched/1790332029-qYW9Pb.note
+real wire mailbox files: 1
+merge wake: onyx-space/firstmate merged - firstmate dispatched this relay notification to the lane serving it (note 1790332029-qYW9Pb): 【中继变更】github onyx-space/firstmate#37：open → merged | 标题：x | 链接：https://github.com/onyx-space/firstmate/pull/37
+RESULT S3: pass
+
+################ S4 routed by the note's own token, not a repository named in its title ################
+ack rc=0
+wake drain: archived 1 notification note(s) with the wake row(s) just acknowledged: 1790332031-m0aVam
+inbox tree:
+state/inbox/handled/1790332031-m0aVam.note
+real wire mailbox files: 0
+RESULT S4: pass
+
+################ S5 adversarial fail-closed: real wire send with an unreadable mailbox stays retryable ################
+ack rc=1
+wake drain: the note(s) of the rows being acknowledged could not be archived (dispatch refused 1790332033-sCSF1o: wire send to lane firstmate-maintenance-lane did not put the payload in the mailbox (unreadable): delivery:
+  delivery_id: 58b0888e-51e1-4fa9-9114-444e5b348871
+  recipient: h
+  mailbox: unreadable
+  mailbox_reason:
+    cause: mailbox-write-failed
+    repair: Run `sh -c '... wire/inbox/58b0888e-51e1-4fa9-9114-444e5b348871 ...'` on h to see why the write failed
+    code: exit 4
+  doorbell: not-rung
+  doorbell_reason:
+    cause: mailbox-write-failed
+    repair: Run `sh -c '... wire/inbox/58b0888e-51e1-4fa9-9114-444e5b348871 ...'` on h to see why the write failed
+    code: exit 4
+  queued: no
+queue:
+  rang: []
+  queued: 0
+  bound_reached: no
+help[4]:
+  Answer on the same channel: `wire send --to <endpoint> --answers <delivery-id> --text "<answer>"`
+  A mailbox check that came back unreadable: `wire check --delivery <delivery-id>` asks again
+  A bell that was not rung: `wire ring --delivery <delivery-id>` re-runs the guard and rings
+  An un-rung bell stays queued: a later send or ring to that endpoint attempts it when the ladder's next slot is due, or ring it now with `wire ring --delivery <delivery-id>`); the rows stay queued to retry
+note still pending: yes
+wake rows left: 1
+dispatched dir: absent
+wire mailbox payload count: 0
+RESULT S5: pass
+
+################ S6 an ordinary (non-merge) relay note keeps the archive path ################
+ack rc=0
+wake drain: archived 1 notification note(s) with the wake row(s) just acknowledged: 1790332035-9O7g5e
+inbox tree:
+state/inbox/handled/1790332035-9O7g5e.note
+real wire mailbox files: 0
+RESULT S6: pass
+
+################ S7 a repository with no lane at all keeps the archive path ################
+ack rc=0
+wake drain: archived 1 notification note(s) with the wake row(s) just acknowledged: 1790332036-EwBg2R
+inbox tree:
+state/inbox/handled/1790332036-EwBg2R.note
+real wire mailbox files: 0
+RESULT S7: pass
+
+################ S8 no lane map at all -> machine-file fallback dispatches ################
+ack rc=0
+wake drain: dispatched 1 notification note(s) to the lane serving the repository, with the wake row(s) just acknowledged: 1790332038-SrjhZa fallback-lane
+inbox tree:
+state/inbox/dispatched/1790332038-SrjhZa.note
+real wire mailbox files: 1
+RESULT S8: pass
+
+================ SUMMARY ================
+S1|pass|ack.err names the dispatch; note in dispatched/; real wire mailbox payload names the merge; wake row consumed
+S2|pass|map entry on mac-mini archived here; no wire send; no local dispatched record
+S3|pass|empty map fell back to the machine file's lane + checkout and dispatched
+S4|pass|note's own repo (pi) is unserved -> archived; the title's wire lane was not used
+S5|pass|real wire reported mailbox: unreadable; ack failed, note and wake row left retryable
+S6|pass|closed (non-merge) relay note archived, not dispatched
+S7|pass|no lane anywhere -> archive, no send
+S8|pass|absent lane map fell back to the machine file and dispatched

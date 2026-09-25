@@ -1,0 +1,126 @@
+
+===== S1 map-first dispatch (real wire route + real wire send) =====
+wire route (real binary):
+route:
+  repo: github/onyx-space/firstmate
+  served: yes
+  lane: firstmate-maintenance-lane
+  endpoint: h
+  key: github onyx-space/firstmate
+  registration: checked
+help[2]:
+  The lane map is read from /tmp/fm-live-lanes.1j2EG3/s1/home/code/origmd/ref/lanes.json
+  The registration is checked against /tmp/fm-live-lanes.1j2EG3/s1/home/.config/wire/config.json
+ack rc: 0
+-- ack stderr --
+wake drain: dispatched 1 notification note(s) to the lane serving the repository, with the wake row(s) just acknowledged: 1790331546-wipGZO firstmate-maintenance-lane
+-- delivered payload --
+wire:delivery 14f23d2f-97ce-4567-9c32-ab65b452700e
+merge wake: onyx-space/firstmate merged - firstmate dispatched this relay notification to the lane serving it (note 1790331546-wipGZO): 【中继变更】github onyx-space/firstmate#37：open → merged | 标题：x | 链接：https://github.com/onyx-space/firstmate/pull/37
+PASS  S1 ack accepted
+PASS  S1 note recorded in dispatched/
+PASS  S1 note not archived as handled
+PASS  S1 real wire send delivered exactly one payload
+PASS  S1 payload names the repo and merge
+PASS  S1 payload addressed to the mapped lane
+PASS  S1 ack names the dispatch
+
+===== S2 map entry naming another machine is not dispatched from here =====
+wire route for the note repo:
+route:
+  repo: github/onyx-space/wire
+  served: no
+  lane: none
+  reason: lane-not-registered
+  detail: "\"relay-maintenance-lane\" is not registered under endpoints.m.sessions in /tmp/fm-live-lanes.1j2EG3/s2/home/.config/wire/config.json"
+help[2]:
+  The lane map is read from /tmp/fm-live-lanes.1j2EG3/s2/home/code/origmd/ref/lanes.json
+  The registration is checked against /tmp/fm-live-lanes.1j2EG3/s2/home/.config/wire/config.json
+ack rc: 0
+wake drain: archived 1 notification note(s) with the wake row(s) just acknowledged: 1790331548-vnUTkB
+PASS  S2 note archived (another machine owns it)
+PASS  S2 no dispatched record
+PASS  S2 no wire delivery
+
+===== S3 map silent (no-entry) falls back to the machine file + lane checkout =====
+wire route for the note repo (no-entry -> fallback answers):
+route:
+  repo: github/onyx-space/firstmate
+  served: no
+  lane: none
+  reason: no-entry
+  detail: the lane map carries no github/onyx-space/firstmate entry
+help[2]:
+  The lane map is read from /tmp/fm-live-lanes.1j2EG3/s3/home/code/origmd/ref/lanes.json
+  The registration is checked against /tmp/fm-live-lanes.1j2EG3/s3/home/.config/wire/config.json
+ack rc: 0
+wake drain: dispatched 1 notification note(s) to the lane serving the repository, with the wake row(s) just acknowledged: 1790331550-19omMV firstmate-maintenance-lane
+PASS  S3 fallback dispatched from the machine file
+PASS  S3 fallback addressed the machine-file lane
+
+===== S3b fallback lane whose checkout is another repo takes the archive path =====
+ack rc: 0
+wake drain: archived 1 notification note(s) with the wake row(s) just acknowledged: 1790331553-0n8UYY
+PASS  S3b archived: lane checkout is another repo
+PASS  S3b no wire delivery
+
+===== S4 a non-merge relay note keeps the archive path =====
+ack rc: 0
+wake drain: archived 1 notification note(s) with the wake row(s) just acknowledged: 1790331555-3H43dt
+PASS  S4 closed note archived
+PASS  S4 no dispatch for a non-merge
+
+===== S5 adversarial: title names a served repo, the note's own token names another =====
+wire route for pi (note token):
+route:
+  repo: github/onyx-space/pi
+  served: yes
+  lane: pi-maintenance-lane
+  endpoint: h
+  key: github onyx-space/pi
+  registration: checked
+help[2]:
+  The lane map is read from /tmp/fm-live-lanes.1j2EG3/s5/home/code/origmd/ref/lanes.json
+  The registration is checked against /tmp/fm-live-lanes.1j2EG3/s5/home/.config/wire/config.json
+wire route for wire (title only):
+route:
+  repo: github/onyx-space/wire
+  served: yes
+  lane: wire-maintenance-lane
+  endpoint: h
+  key: github onyx-space/wire
+  registration: checked
+help[2]:
+  The lane map is read from /tmp/fm-live-lanes.1j2EG3/s5/home/code/origmd/ref/lanes.json
+  The registration is checked against /tmp/fm-live-lanes.1j2EG3/s5/home/.config/wire/config.json
+ack rc: 0
+wake drain: dispatched 1 notification note(s) to the lane serving the repository, with the wake row(s) just acknowledged: 1790331557-BxIlwn pi-maintenance-lane
+PASS  S5 note dispatched
+PASS  S5 routed to the own-token lane (pi)
+PASS  S5 the title-mention lane (wire) got nothing
+
+===== S6 fail-closed: a dispatch that cannot be made because wire is absent =====
+ack rc: 1
+-- ack stderr --
+wake drain: the note(s) of the rows being acknowledged could not be archived (dispatch refused 1790331559-TXz99S: lane firstmate-maintenance-lane serves onyx-space/firstmate but wire is not installed on this endpoint); the rows stay queued to retry
+PASS  S6 ack refused (wire absent)
+PASS  S6 note still queued in state/inbox/
+PASS  S6 wake row still queued
+
+===== S7 adversarial: a real wire send that cannot write the mailbox =====
+probe wire-send rc: 0
+delivery:
+  delivery_id: 5ba7f750-5d69-4be2-9087-0c35961c87c2
+  recipient: h
+  mailbox: unreadable
+  mailbox_reason:
+    cause: mailbox-write-failed
+    repair: Run `sh -c '... wire/inbox/5ba7f750-5d69-4be2-9087-0c35961c87c2 ...'` on h to see why the write failed
+    code: exit 4
+ack rc: 0
+-- ack stderr --
+wake drain: dispatched 1 notification note(s) to the lane serving the repository, with the wake row(s) just acknowledged: 1790331560-pqcKcM firstmate-maintenance-lane
+note still in inbox: 0 ; recorded dispatched despite delivery failure: 1
+FAIL  S7 refused send keeps note + row retryable -- ack rc=0 note_survives=0 dispatched=1
+
+===== SUMMARY pass=22 fail=1 =====

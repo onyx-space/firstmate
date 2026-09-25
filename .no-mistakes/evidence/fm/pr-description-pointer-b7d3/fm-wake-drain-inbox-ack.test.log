@@ -1,0 +1,20 @@
+ok - a captain-authored note stays in state/inbox/ when its wake row is acknowledged
+ok - a notification note is archived with its wake row and the archival is named
+ok - wire's routed lane dispatches a merge with no machine-file lane to parse
+ok - wire's not-served answer keeps the archive path
+ok - a map entry naming another machine is not second-guessed by the machine file
+ok - a merge is routed by its own token, not a repository named in its title
+ok - a merge wake for a lane-served repository reaches that lane and is recorded as dispatched
+ok - a lane's own checkout decides: a different repository takes the archive path
+ok - a machine declaring no lane keeps the pre-existing archive path
+ok - only a merge reaches a lane; an ordinary relay notification keeps the archive path
+ok - the endpoint's symlinked machine file is read
+ok - a lane directory declared with ~ is resolved against HOME
+ok - a lane that serves the repository but cannot be reached keeps the note and its row retryable
+ok - a send wire did not make present leaves the note and its wake row retryable
+ok - one acknowledged batch archives its notification note and leaves the captain's
+ok - an explicit drain --ack still archives a note of either source
+ok - a source that could inject a record header line is refused and queues nothing
+ok - a legacy record without a header source is not classified by its body
+ok - a note queued through the producer's argv shape counts as captain-authored
+test rc=0
