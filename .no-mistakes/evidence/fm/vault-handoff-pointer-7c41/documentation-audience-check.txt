@@ -1,0 +1,7 @@
+# Live drive: repo documentation-audience checker over the changed worktree
+# Command: bin/fm-doc-audience-check.sh   (cwd=/home/onyx/.no-mistakes/worktrees/42774a4b8442/01M3AZ4KQSNC8012FGAREG3G2N)
+# AGENTS.md is classified agent-runtime in the machine-consumed inventory; the
+# checker validates exact surface coverage and resolves every local link in it.
+
+fm-doc-audience-check: ok surfaces=101 local_links=410
+rc=0

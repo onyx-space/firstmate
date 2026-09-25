@@ -1,0 +1,45 @@
+# Live drive: real fm-session-start.sh instruction refresh emits the changed AGENTS.md
+#
+# Change under test: AGENTS.md one-line pointer to the fleet vault handoff convention.
+# Isolation: throwaway git FM_ROOT with the changed AGENTS.md copied in, scratch FM_HOME, fabricated drifted baseline.
+# Command (cwd=/home/onyx/.no-mistakes/worktrees/42774a4b8442/01M3AZ4KQSNC8012FGAREG3G2N):
+#   env -u CLAUDECODE -u GROK_AGENT PI_CODING_AGENT=true FM_PI_HARNESS=pi \
+#     FM_HOME=<scratch>/home FM_ROOT_OVERRIDE=<scratch>/root \
+#     /home/onyx/.no-mistakes/worktrees/42774a4b8442/01M3AZ4KQSNC8012FGAREG3G2N/bin/fm-session-start.sh --reemit --source compact
+#
+# --- emitted digest head (refresh section opened at line 17) ---
+
+================================================================================
+SESSION START (CONTEXT RE-EMIT) - /tmp/fm-refresh-drive.dvfTl0/home
+================================================================================
+This session already took the helm at its own startup and has only lost its
+context. Lock ownership is re-verified and the durable records below are
+reprinted, but the sweeps startup already reconciled - project clone refresh,
+secondmate convergence and liveness, pending remote handoff
+retry, X-mode artifact writes, and stale Herdr child cleanup - are NOT repeated.
+Queued wakes ARE still drained: they arrived after startup and are this turn work.
+
+LOCK
+--------------------------------------------------------------------------------
+lock acquired: harness pid 2910790
+
+================================================================================
+CURRENT AGENTS.md - INSTRUCTION REFRESH
+================================================================================
+The complete on-disk AGENTS.md below supersedes the instruction copy this session
+started with. Apply it as the current Firstmate instruction contract.
+
+# --- emitted AGENTS.md refresh body, lines 278-290 (new pointer at line 284) ---
+That skill owns registry syntax, delivery-mode selection, outward-facing consent, clone and initialization procedure, safe rollback, and removal preflight.
+Project creation never authorizes an unmentioned remote, and project removal never bypasses that preflight or unlanded-work checks; hard rule 1's concrete captain-approved project operation exception remains available when its exact conditions are met.
+
+Load `secondmate-provisioning` before creating, seeding, validating, launching, handing backlog to, recovering, pushing inherited local material into, or retiring a secondmate home, and before editing `data/secondmates.md`.
+Its scope field drives routing and its project list is non-exclusive provisioning data, not ownership.
+Keep `local-only` work in the main home.
+A cross-machine handoff - a request that asks another machine to do something - lands in the fleet vault at `~/memory/handoffs/`, whose convention the `origmd` repo's `rules/handoff.md` owns; this home's `data/handoff/<id>.outbox.md` is a different mechanism with a different audience, the cross-home dispatch outbox routed by `tasks-axi mv` and documented in `docs/remote-secondmates.md`.
+
+A secondmate is idle by default and acts only on work routed by the main firstmate.
+It reconciles its own work under way after restart, then waits silently; an empty queue never authorizes a survey, audit, or self-directed improvement sweep.
+Do not reconstruct or supervise a secondmate's child tree from the main home.
+
+Route durable knowledge to its most specific owner:

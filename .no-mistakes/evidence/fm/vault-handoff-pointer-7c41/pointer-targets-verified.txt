@@ -1,0 +1,28 @@
+# Real-environment verification of the targets named by the new AGENTS.md sentence
+
+## Vault directory named by the pointer exists and holds handoffs
+$ ls -d ~/memory/handoffs && ls ~/memory/handoffs | head -5
+/home/onyx/memory/handoffs
+handoff-mac-mini-to-server-origmd-owners-hook.md
+handoff-mac-mini-to-server-pi-fork.md
+handoff-server-to-mac-mini-origmd-owners-delivered.md
+handoff-server-to-server-firstmate-vault-handoffs.md
+handoff-server-to-server-wire-receipt.md
+
+## origmd owns the convention at rules/handoff.md (the named owner)
+$ ls -l /home/onyx/code/origmd/rules/handoff.md
+-rw-r--r--. 1 onyx onyx 2153  9月25日 07:17 /home/onyx/code/origmd/rules/handoff.md
+$ sed -n '10,14p' /home/onyx/code/origmd/rules/handoff.md
+- A handoff is written into the vault, at `~/memory/handoffs/`, and nowhere else. The `/tmp` convention is
+  retired: a temporary path is visible on the machine that wrote it and nowhere else.
+- A record of work already finished is not a handoff: it asks the receiving machine for nothing, it is
+  written in Chinese, and it lands at `~/memory/docs/reports/MM-DD-NN-<topic>.md`, the vault's own
+  convention. The test is whether a machine is being asked to do something — a handoff asks, a report
+
+## The distinct home outbox mechanism is documented where the sentence says
+$ grep -n 'outbox\|tasks-axi mv\|data/handoff' docs/remote-secondmates.md | head -6
+221:For a remote route, `tasks-axi mv` first moves the dependency-closed set atomically from the primary backlog into `data/handoff/<id>.outbox.md`.
+222:The outbox is then copied to the remote handoff scratch directory and `fm-backlog-receive.sh` atomically ingests every destination-absent key under the remote backlog's own lock.
+223:The [`bin/fm-backlog-handoff.sh`](../bin/fm-backlog-handoff.sh) header owns remote outbox release after receipt and stable wake-correlation retry behavior.
+224:Bootstrap retries pending outboxes and wakes, and emits `SECONDMATE_HANDOFF:` only when an outbox remains.
+249:Retirement is executed on the configured host and refuses while the remote home has child work, while the primary has an unfinished backlog outbox, or while a routed reply remains unresolved.
