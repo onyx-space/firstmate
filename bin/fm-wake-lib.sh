@@ -2192,6 +2192,62 @@ fm_wake_secondmate_stall_receipt_write() { # <task> <row-key>
   fi
 }
 
+# The same episode bookkeeping for THIS home's own queue: one progress marker
+# holding the observation window, one stall marker holding the alerted episode,
+# and one receipt per alerted episode closing the append-before-marker crash
+# window. They mirror the fm_wake_secondmate_* writers above without a task
+# dimension, because the queue they describe is this home's own.
+fm_wake_own_stall_progress_write() { # <observed-at> <oldest-row-key>
+  local observed_at=$1 oldest_row_key=$2 marker tmp
+  case "$observed_at" in ''|*[!0-9]*) return 1 ;; esac
+  case "$oldest_row_key" in ''|*[!0-9-]*) return 1 ;; esac
+  marker="$STATE/.own-wake-progress"
+  if [ -e "$marker" ] || [ -L "$marker" ]; then
+    [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
+  fi
+  tmp=$(mktemp "$STATE/.own-wake-progress.XXXXXX") || return 1
+  if ! printf '%s\t%s\n' "$observed_at" "$oldest_row_key" > "$tmp" || ! chmod 0600 "$tmp" \
+    || ! _fm_atomic_replace "$tmp" "$marker"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+}
+
+fm_wake_own_stall_marker_write() { # <row-key>
+  local row_key=$1 marker tmp
+  case "$row_key" in ''|*[!0-9-]*) return 1 ;; esac
+  marker="$STATE/.own-wake-stall"
+  if [ -e "$marker" ] || [ -L "$marker" ]; then
+    [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
+  fi
+  tmp=$(mktemp "$STATE/.own-wake-stall.XXXXXX") || return 1
+  if ! printf '%s\n' "$row_key" > "$tmp" || ! chmod 0600 "$tmp" \
+    || ! _fm_atomic_replace "$tmp" "$marker"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+}
+
+fm_wake_own_stall_receipt_write() { # <row-key>
+  local row_key=$1 root receipt tmp
+  case "$row_key" in ''|*[!0-9-]*) return 1 ;; esac
+  root="$STATE/.own-wake-stall-receipts"
+  if [ -e "$root" ] || [ -L "$root" ]; then
+    [ -d "$root" ] && [ ! -L "$root" ] || return 1
+  else
+    mkdir "$root" || return 1
+    chmod 0700 "$root" || return 1
+  fi
+  receipt="$root/$row_key"
+  [ "$(cat "$receipt" 2>/dev/null || true)" != "$row_key" ] || return 0
+  tmp=$(mktemp "$root/.receipt.XXXXXX") || return 1
+  if ! printf '%s\n' "$row_key" > "$tmp" || ! chmod 0600 "$tmp" \
+    || ! _fm_atomic_replace "$tmp" "$receipt"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+}
+
 fm_wake_commit_secondmate_stall_receipts_through() { # <cutoff> [<rows-file>]
   local cutoff=$1 rows=${2:-} key seq rest epoch task row_key
   while IFS= read -r key; do

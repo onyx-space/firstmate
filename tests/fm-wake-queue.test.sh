@@ -615,6 +615,236 @@ test_empty_prefix_mate_preserves_other_mate_receipt() {
   pass "empty prefix mate cleanup preserves another mate's stall receipt"
 }
 
+# --- own-queue timeliness backstop fixtures ---------------------------------
+# The own-queue cases need a deterministic clock and a deterministic supervisor
+# pane, so they never depend on the endpoint or harness running the suite.
+own_queue_case() {  # <name> <pane-body> -> case dir
+  local name=$1 pane=$2 dir real_date
+  dir=$(make_case "$name")
+  real_date=$(command -v date)
+  printf '%s\n' "$pane" > "$dir/pane.txt"
+  printf '1000\n' > "$dir/now"
+  cat > "$dir/fakebin/date" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = +%s ]; then
+  cat "\${FM_FAKE_NOW_FILE:?}"
+else
+  exec "$real_date" "\$@"
+fi
+SH
+  chmod +x "$dir/fakebin/date"
+  printf '%s\n' "$dir"
+}
+
+# One bounded watcher checkpoint over an own_queue_case: an explicit tmux
+# supervisor target rendered by the fake pane capture, with the busy signature
+# pinned by FM_BUSY_REGEX so the verdict cannot depend on harness detection.
+run_own_queue_checkpoint() {  # <dir> <state> <seconds> <output-file>
+  local dir=$1 state=$2 seconds=$3 out=$4
+  PATH="$dir/fakebin:$PATH" FM_HOME="$dir" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_STATE_OVERRIDE="$state" FM_FAKE_NOW_FILE="$dir/now" \
+    FM_SUPERVISOR_TARGET='firstmate:fm-primary' FM_SUPERVISOR_BACKEND=tmux \
+    FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" FM_BUSY_REGEX='Working\.\.\.' \
+    FM_MAIN_WAKE_STALL_SECS=1 FM_POLL=1 FM_SIGNAL_GRACE=0 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "$ROOT/bin/fm-watch-checkpoint.sh" --seconds "$seconds" > "$out" 2> "$out.err" || true
+}
+
+# The own-queue backstop: the queue THIS session consumes gets the same
+# no-progress observation the foreign-queue path gives a mate, so an actionable
+# row nothing else delivers cannot wait for an unrelated event to wake it.
+test_own_queue_stall_wakes_once_and_acknowledges_with_the_backlog() {
+  local dir state out row_before notification_count
+  dir=$(own_queue_case own-queue-stall 'idle-pane')
+  state="$dir/state"
+  PATH="$dir/fakebin:$PATH" FM_FAKE_NOW_FILE="$dir/now" \
+    append_wake "$state" check relay-merge 'check: merged PR notification' \
+    || fail "could not seed the own-queue row"
+  row_before="$dir/queue-before"
+  cp "$state/.wake-queue" "$row_before"
+
+  # First sight of an already-old row starts an observation interval, so age
+  # alone can never alert.
+  printf '1004\n' > "$dir/now"
+  run_own_queue_checkpoint "$dir" "$state" 4 "$dir/watch-first.out"
+  ! grep -F 'wake-queue stalled' "$dir/watch-first.out" >/dev/null \
+    || fail "the first observation of an old own-queue row alerted on age alone"
+
+  # No movement past the interval is the real failure: nothing woke this session
+  # to drain the row.
+  printf '1006\n' > "$dir/now"
+  out="$dir/watch-stalled.out"
+  run_own_queue_checkpoint "$dir" "$state" 4 "$out"
+  grep -F 'check: wake-queue stalled: row=1 kind=check idle=2s' "$out" >/dev/null \
+    || fail "an own-queue row with no progress did not wake the session: $(cat "$out")"
+  notification_count=$(grep -c $'\twake-queue-stall-' "$state/.wake-queue" || true)
+  [ "$notification_count" -eq 1 ] \
+    || fail "the stalled episode did not publish exactly one durable notification"
+  head -1 "$state/.wake-queue" | cmp -s - "$row_before" \
+    || fail "own-queue observation changed the waiting row"
+
+  # The same silent episode is not notified a second time.
+  printf '1008\n' > "$dir/now"
+  run_own_queue_checkpoint "$dir" "$state" 4 "$dir/watch-repeat.out"
+  ! grep -F 'wake-queue stalled' "$dir/watch-repeat.out" >/dev/null \
+    || fail "a still-silent stalled episode notified itself twice"
+  notification_count=$(grep -c $'\twake-queue-stall-' "$state/.wake-queue" || true)
+  [ "$notification_count" -eq 1 ] \
+    || fail "the stalled episode published more than one durable notification"
+
+  # Handling the notification closes the episode: the drain consumes the waiting
+  # row and its notification together.
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/drain.out" 2> "$dir/drain.err" \
+    || fail "drain failed over the stalled own queue"
+  ack_drain_err "$state" "$dir/drain.err" \
+    || fail "the own-queue stall episode could not be acknowledged"
+  [ ! -s "$state/.wake-queue" ] || fail "acknowledgement left the stalled own queue behind"
+
+  printf '1010\n' > "$dir/now"
+  run_own_queue_checkpoint "$dir" "$state" 4 "$dir/watch-after-ack.out"
+  [ ! -e "$state/.own-wake-stall" ] && [ ! -e "$state/.own-wake-progress" ] \
+    || fail "an acknowledged episode kept its own-queue stall bookkeeping"
+  pass "an own-queue row that stops moving wakes the session once and acknowledges with the backlog"
+}
+
+test_own_queue_fresh_and_advancing_positions_stay_silent() {
+  local dir state out notification_count
+  dir=$(own_queue_case own-queue-fresh 'idle-pane')
+  state="$dir/state"
+  PATH="$dir/fakebin:$PATH" FM_FAKE_NOW_FILE="$dir/now" \
+    append_wake "$state" check fresh 'check: just arrived' \
+    || fail "could not seed the fresh own-queue row"
+
+  # Well past the interval, but new to observation: a row that arrived is not yet
+  # evidence that nothing is draining the queue.
+  printf '1004\n' > "$dir/now"
+  run_own_queue_checkpoint "$dir" "$state" 4 "$dir/watch-fresh.out"
+  ! grep -F 'wake-queue stalled' "$dir/watch-fresh.out" >/dev/null \
+    || fail "a freshly appended row was escalated on age alone"
+  [ "$(grep -c $'\twake-queue-stall-' "$state/.wake-queue" || true)" -eq 0 ] \
+    || fail "a freshly appended row published a durable stall notification"
+
+  # Drain progress consumes the old position and makes a newer row the oldest:
+  # that is a fresh observation interval, not a continued freeze.
+  printf '1006\n' > "$dir/now"
+  append_wake "$state" check newer 'check: drain moved on' \
+    || fail "could not seed the advancing own-queue row"
+  tail -n +2 "$state/.wake-queue" > "$dir/queue-moved"
+  mv "$dir/queue-moved" "$state/.wake-queue"
+  printf '1008\n' > "$dir/now"
+  out="$dir/watch-advancing.out"
+  run_own_queue_checkpoint "$dir" "$state" 4 "$out"
+  ! grep -F 'wake-queue stalled' "$out" >/dev/null \
+    || fail "a newly oldest own-queue row cascaded an immediate alert: $(cat "$out")"
+  notification_count=$(grep -c $'\twake-queue-stall-' "$state/.wake-queue" || true)
+  [ "$notification_count" -eq 0 ] \
+    || fail "an advancing own queue published a stall notification"
+  pass "fresh and advancing own-queue positions stay silent, so an aged row is the only thing that wakes"
+}
+
+test_own_queue_active_turn_defers_stall_until_the_turn_ends() {
+  local dir state out notification_count
+  dir=$(own_queue_case own-queue-active-turn 'Working...')
+  state="$dir/state"
+  PATH="$dir/fakebin:$PATH" FM_FAKE_NOW_FILE="$dir/now" \
+    append_wake "$state" check relay-merge 'check: merged PR notification' \
+    || fail "could not seed the own-queue row"
+
+  printf '1004\n' > "$dir/now"
+  run_own_queue_checkpoint "$dir" "$state" 4 "$dir/watch-observed.out"
+
+  # The interval has elapsed, but this session is provably inside a turn: it
+  # drains between turns, so the queue is not abandoned yet.
+  printf '1006\n' > "$dir/now"
+  out="$dir/watch-busy.out"
+  run_own_queue_checkpoint "$dir" "$state" 4 "$out"
+  ! grep -F 'wake-queue stalled' "$out" >/dev/null \
+    || fail "a session inside an active turn was escalated as a stalled queue"
+  notification_count=$(grep -c $'\twake-queue-stall-' "$state/.wake-queue" || true)
+  [ "$notification_count" -eq 0 ] \
+    || fail "a session inside an active turn published a durable stall notification"
+
+  # The same frozen queue is still reported once the turn ends: the gate defers
+  # the escalation without cancelling it.
+  printf 'idle-pane\n' > "$dir/pane.txt"
+  printf '1008\n' > "$dir/now"
+  run_own_queue_checkpoint "$dir" "$state" 4 "$dir/watch-idle.out"
+  grep -F 'check: wake-queue stalled: row=1 kind=check idle=4s' "$dir/watch-idle.out" >/dev/null \
+    || fail "the queue stayed hidden after the turn ended: $(cat "$dir/watch-idle.out")"
+  pass "an active turn defers the own-queue stall escalation without cancelling it"
+}
+
+test_own_queue_stall_receipt_survives_a_pre_marker_crash() {
+  local dir state row_key out notification_count
+  dir=$(own_queue_case own-queue-receipt 'idle-pane')
+  state="$dir/state"
+  PATH="$dir/fakebin:$PATH" FM_FAKE_NOW_FILE="$dir/now" \
+    append_wake "$state" check relay-merge 'check: merged PR notification' \
+    || fail "could not seed the own-queue row"
+  row_key=$(awk -F '\t' '{ print $1 "-" $2 }' "$state/.wake-queue")
+  printf '%s\t%s\n' 1000 "$row_key" > "$state/.own-wake-progress"
+  append_wake "$state" check "wake-queue-stall-$row_key" \
+    "check: wake-queue stalled: row=1 kind=check idle=2s" \
+    || fail "could not seed the already-published episode"
+  mkdir -p "$state/.own-wake-stall-receipts"
+  printf '%s\n' "$row_key" > "$state/.own-wake-stall-receipts/$row_key"
+
+  printf '1004\n' > "$dir/now"
+  out="$dir/watch-crash.out"
+  run_own_queue_checkpoint "$dir" "$state" 4 "$out"
+  notification_count=$(grep -c $'\twake-queue-stall-' "$state/.wake-queue" || true)
+  [ "$notification_count" -eq 1 ] \
+    || fail "a recorded episode receipt re-published its durable notification"
+  [ "$(cat "$state/.own-wake-stall" 2>/dev/null || true)" = "$row_key" ] \
+    || fail "the crash-recovered episode did not record its marker"
+  ! grep -F 'wake-queue stalled' "$out" >/dev/null \
+    || fail "the crash-recovered episode re-alerted instead of relying on its durable notification"
+  pass "a recorded own-queue episode receipt replays without re-publishing or re-alerting"
+}
+
+test_own_queue_observation_never_preempts_the_secondmate_path() {
+  local dir state sub fakebin epoch row_before sub_before out
+  dir=$(make_case own-queue-beside-secondmate)
+  state="$dir/state"
+  sub="$dir/secondmate"
+  mkdir -p "$sub/state"
+  printf 'mate\n' > "$sub/.fm-secondmate-home"
+  printf 'window=firstmate:fm-mate\nkind=secondmate\nharness=claude\nbackend=tmux\nhome=%s\n' \
+    "$sub" > "$state/mate.meta"
+  epoch=$(( $(date +%s) - 10 ))
+  printf '%s\t7\tcheck\trouted\tcheck: routed row\n' "$epoch" > "$sub/state/.wake-queue"
+  printf '%s\t%s-7\n' "$(( $(date +%s) - 2 ))" "$epoch" > "$state/.secondmate-wake-progress-mate"
+  append_wake "$state" check relay-merge 'check: merged PR notification' \
+    || fail "could not seed the own-queue row"
+  row_before="$dir/queue-before"
+  cp "$state/.wake-queue" "$row_before"
+  sub_before="$dir/foreign-before"
+  cp "$sub/state/.wake-queue" "$sub_before"
+
+  fakebin="$dir/fakebin"
+  out="$dir/watch.out"
+  PATH="$fakebin:$PATH" FM_HOME="$dir" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_STATE_OVERRIDE="$state" FM_FAKE_TMUX_WINDOW='firstmate:fm-mate' \
+    FM_MAIN_WAKE_STALL_SECS=1 FM_SECONDMATE_WAKE_STALL_SECS=1 FM_POLL=1 FM_SIGNAL_GRACE=0 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "$ROOT/bin/fm-watch-checkpoint.sh" --seconds 4 > "$out" 2> "$out.err" || true
+  grep -F 'check: secondmate wake-loop stalled: mate=mate row=7 ' "$out" >/dev/null \
+    || fail "the secondmate stall path changed: $(cat "$out")"
+  ! grep -F 'wake-queue stalled' "$out" >/dev/null \
+    || fail "the own-queue observation preempted the secondmate wake"
+  head -1 "$state/.wake-queue" | cmp -s - "$row_before" \
+    || fail "own-queue bookkeeping touched the waiting row while a secondmate wake was due"
+  [ "$(grep -c $'\twake-queue-stall-' "$state/.wake-queue" || true)" -eq 0 ] \
+    || fail "the own-queue observation published a notification while a secondmate wake was due"
+  [ "$(grep -c $'\tsecondmate-wake-loop-mate-' "$state/.wake-queue" || true)" -eq 1 ] \
+    || fail "the secondmate episode did not publish exactly one parent notification"
+  [ ! -e "$state/.own-wake-stall" ] && [ ! -e "$state/.own-wake-progress" ] \
+    || fail "own-queue bookkeeping ran while a secondmate wake was due"
+  cmp -s "$sub_before" "$sub/state/.wake-queue" \
+    || fail "the secondmate observation changed the foreign row"
+  pass "a secondmate stall still wakes with its own reason, and the own-queue observation stays behind it"
+}
+
 test_drain_asserts_watcher_liveness() {
   local dir state err identity
   dir=$(make_case drain-liveness)
@@ -2022,6 +2252,11 @@ test_secondmate_active_turn_defers_stall_until_the_turn_ends
 test_secondmate_stall_marker_rejects_symlink
 test_acknowledged_stall_publication_survives_pre_marker_crash
 test_empty_prefix_mate_preserves_other_mate_receipt
+test_own_queue_stall_wakes_once_and_acknowledges_with_the_backlog
+test_own_queue_fresh_and_advancing_positions_stay_silent
+test_own_queue_active_turn_defers_stall_until_the_turn_ends
+test_own_queue_stall_receipt_survives_a_pre_marker_crash
+test_own_queue_observation_never_preempts_the_secondmate_path
 test_self_announced_append_guards
 test_historical_annotation_skips_announced_status
 test_concurrent_append_and_drain
