@@ -2193,10 +2193,11 @@ fm_wake_secondmate_stall_receipt_write() { # <task> <row-key>
 }
 
 # The same episode bookkeeping for THIS home's own queue: one progress marker
-# holding the observation window, one stall marker holding the alerted episode,
-# and one receipt per alerted episode closing the append-before-marker crash
-# window. They mirror the fm_wake_secondmate_* writers above without a task
-# dimension, because the queue they describe is this home's own.
+# holding the observation window, one stall marker holding the episode whose
+# actionable exit was actually emitted, and one receipt per announced episode
+# recording that its keyed notification was appended. They mirror the
+# fm_wake_secondmate_* writers above without a task dimension, because the queue
+# they describe is this home's own.
 fm_wake_own_stall_progress_write() { # <observed-at> <oldest-row-key>
   local observed_at=$1 oldest_row_key=$2 marker tmp
   case "$observed_at" in ''|*[!0-9]*) return 1 ;; esac

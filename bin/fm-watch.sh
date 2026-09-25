@@ -118,7 +118,8 @@
 #                          notification and exits actionably: the session then
 #                          drains and acknowledges the backlog it was never woken
 #                          for. Row position, the per-episode receipt, and the
-#                          queued key dedupe repeats, observation is read-only,
+#                          queued key dedupe repeats; only the appended
+#                          notification is written back into the observed queue,
 #                          and declared external-wait pause rows do not feed it
 # For normal supervision, resume the session-start primary-harness protocol
 # after each printed reason. Direct duplicate invocations of this script still
@@ -884,8 +885,9 @@ main_in_active_turn() {
   native=$(fm_backend_busy_state "$backend" "$target" 2>/dev/null)
   [ "$native" = busy ] && return 0
   tail40=$(fm_backend_capture "$backend" "$target" 40 2>/dev/null) || return 1
+  main_harness >/dev/null
   printf '%s' "$tail40" | grep -v '^[[:space:]]*$' | tail -12 \
-    | fm_busy_lines_match "$(main_harness)"
+    | fm_busy_lines_match "$FM_WATCH_MAIN_HARNESS"
 }
 
 # Memoised: harness detection walks process ancestry, which is too heavy to pay
@@ -898,6 +900,17 @@ main_harness() {
   printf '%s' "$FM_WATCH_MAIN_HARNESS"
 }
 
+# Set on the own-queue announce and re-delivery paths so wake()'s post-output
+# hook records that the actionable exit was actually emitted. A watcher that dies
+# after appending the notification but before that emission leaves the marker
+# absent and the next cycle re-delivers instead of suppressing the episode.
+FM_OWN_STALL_DELIVER_KEY=
+own_wake_stall_mark_delivered() {  # <output-status>
+  [ "$1" = 0 ] || return 0
+  [ -n "$FM_OWN_STALL_DELIVER_KEY" ] || return 0
+  fm_wake_own_stall_marker_write "$FM_OWN_STALL_DELIVER_KEY" || true
+}
+
 # Surface one durable actionable exit when this home's OWN queue has stopped
 # being drained. Same oldest-actionable-position identity, observation window,
 # per-episode receipt and marker, and not-in-an-active-turn gate the foreign
@@ -905,13 +918,15 @@ main_harness() {
 # from whose queue it is: the notification names the episode rather than a mate,
 # and the rows it reports are already durable, so the notification is purely the
 # doorbell for them and its key is derived from the observed position. The
-# notification is appended before the actionable exit exactly as the mate path
-# does, so a crash between appending it and recording the episode replays the
-# receipt instead of publishing a second one.
+# per-episode marker records a DELIVERED exit rather than the append, so a crash
+# between appending the notification and emitting the wake leaves the marker
+# absent and the next cycle re-delivers the same episode instead of publishing a
+# second notification or suppressing it forever.
 own_wake_queue_stall_tick() {
   local now=$(( $(date +%s) )) threshold=$MAIN_WAKE_STALL_SECS
   local row epoch seq row_kind _row_key _row_payload row_key marker progress_marker progress
-  local observed_at observed_key receipt_root receipt notify_key queued idle reason episode_alerted
+  local observed_at observed_key receipt_root receipt notify_key queued idle reason
+  local delivered receipt_present notification_queued
   marker="$STATE/.own-wake-stall"
   progress_marker="$STATE/.own-wake-progress"
   receipt_root="$STATE/.own-wake-stall-receipts"
@@ -930,10 +945,10 @@ EOF
   case "$epoch" in ''|*[!0-9]*) return 0 ;; esac
   case "$seq" in ''|*[!0-9]*) return 0 ;; esac
   row_key="$epoch-$seq"
-  episode_alerted=0
+  delivered=0
   if [ -e "$marker" ] || [ -L "$marker" ]; then
     [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
-    episode_alerted=1
+    [ "$(cat "$marker" 2>/dev/null || true)" = "$row_key" ] && delivered=1
   fi
   progress=$(cat "$progress_marker" 2>/dev/null || true)
   observed_at=${progress%%[[:space:]]*}
@@ -948,10 +963,10 @@ EOF
   if [ -z "$observed_at" ] || [ -z "$observed_key" ] \
     || [ "$now" -lt "$observed_at" ] || [ "$row_key" != "$observed_key" ]; then
     fm_wake_own_stall_progress_write "$now" "$row_key" || return 1
-    [ "$episode_alerted" -eq 0 ] || rm -f "$marker" || return 1
+    rm -f "$marker" || return 1
     return 0
   fi
-  [ "$episode_alerted" -eq 0 ] || return 0
+  [ "$delivered" -eq 0 ] || return 0
   idle=$((now - observed_at))
   [ "$idle" -ge "$threshold" ] || return 0
   ! main_in_active_turn || return 0
@@ -961,18 +976,25 @@ EOF
   # ends, while a row another actor holds leaves the position - and therefore this
   # marker - exactly where it is.
   receipt="$receipt_root/$row_key"
-  if [ "$(cat "$receipt" 2>/dev/null || true)" = "$row_key" ]; then
-    fm_wake_own_stall_marker_write "$row_key" || return 1
-    return 0
-  fi
+  receipt_present=0
+  [ "$(cat "$receipt" 2>/dev/null || true)" = "$row_key" ] && receipt_present=1
   notify_key="wake-queue-stall-$row_key"
   reason="check: wake-queue stalled: row=$seq kind=$row_kind idle=${idle}s"
   queued=$(fm_wake_queued_keys check) || return 1
-  if ! printf '%s\n' "$queued" | grep -Fx "$notify_key" >/dev/null 2>&1; then
+  notification_queued=0
+  printf '%s\n' "$queued" | grep -Fx "$notify_key" >/dev/null 2>&1 && notification_queued=1
+  # The notification is gone but this episode was already announced: it was
+  # consumed, so record the delivered marker and stop instead of announcing again.
+  if [ "$notification_queued" -eq 0 ] && [ "$receipt_present" -eq 1 ]; then
+    fm_wake_own_stall_marker_write "$row_key" || return 1
+    return 0
+  fi
+  if [ "$notification_queued" -eq 0 ]; then
     fm_wake_append check "$notify_key" "$reason" || return 1
   fi
   fm_wake_own_stall_receipt_write "$row_key" || return 1
-  fm_wake_own_stall_marker_write "$row_key" || return 1
+  FM_OWN_STALL_DELIVER_KEY=$row_key
+  FM_WAKE_POST_OUTPUT_ACTION=own_wake_stall_mark_delivered
   wake "$reason"
 }
 

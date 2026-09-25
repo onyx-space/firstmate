@@ -774,9 +774,14 @@ test_own_queue_active_turn_defers_stall_until_the_turn_ends() {
   pass "an active turn defers the own-queue stall escalation without cancelling it"
 }
 
-test_own_queue_stall_receipt_survives_a_pre_marker_crash() {
+# The append-before-wake crash window: the durable notification was appended (and
+# its receipt recorded), the watcher died before emitting the actionable exit,
+# and the row cannot move while nobody is woken. The next cycle must re-deliver
+# that exit instead of returning silently, without publishing a second keyed
+# notification for the same episode.
+test_own_queue_stall_redelivers_a_wake_lost_before_delivery() {
   local dir state row_key out notification_count
-  dir=$(own_queue_case own-queue-receipt 'idle-pane')
+  dir=$(own_queue_case own-queue-redeliver 'idle-pane')
   state="$dir/state"
   PATH="$dir/fakebin:$PATH" FM_FAKE_NOW_FILE="$dir/now" \
     append_wake "$state" check relay-merge 'check: merged PR notification' \
@@ -790,16 +795,43 @@ test_own_queue_stall_receipt_survives_a_pre_marker_crash() {
   printf '%s\n' "$row_key" > "$state/.own-wake-stall-receipts/$row_key"
 
   printf '1004\n' > "$dir/now"
-  out="$dir/watch-crash.out"
+  out="$dir/watch-redeliver.out"
   run_own_queue_checkpoint "$dir" "$state" 4 "$out"
   notification_count=$(grep -c $'\twake-queue-stall-' "$state/.wake-queue" || true)
   [ "$notification_count" -eq 1 ] \
-    || fail "a recorded episode receipt re-published its durable notification"
+    || fail "a lost-delivery replay published a second durable notification"
   [ "$(cat "$state/.own-wake-stall" 2>/dev/null || true)" = "$row_key" ] \
-    || fail "the crash-recovered episode did not record its marker"
-  ! grep -F 'wake-queue stalled' "$out" >/dev/null \
-    || fail "the crash-recovered episode re-alerted instead of relying on its durable notification"
-  pass "a recorded own-queue episode receipt replays without re-publishing or re-alerting"
+    || fail "the re-delivered episode did not record its delivered marker"
+  grep -F 'check: wake-queue stalled: row=1 kind=check idle=4s' "$out" >/dev/null \
+    || fail "the wake lost before delivery was never re-delivered: $(cat "$out")"
+  pass "a wake lost after its notification was appended is re-delivered without republishing"
+}
+
+# The other half of that window: the watcher died after the append but before the
+# receipt was recorded, so the notification is queued with no episode record at
+# all. De-duplication must still re-deliver without a second append.
+test_own_queue_stall_redelivers_a_wake_lost_before_the_receipt() {
+  local dir state row_key out notification_count
+  dir=$(own_queue_case own-queue-append-crash 'idle-pane')
+  state="$dir/state"
+  PATH="$dir/fakebin:$PATH" FM_FAKE_NOW_FILE="$dir/now" \
+    append_wake "$state" check relay-merge 'check: merged PR notification' \
+    || fail "could not seed the own-queue row"
+  row_key=$(awk -F '\t' '{ print $1 "-" $2 }' "$state/.wake-queue")
+  printf '%s\t%s\n' 1000 "$row_key" > "$state/.own-wake-progress"
+  append_wake "$state" check "wake-queue-stall-$row_key" \
+    "check: wake-queue stalled: row=1 kind=check idle=2s" \
+    || fail "could not seed the appended-but-unrecorded episode"
+
+  printf '1004\n' > "$dir/now"
+  out="$dir/watch-append-crash.out"
+  run_own_queue_checkpoint "$dir" "$state" 4 "$out"
+  notification_count=$(grep -c $'\twake-queue-stall-' "$state/.wake-queue" || true)
+  [ "$notification_count" -eq 1 ] \
+    || fail "an appended-but-unrecorded episode published a second notification"
+  grep -F 'check: wake-queue stalled: row=1 kind=check idle=4s' "$out" >/dev/null \
+    || fail "an appended-but-unrecorded episode was never re-delivered: $(cat "$out")"
+  pass "an episode whose notification was appended before a crash is re-delivered without a second append"
 }
 
 test_own_queue_observation_never_preempts_the_secondmate_path() {
@@ -2255,7 +2287,8 @@ test_empty_prefix_mate_preserves_other_mate_receipt
 test_own_queue_stall_wakes_once_and_acknowledges_with_the_backlog
 test_own_queue_fresh_and_advancing_positions_stay_silent
 test_own_queue_active_turn_defers_stall_until_the_turn_ends
-test_own_queue_stall_receipt_survives_a_pre_marker_crash
+test_own_queue_stall_redelivers_a_wake_lost_before_delivery
+test_own_queue_stall_redelivers_a_wake_lost_before_the_receipt
 test_own_queue_observation_never_preempts_the_secondmate_path
 test_self_announced_append_guards
 test_historical_annotation_skips_announced_status
