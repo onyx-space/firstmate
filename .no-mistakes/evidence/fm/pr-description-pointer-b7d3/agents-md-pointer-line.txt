@@ -1,0 +1,35 @@
+# AGENTS.md change: one pointer line (base 4bdbc77 -> target c4e1b18)
+
+## diff
++++ b/AGENTS.md
+@@ -392,6 +392,7 @@ The worker reports the PR when CI first becomes green rather than waiting for me
+ For PR-based ship tasks, the ready signal depends on mode: `no-mistakes` reports `done: PR <url> checks green` after CI is green, while `direct-PR` reports `done: PR <url>` after opening the PR.
+ Run `bin/fm-pr-check.sh <id> <PR url>` with the URL copied from that ready signal - it records `pr=` and the forge's `pr_head=` when available in the task's meta and arms the watcher's merge poll.
+ Tell the captain the PR's full `https://...` URL copied from the worker's ready line or the task's `pr=` metadata, a concise outcome summary, and the no-mistakes risk level when applicable.
++Before writing or editing any pull request description, load the `pr-description` skill (`~/.agents/skills/pr-description/SKILL.md`), which is the single owner of that contract; a spawned worker receives the same pointer in its brief, rendered from `bin/fm-dod-lib.sh`.
+ A captain instruction to merge is explicit authority; `yolo` is the only standing routine merge authority.
+ For any custom `state/<id>.check.sh` you write yourself, keep it an ordinary single-link mode-`0700` file, print one line only when firstmate should wake, print nothing otherwise, finish before `FM_CHECK_TIMEOUT`, then bind its current bytes with `bin/fm-check-register.sh <id>` before the watcher may execute it.
+ Retire a custom check only through `bin/fm-check-unregister.sh <id>` (or `bin/fm-teardown.sh` for a spawned task); never hand-compose an `rm` with `$STATE`/`$ID`.
+
+## added line (exact)
+Before writing or editing any pull request description, load the `pr-description` skill (`~/.agents/skills/pr-description/SKILL.md`), which is the single owner of that contract; a spawned worker receives the same pointer in its brief, rendered from `bin/fm-dod-lib.sh`.
+
+## required content
+names the skill as single owner: 1
+names the skill path:            1
+names the fm-dod-lib.sh carrier: 1
+
+## adversarial: restates no contract rule
+# contract tokens live only in the skill and the brief block's self-check
+added line contains 'gh pr edit': 0
+added line contains '## 摘要': 0
+added line contains '## Summary': 0
+added line contains '<details><summary>English</summary>': 0
+added line contains 'Chinese after the conventional-commit prefix': 0
+
+## referenced skill resolves on this host
+-rw-r--r--. 1 onyx onyx 4413  9月10日 22:00 /home/onyx/.agents/skills/pr-description/SKILL.md
+---
+name: pr-description
+version: 0.1.0
+description: "给自有仓 PR 写描述（GitHub onyx-space/* 与内网 Gitea admin/*、AI.Buddy/*）：中文在上（默认可见），英文折叠在下。开 PR 前、改 PR 描述前、或有人问「PR 描述怎么写」时用。取消旧的「必须跑 ce-translate」要求。"

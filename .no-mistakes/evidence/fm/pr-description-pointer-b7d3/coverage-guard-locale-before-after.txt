@@ -1,0 +1,26 @@
+# Coverage guard locale-collation fix — before/after
+# Worktree: /home/onyx/.no-mistakes/worktrees/42774a4b8442/01M3BWAYM3WDBEHGH34GXJJHXD
+# Command under test: bin/fm-test-run.sh --check-coverage  (the CI gate in .github/workflows/ci.yml)
+# 'base' = target file with the 9 added 'LC_ALL=C ' prefixes on comm removed (pre-c4e1b18 behavior)
+# 'fixed' = the target file as committed (c4e1b18)
+
+=== variant=base locale=zh_CN.UTF-8 exit=1 ===
+comm: 文件 2 没有被正确排序
+comm: 输入没有被正确排序
+
+=== variant=fixed locale=zh_CN.UTF-8 exit=0 ===
+FM_TEST_COVERAGE ok total=211 parallel=24 parallel_max_ms=406109 parallel_imbalance_ms=42 parallel_unhinted=0 serial=171 serial_shards=5 serial_unhinted=23 herdr=16
+
+=== variant=base locale=en_US.UTF-8 exit=1 ===
+comm: file 2 is not in sorted order
+comm: input is not in sorted order
+
+=== variant=fixed locale=en_US.UTF-8 exit=0 ===
+FM_TEST_COVERAGE ok total=211 parallel=24 parallel_max_ms=406109 parallel_imbalance_ms=42 parallel_unhinted=0 serial=171 serial_shards=5 serial_unhinted=23 herdr=16
+
+=== variant=base locale=C exit=0 ===
+FM_TEST_COVERAGE ok total=211 parallel=24 parallel_max_ms=406109 parallel_imbalance_ms=42 parallel_unhinted=0 serial=171 serial_shards=5 serial_unhinted=23 herdr=16
+
+=== variant=fixed locale=C exit=0 ===
+FM_TEST_COVERAGE ok total=211 parallel=24 parallel_max_ms=406109 parallel_imbalance_ms=42 parallel_unhinted=0 serial=171 serial_shards=5 serial_unhinted=23 herdr=16
+
