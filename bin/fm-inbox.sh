@@ -56,6 +56,10 @@
 #
 # Environment:
 #   FM_HOME              operational home whose state/ and data/ are used.
+#   FM_MACHINE_FILE      machine file whose "Long-lived maintenance lanes" line
+#                        names this endpoint's lanes (default ~/AGENTS.md).
+#   FM_WIRE_CONFIG       wire's own config, read for the endpoint key a lane's
+#                        registered name belongs to (default ~/.config/wire/config.json).
 #
 # PRIVACY: `say` sends your audio and `ask` sends your question to Bedrock.
 # `note`, `status`, `list` and `drain` make no network call at all.
@@ -171,6 +175,15 @@ ack_now() {  # <id>
   mv "$INBOX/$1.note" "$INBOX/handled/$1.note"
 }
 
+# The ONE move into dispatched/: a notification note whose wake was DELIVERED to
+# the long-lived lane that serves the note's repository. Kept apart from handled/
+# so a reader can tell a notification firstmate handled itself from one a lane
+# took over, and so the acknowledgement's own output can name which happened.
+dispatch_now() {  # <id>
+  mkdir -p "$INBOX/dispatched"
+  mv "$INBOX/$1.note" "$INBOX/dispatched/$1.note"
+}
+
 # Sources whose records are notifications a firstmate integration queued rather
 # than the captain's own words. Only these are archived as a side effect of their
 # wake row being acknowledged; every other source, including a legacy record with
@@ -184,6 +197,147 @@ fm_inbox_source_is_notification() {  # <source>
     relay) return 0 ;;
   esac
   return 1
+}
+
+# ------------------------------------------------------------- lane dispatch
+#
+# A merge wake for a repository this endpoint maintains with a long-lived
+# maintenance lane belongs in that lane's own session: the lane is the reader the
+# wake exists for, and archiving the note as handled leaves it with nothing. The
+# lane list is this endpoint's machine file (the injected copy of admin/origmd's
+# inject/machines/<key>.md), whose "Long-lived maintenance lanes" line carries
+# each lane's name and directory; the repository a lane serves is read from that
+# directory's own checkout rather than its name, so a lane checking out a
+# different repository takes the ordinary archive path. wire is addressed by the
+# name the machine file and wire's own sessions map agree on, and the endpoint
+# key `--to` needs is read back from wire's own config - the row registering that
+# name is this endpoint's row - so the machine key/endpoint pairing is never
+# restated here.
+#
+# Refusal is fail-closed: a lane that serves the repository but cannot be reached
+# leaves the note and its wake row where they are, retryable, instead of
+# reporting a delivery that did not happen. A repository with no lane, and a
+# machine with no wire installed, both keep the pre-existing archive path.
+FM_MACHINE_FILE=${FM_MACHINE_FILE:-$HOME/AGENTS.md}
+FM_WIRE_CONFIG=${FM_WIRE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/wire/config.json}
+FM_INBOX_DISPATCH_LANE=
+FM_INBOX_DISPATCH_ERROR=
+
+# The declared lanes of this endpoint, as "<name>\t<directory>". The line is
+# prose written for a reader, so the parse accepts the one shape the fleet's
+# machine files use - a backticked name followed by its pane and directory in
+# parentheses - and an unparsable line declares no lane instead of a wrong one.
+lane_dispatch_lines() {
+  local file=$FM_MACHINE_FILE
+  [ -f "$file" ] && [ ! -L "$file" ] || return 0
+  python3 - "$file" <<'PY'
+import re
+import sys
+
+try:
+    text = open(sys.argv[1], encoding="utf-8").read()
+except OSError:
+    sys.exit(0)
+match = re.search(r"^[-*] Long-lived maintenance lanes:(.*)$", text, re.M)
+if not match:
+    sys.exit(0)
+for name, directory in re.findall(
+    r"`([A-Za-z0-9._-]+)`\s*\(pane\s*`[^`]+`,\s*`([^`]+)`\)",
+    match.group(1).split(";")[0],
+):
+    print(f"{name}\t{directory}")
+PY
+}
+
+# The "owner/name" a lane's own checkout points at, or nothing when the
+# directory is not a checkout with an origin. HTTPS, ssh:// and scp-like remotes
+# all normalize to the same token, which is what the relay line names.
+lane_repo_of_dir() {  # <directory>
+  local dir=$1 url
+  [ -d "$dir" ] || return 0
+  url=$(git -C "$dir" config --get remote.origin.url 2>/dev/null) || return 0
+  [ -n "$url" ] || return 0
+  printf '%s\n' "$url" \
+    | sed -E 's#^[A-Za-z][A-Za-z0-9+.-]*://([^/@]+@)?[^/]+/##; s#^[^/@]+@[^/:]+:##; s#\.git$##; s#/$##'
+}
+
+# The endpoint key wire needs to address this endpoint, read from wire's own
+# config: the row whose sessions map registers <lane-name> is this endpoint's
+# row, because a lane works in a checkout on the endpoint it is declared by. No
+# row or several rows is no answer, never a guessed one.
+lane_endpoint_key() {  # <lane-name>
+  local config=$FM_WIRE_CONFIG lane=$1
+  [ -f "$config" ] && [ ! -L "$config" ] || return 0
+  python3 - "$config" "$lane" <<'PY'
+import json
+import sys
+
+try:
+    data = json.load(open(sys.argv[1], encoding="utf-8"))
+except (OSError, ValueError):
+    sys.exit(0)
+rows = data.get("endpoints") if isinstance(data, dict) else None
+if not isinstance(rows, dict):
+    sys.exit(0)
+keys = [
+    key
+    for key, row in rows.items()
+    if isinstance(row, dict) and sys.argv[2] in (row.get("sessions") or {})
+]
+if len(keys) == 1:
+    print(keys[0])
+PY
+}
+
+# The lane serving a note's repository, as "<name>\t<owner/name>", or nothing.
+# Only a note that reports a merge qualifies: an ordinary relay notification is
+# something firstmate reads, not a piece of work a lane takes over.
+lane_for_note() {  # <note-file>
+  local note=$1 text name directory repo
+  [ -f "$note" ] || return 0
+  text=$(cat "$note" 2>/dev/null || true)
+  printf '%s' "$text" | grep -qE '(^|[^a-z])merged([^a-z]|$)' || return 0
+  while IFS=$(printf '\t') read -r name directory; do
+    [ -n "$name" ] || continue
+    repo=$(lane_repo_of_dir "$directory")
+    [ -n "$repo" ] || continue
+    case "$text" in
+      *"$repo#"*) printf '%s\t%s\n' "$name" "$repo"; return 0 ;;
+    esac
+  done < <(lane_dispatch_lines)
+  return 0
+}
+
+# 0 delivered to the lane (FM_INBOX_DISPATCH_LANE names it), 1 no lane serves this
+# repository, 2 a lane does and the delivery could not be made
+# (FM_INBOX_DISPATCH_ERROR says why).
+dispatch_note_to_lane() {  # <id>
+  local id=$1 note="$INBOX/$1.note" match lane repo key wire body out rc=0
+  FM_INBOX_DISPATCH_LANE=
+  FM_INBOX_DISPATCH_ERROR=
+  match=$(lane_for_note "$note")
+  [ -n "$match" ] || return 1
+  lane=${match%%$'\t'*}
+  repo=${match#*$'\t'}
+  key=$(lane_endpoint_key "$lane")
+  if [ -z "$key" ]; then
+    FM_INBOX_DISPATCH_ERROR="lane $lane is not registered in $FM_WIRE_CONFIG, so this endpoint's key is unknown"
+    return 2
+  fi
+  if ! wire=$(command -v wire); then
+    FM_INBOX_DISPATCH_ERROR="lane $lane serves $repo but wire is not installed on this endpoint"
+    return 2
+  fi
+  body=$(sed -n '/^--$/,$p' "$note" 2>/dev/null | tail -n +2 | head -n 1)
+  out=$("$wire" send --to "$key" --session "$lane" \
+    --text "merge wake: $repo merged - firstmate dispatched this relay notification to the lane serving it (note $id)${body:+: $body}" 2>&1) \
+    || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    FM_INBOX_DISPATCH_ERROR="wire send to lane $lane failed: ${out:-no output}"
+    return 2
+  fi
+  FM_INBOX_DISPATCH_LANE=$lane
+  return 0
 }
 
 # Append exactly one wake so firstmate picks the note up at its next drain.
@@ -429,11 +583,14 @@ cmd_drain() {
       # The seam bin/fm-wake-drain.sh calls with the ids whose wake rows its
       # --ack-through just consumed: this subcommand, not the drain, decides
       # which of those notes are archived now and which stay for an explicit
-      # --ack. See docs/watcher-continuity.md for the source-dependent contract.
+      # --ack. A notification whose repository a long-lived lane serves is
+      # dispatched to that lane instead, and a dispatch that could not be made
+      # fails the acknowledgement so the row and its note stay together. See
+      # docs/watcher-continuity.md for the source-dependent contract.
       shift
       [ "$#" -gt 0 ] || die "usage: fm-inbox.sh drain --ack-notifications <id>..."
       mkdir -p "$INBOX/handled"
-      local nid
+      local nid dispatch_status rc=0
       for nid in "$@"; do
         case "$nid" in
           ''|*[!A-Za-z0-9._-]*) printf 'skipped %s\n' "$nid"; continue ;;
@@ -441,13 +598,27 @@ cmd_drain() {
         if [ ! -f "$INBOX/$nid.note" ]; then
           printf 'already-acked %s\n' "$nid"
         elif fm_inbox_source_is_notification "$(note_source "$INBOX/$nid.note")"; then
-          ack_now "$nid"
-          printf 'archived %s\n' "$nid"
+          dispatch_status=0
+          dispatch_note_to_lane "$nid" || dispatch_status=$?
+          case "$dispatch_status" in
+            0)
+              dispatch_now "$nid"
+              printf 'dispatched %s %s\n' "$nid" "$FM_INBOX_DISPATCH_LANE"
+              ;;
+            1)
+              ack_now "$nid"
+              printf 'archived %s\n' "$nid"
+              ;;
+            *)
+              printf 'dispatch refused %s: %s\n' "$nid" "$FM_INBOX_DISPATCH_ERROR" >&2
+              rc=1
+              ;;
+          esac
         else
           printf 'left %s\n' "$nid"
         fi
       done
-      return 0
+      return "$rc"
       ;;
   esac
   cmd_list

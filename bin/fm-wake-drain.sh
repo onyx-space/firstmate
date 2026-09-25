@@ -231,10 +231,21 @@ archive_consumed_inbox_notes() { # <id>...
     return 1
   fi
   count=$(printf '%s\n' "$out" | awk '/^archived / { n++ } END { print n + 0 }')
-  [ "$count" -gt 0 ] || return 0
-  list=$(printf '%s\n' "$out" | awk '/^archived / { sub(/^archived /, ""); printf "%s%s", sep, $0; sep=", " }')
-  printf 'wake drain: archived %s notification note(s) with the wake row(s) just acknowledged: %s\n' \
-    "$count" "$list" >&2
+  if [ "$count" -gt 0 ]; then
+    list=$(printf '%s\n' "$out" | awk '/^archived / { sub(/^archived /, ""); printf "%s%s", sep, $0; sep=", " }')
+    printf 'wake drain: archived %s notification note(s) with the wake row(s) just acknowledged: %s\n' \
+      "$count" "$list" >&2
+  fi
+  # A notification note whose repository a long-lived lane serves is delivered to
+  # that lane instead of being archived as handled; naming it here is what makes
+  # the delivery visible on the acknowledgement's own output rather than only in
+  # the lane's session.
+  count=$(printf '%s\n' "$out" | awk '/^dispatched / { n++ } END { print n + 0 }')
+  if [ "$count" -gt 0 ]; then
+    list=$(printf '%s\n' "$out" | awk '/^dispatched / { sub(/^dispatched /, ""); printf "%s%s", sep, $0; sep=", " }')
+    printf 'wake drain: dispatched %s notification note(s) to the lane serving the repository, with the wake row(s) just acknowledged: %s\n' \
+      "$count" "$list" >&2
+  fi
   return 0
 }
 
