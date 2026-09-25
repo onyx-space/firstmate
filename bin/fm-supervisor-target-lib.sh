@@ -9,7 +9,11 @@
 # FM_SUPERVISOR_TARGET (otherwise the daemon, running in its own terminal, would
 # auto-discover its OWN pane and inject there instead of into the captain's).
 #
-# Because both callers need the identical resolution, it lives here once. The
+# The watcher (bin/fm-watch.sh) resolves the same pane for its own-queue stall
+# gate, which must know whether this session is provably inside an active turn
+# before it escalates.
+#
+# Because every caller needs the identical resolution, it lives here once. The
 # function names and precedence are unchanged from when this logic lived inline
 # in bin/fm-supervise-daemon.sh, so its unit tests (tests/fm-daemon.test.sh)
 # keep exercising the same names after the daemon sources this file.
