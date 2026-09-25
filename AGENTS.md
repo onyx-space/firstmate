@@ -260,6 +260,7 @@ Project creation never authorizes an unmentioned remote, and project removal nev
 Load `secondmate-provisioning` before creating, seeding, validating, launching, handing backlog to, recovering, pushing inherited local material into, or retiring a secondmate home, and before editing `data/secondmates.md`.
 Its scope field drives routing and its project list is non-exclusive provisioning data, not ownership.
 Keep `local-only` work in the main home.
+A cross-machine handoff - a request that asks another machine to do something - lands in the fleet vault at `~/memory/handoffs/`, whose convention the `origmd` repo's `rules/handoff.md` owns; this home's `data/handoff/<id>.outbox.md` is a different mechanism with a different audience, the cross-home dispatch outbox routed by `tasks-axi mv` and documented in `docs/remote-secondmates.md`.
 
 A secondmate is idle by default and acts only on work routed by the main firstmate.
 It reconciles its own work under way after restart, then waits silently; an empty queue never authorizes a survey, audit, or self-directed improvement sweep.
