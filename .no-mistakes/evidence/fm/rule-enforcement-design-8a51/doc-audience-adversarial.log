@@ -1,0 +1,9 @@
+# adversarial 1: remove the new doc's inventory entry
+$ bin/fm-doc-audience-check.sh --inventory <mutated: entry removed>
+fm-doc-audience-check: unclassified: docs/rule-enforcement-design.md
+exit=1
+
+# adversarial 2: give the new doc an unsupported audience
+$ bin/fm-doc-audience-check.sh --inventory <mutated: unsupported audience>
+fm-doc-audience-check: docs/rule-enforcement-design.md: unsupported audience 'bogus-audience'
+exit=1
