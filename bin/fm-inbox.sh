@@ -58,10 +58,6 @@
 #   FM_HOME              operational home whose state/ and data/ are used.
 #   FM_MACHINE_FILE      machine file whose "Long-lived maintenance lanes" line
 #                        names this endpoint's lanes (default ~/AGENTS.md).
-#   FM_MACHINE_KEY_FILE  the file naming this machine's fleet key, matched against
-#                        the joined lane map's endpoints (default ~/.pi/agent/data/origmd-machine).
-#   FM_LANES_JSON        the fleet's joined "repository to endpoint and lane" map
-#                        (default ~/code/origmd/ref/lanes.json).
 #   FM_WIRE_CONFIG       wire's own config, read for the endpoint key a lane's
 #                        registered name belongs to (default ~/.config/wire/config.json).
 #
@@ -209,20 +205,22 @@ fm_inbox_source_is_notification() {  # <source>
 # A merge wake for a repository this endpoint maintains with a long-lived
 # maintenance lane belongs in that lane's own session: the lane is the reader the
 # wake exists for, and archiving the note as handled leaves it with nothing.
-# Which lane serves a repository is read first from the fleet's joined map,
-# <origmd clone>/ref/lanes.json, which scripts/owners.mjs writes from the machine
-# file's lane list and each lane's own checkout and which the fleet's rules name
-# as where a wake finds its endpoint and lane; only entries naming this machine
-# count, because a repository another machine maintains is that machine's own
-# dispatch. When that map is absent or names nothing for the repository, the same
-# question is answered from this endpoint's machine file (the injected copy of
-# admin/origmd's inject/machines/<key>.md, whose "Long-lived maintenance lanes"
-# line carries each lane's name and directory) plus the repository each lane's own
-# directory checks out, so a lane checking out a different repository takes the
-# ordinary archive path either way. wire is addressed by the lane name, and the
-# endpoint key `--to` needs is read back from wire's own config - the row
-# registering that name is this endpoint's row - so the machine key/endpoint
-# pairing is never restated here.
+# Which repository a note is about comes from the note's own leading relay token,
+# never from a repository named in its title or a link.
+# Which lane serves that repository is asked of wire, whose `route` reads the
+# fleet's joined map, <origmd clone>/ref/lanes.json - written by
+# scripts/owners.mjs from the machine file and each lane's own checkout - together
+# with this endpoint's own registration, so a wake here and a `wire send --repo`
+# reach the same lane and a repository another machine maintains is never
+# dispatched from here. Only a verified answer counts. When the map is absent or
+# silent about the repository, the same question falls back to this endpoint's
+# machine file (the injected copy of admin/origmd's inject/machines/<key>.md, whose
+# "Long-lived maintenance lanes" line carries each lane's name and directory) plus
+# the repository each lane's own directory checks out, so a lane checking out a
+# different repository takes the ordinary archive path either way. wire is
+# addressed by the lane name, and the endpoint key `--to` needs comes from wire's
+# own answer - or, when wire is silent and the machine file answers, from wire's
+# own config - so the machine key/endpoint pairing is never restated here.
 #
 # Refusal is fail-closed: a lane that serves the repository but cannot be reached
 # - no key for its registered name, no wire on the machine, or a refused send -
@@ -230,54 +228,56 @@ fm_inbox_source_is_notification() {  # <source>
 # reporting a delivery that did not happen. A repository with no lane takes the
 # pre-existing archive path.
 FM_MACHINE_FILE=${FM_MACHINE_FILE:-$HOME/AGENTS.md}
-FM_MACHINE_KEY_FILE=${FM_MACHINE_KEY_FILE:-$HOME/.pi/agent/data/origmd-machine}
-FM_LANES_JSON=${FM_LANES_JSON:-$HOME/code/origmd/ref/lanes.json}
 FM_WIRE_CONFIG=${FM_WIRE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/wire/config.json}
 FM_INBOX_DISPATCH_LANE=
 FM_INBOX_DISPATCH_ERROR=
 
-# This machine's fleet key as the registry file declares it, never derived from
-# the host name (ref/machines.md). An unreadable file, or a first line that is not
-# a key, is no key.
-lane_machine_key() {
-  local file=$FM_MACHINE_KEY_FILE key
-  [ -f "$file" ] || return 0
-  key=$(sed -n '1p' "$file" 2>/dev/null) || return 0
-  key=${key%$'\r'}
-  case "$key" in ''|*[!A-Za-z0-9._-]*) return 0 ;; esac
-  printf '%s' "$key"
+# The repository a relay note's own leading token reports and the state it reports
+# it in, as "<forge> <owner/name>" when that token says the state is "merged", or
+# nothing. Only the leading token counts: a repository named in the free-form
+# title or a link is another merge, not this note's. No relay token, or any other
+# state, is no wake.
+lane_note_repo() {  # <note-file>
+  local note=$1 header token state tail
+  header=$(awk 'body { print; exit } /^--$/ { body = 1 }' "$note" 2>/dev/null) || return 0
+  case "$header" in
+    '【中继变更】'*) ;;
+    *) return 0 ;;
+  esac
+  token=${header#*】}          # <forge> <owner/name>#<n>：<state> | ...
+  state=${token#*：}           # <state> | ...
+  state=${state%% | *}
+  printf '%s' "$state" | grep -qE '(^|[^a-z])merged([^a-z]|$)' || return 0
+  token=${token%%#*}
+  tail=${token##* }
+  case "$token" in *' '*) ;; *) return 0 ;; esac
+  case "$tail" in */*) ;; *) return 0 ;; esac
+  printf '%s' "$token"
 }
 
-# The lane the fleet's joined map assigns to <text>'s repository on THIS machine,
-# as "<lane>\t<repository>", or nothing. The map's keys are the fleet's own
-# repository identity - "<provider> <owner/name>" - so the match is that token
-# followed by the pull-request separator, the same shape the relay line carries.
-lane_map_match() {  # <text>
-  local file=$FM_LANES_JSON key
-  [ -f "$file" ] || return 0
-  key=$(lane_machine_key)
-  [ -n "$key" ] || return 0
-  python3 - "$file" "$key" "$1" <<'PY'
-import json
-import sys
-
-try:
-    data = json.load(open(sys.argv[1], encoding="utf-8"))
-except (OSError, ValueError):
-    sys.exit(0)
-text = sys.argv[3]
-if not isinstance(data, dict):
-    sys.exit(0)
-for repo, entry in data.items():
-    if not isinstance(entry, dict) or entry.get("endpoint") != sys.argv[2]:
-        continue
-    lane = entry.get("lane")
-    if not isinstance(lane, str) or not lane:
-        continue
-    token = repo.split(" ", 1)[-1]
-    if f"{token}#" in text:
-        print(f"{lane}\t{token}")
-PY
+# wire's answer for <repo>, as "routed\t<lane>\t<endpoint key>" when it routes one,
+# "no\t<reason>" when it answers that this endpoint serves no lane, or nothing
+# when wire cannot answer at all (not installed, or a map it refuses to read).
+# wire owns the decision: `wire route` reads the fleet's joined lane map and
+# checks it against this endpoint's own registration, so the lane named here is
+# the lane `wire send --repo` would act on, and an answer not verified against
+# that registration is not trusted as a route.
+lane_wire_route() {  # <repo>
+  local out served lane endpoint reason
+  command -v wire >/dev/null 2>&1 || return 0
+  out=$(wire route --repo "$1" 2>/dev/null) || return 0
+  served=$(printf '%s\n' "$out" | sed -n 's/^  served: //p')
+  if [ "$served" = yes ]; then
+    [ "$(printf '%s\n' "$out" | sed -n 's/^  registration: //p')" = checked ] || return 0
+    lane=$(printf '%s\n' "$out" | sed -n 's/^  lane: //p')
+    endpoint=$(printf '%s\n' "$out" | sed -n 's/^  endpoint: //p')
+    [ -n "$lane" ] && [ -n "$endpoint" ] || return 0
+    printf 'routed\t%s\t%s' "$lane" "$endpoint"
+    return 0
+  fi
+  [ "$served" = no ] || return 0
+  reason=$(printf '%s\n' "$out" | sed -n 's/^  reason: //p')
+  printf 'no\t%s' "$reason"
 }
 
 # The declared lanes of this endpoint, as "<name>\t<directory>". The line is
@@ -347,29 +347,38 @@ if len(keys) == 1:
 PY
 }
 
-# The lane serving a note's repository, as "<name>\t<owner/name>", or nothing.
-# Only a note that reports a merge qualifies: an ordinary relay notification is
-# something firstmate reads, not a piece of work a lane takes over. The fleet's
-# joined map answers first, so an endpoint whose map is current never parses the
-# machine file's prose; the machine file is the fallback for a map that is absent
-# or silent about this repository.
+# The lane serving a note's repository, as "<name>\t<endpoint key>\t<owner/name>",
+# or nothing. Only a note whose own token reports a merge qualifies: an ordinary
+# relay notification is something firstmate reads, not a piece of work a lane
+# takes over. wire's answer comes first; the machine file answers only when the
+# map is silent about this repository - absent, or carrying no entry for it - so a
+# map entry naming another machine ends as no dispatch here rather than as a
+# second, local guess at the same question.
 lane_for_note() {  # <note-file>
-  local note=$1 text match name directory repo
+  local note=$1 repo answer name directory lanerepo key
   [ -f "$note" ] || return 0
-  text=$(cat "$note" 2>/dev/null || true)
-  printf '%s' "$text" | grep -qE '(^|[^a-z])merged([^a-z]|$)' || return 0
-  match=$(lane_map_match "$text")
-  if [ -n "$match" ]; then
-    printf '%s\n' "$match"
-    return 0
-  fi
+  repo=$(lane_note_repo "$note")
+  [ -n "$repo" ] || return 0
+  answer=$(lane_wire_route "$repo")
+  case "$answer" in
+    routed$'\t'*)
+      printf '%s\t%s\n' "${answer#routed$'\t'}" "${repo##* }"
+      return 0
+      ;;
+    no$'\t'no-lane-map|no$'\t'no-entry|'')
+      ;;
+    *)
+      return 0
+      ;;
+  esac
   while IFS=$(printf '\t') read -r name directory; do
     [ -n "$name" ] || continue
-    repo=$(lane_repo_of_dir "$directory")
-    [ -n "$repo" ] || continue
-    case "$text" in
-      *"$repo#"*) printf '%s\t%s\n' "$name" "$repo"; return 0 ;;
-    esac
+    lanerepo=$(lane_repo_of_dir "$directory")
+    [ -n "$lanerepo" ] || continue
+    [ "$lanerepo" = "${repo##* }" ] || continue
+    key=$(lane_endpoint_key "$name")
+    printf '%s\t%s\t%s\n' "$name" "$key" "$lanerepo"
+    return 0
   done < <(lane_dispatch_lines)
   return 0
 }
@@ -378,16 +387,15 @@ lane_for_note() {  # <note-file>
 # repository, 2 a lane does and the delivery could not be made
 # (FM_INBOX_DISPATCH_ERROR says why).
 dispatch_note_to_lane() {  # <id>
-  local id=$1 note="$INBOX/$1.note" match lane repo key wire body out rc=0
+  local id=$1 note="$INBOX/$1.note" match lane rest endpoint repo wire body out rc=0
   FM_INBOX_DISPATCH_LANE=
   FM_INBOX_DISPATCH_ERROR=
   match=$(lane_for_note "$note")
   [ -n "$match" ] || return 1
   lane=${match%%$'\t'*}
-  repo=${match#*$'\t'}
-  key=$(lane_endpoint_key "$lane")
-  if [ -z "$key" ]; then
-    FM_INBOX_DISPATCH_ERROR="lane $lane is not registered in $FM_WIRE_CONFIG, so this endpoint's key is unknown"
+  rest=${match#*$'\t'}; endpoint=${rest%%$'\t'*}; repo=${rest#*$'\t'}
+  if [ -z "$endpoint" ]; then
+    FM_INBOX_DISPATCH_ERROR="lane $lane serves $repo but no endpoint key in $FM_WIRE_CONFIG registers it"
     return 2
   fi
   if ! wire=$(command -v wire); then
@@ -395,7 +403,7 @@ dispatch_note_to_lane() {  # <id>
     return 2
   fi
   body=$(sed -n '/^--$/,$p' "$note" 2>/dev/null | tail -n +2 | head -n 1)
-  out=$("$wire" send --to "$key" --session "$lane" \
+  out=$("$wire" send --to "$endpoint" --session "$lane" \
     --text "merge wake: $repo merged - firstmate dispatched this relay notification to the lane serving it (note $id)${body:+: $body}" 2>&1) \
     || rc=$?
   if [ "$rc" -ne 0 ]; then
