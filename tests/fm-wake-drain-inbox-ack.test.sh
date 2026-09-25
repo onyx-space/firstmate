@@ -87,16 +87,18 @@ SH
 
 # The same drain-then-acknowledge drive as drain_then_ack, with the machine file,
 # wire config and fake wire visible to both the drain and the acknowledgement.
-drain_then_ack_with_lanes() { # <dir> <state> <tag>
-  local dir=$1 state=$2 tag=$3 seq gen
-  PATH="$dir/fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_MACHINE_FILE="$dir/machine.md" \
+# The machine file and HOME default to the plain fixture, so a case can point
+# either at the endpoint's real shape (a symlinked machine file, a ~ directory).
+drain_then_ack_with_lanes() { # <dir> <state> <tag> [machine-file] [home]
+  local dir=$1 state=$2 tag=$3 machine=${4:-$1/machine.md} home=${5:-$HOME} seq gen
+  PATH="$dir/fakebin:$PATH" HOME="$home" FM_STATE_OVERRIDE="$state" FM_MACHINE_FILE="$machine" \
     FM_WIRE_CONFIG="$dir/wire-config.json" "$DRAIN" > "$dir/$tag.drain.out" 2> "$dir/$tag.drain.err" \
     || fail "$tag: the drain failed: $(cat "$dir/$tag.drain.err")"
   seq=$(sed -n 's/^WAKE_ACK_REQUIRED:.*--ack-through \([0-9][0-9]*\) --recovery-generation [A-Za-z0-9._-]*$/\1/p' "$dir/$tag.drain.err")
   gen=$(sed -n 's/^WAKE_ACK_REQUIRED:.*--ack-through [0-9][0-9]* --recovery-generation \([A-Za-z0-9._-]*\)$/\1/p' "$dir/$tag.drain.err")
   [ -n "$seq" ] && [ -n "$gen" ] \
     || fail "$tag: the drain printed no acknowledgement command: $(cat "$dir/$tag.drain.err")"
-  PATH="$dir/fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_MACHINE_FILE="$dir/machine.md" \
+  PATH="$dir/fakebin:$PATH" HOME="$home" FM_STATE_OVERRIDE="$state" FM_MACHINE_FILE="$machine" \
     FM_WIRE_CONFIG="$dir/wire-config.json" "$DRAIN" --ack-through "$seq" --recovery-generation "$gen" \
     > "$dir/$tag.ack.out" 2> "$dir/$tag.ack.err" \
     || fail "$tag: the acknowledgement failed: $(cat "$dir/$tag.ack.err")"
@@ -184,6 +186,47 @@ test_a_non_merge_relay_note_archives_without_dispatch() {
   [ ! -e "$dir/wire.log" ] \
     || fail "an ordinary relay notification was dispatched to a lane: $(cat "$dir/wire.log")"
   pass "only a merge reaches a lane; an ordinary relay notification keeps the archive path"
+}
+
+# The endpoint's default machine file is a symlink to the injected copy, so the
+# lane list must be read through the link the way ~/AGENTS.md ships.
+test_a_symlinked_machine_file_is_read() {
+  local dir state id
+  dir=$(make_lane_case lane-symlink lane-a https://github.com/onyx-space/firstmate.git)
+  ln -s "$dir/machine.md" "$dir/AGENTS.md"
+  state="$dir/state"
+  id=$(queue_note_now "$state" relay \
+    '【中继变更】github onyx-space/firstmate#37：open → merged | 标题：x | 链接：https://github.com/onyx-space/firstmate/pull/37') \
+    || fail "queueing the merge note failed"
+
+  drain_then_ack_with_lanes "$dir" "$state" symlink "$dir/AGENTS.md" >/dev/null || exit 1
+
+  [ -f "$state/inbox/dispatched/$id.note" ] \
+    || fail "a symlinked machine file, the endpoint's default shape, declared no lane"
+  pass "the endpoint's symlinked machine file is read"
+}
+
+# The fleet writes lane directories as ~/code/..., so the declared directory has
+# to resolve against HOME before the lane's own checkout is read.
+test_a_tilde_lane_directory_is_resolved() {
+  local dir state id home
+  dir=$(make_lane_case lane-tilde lane-a https://github.com/onyx-space/firstmate.git)
+  state="$dir/state"
+  home="$dir/home"
+  mkdir -p "$home"
+  mv "$dir/lane" "$home/lane"
+  cat > "$dir/machine.md" <<'EOF'
+- Long-lived maintenance lanes: `lane-a` (pane `w1:p2`, `~/lane`); captain-owned, not torn down unless stopped.
+EOF
+  id=$(queue_note_now "$state" relay \
+    '【中继变更】github onyx-space/firstmate#37：open → merged | 标题：x | 链接：https://github.com/onyx-space/firstmate/pull/37') \
+    || fail "queueing the merge note failed"
+
+  drain_then_ack_with_lanes "$dir" "$state" tilde "$dir/machine.md" "$home" >/dev/null || exit 1
+
+  [ -f "$state/inbox/dispatched/$id.note" ] \
+    || fail "a lane declared with ~ did not resolve to its own checkout"
+  pass "a lane directory declared with ~ is resolved against HOME"
 }
 
 test_an_unregistered_lane_fails_the_acknowledgement_instead_of_losing_the_wake() {
@@ -381,6 +424,8 @@ test_merge_wake_for_a_lane_served_repo_is_dispatched_to_the_lane
 test_a_lane_whose_checkout_is_another_repo_does_not_take_the_wake
 test_a_repo_with_no_lane_at_all_archives_as_before
 test_a_non_merge_relay_note_archives_without_dispatch
+test_a_symlinked_machine_file_is_read
+test_a_tilde_lane_directory_is_resolved
 test_an_unregistered_lane_fails_the_acknowledgement_instead_of_losing_the_wake
 test_mixed_batch_archives_only_the_notification
 test_explicit_ack_still_archives_every_source

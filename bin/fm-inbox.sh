@@ -215,9 +215,10 @@ fm_inbox_source_is_notification() {  # <source>
 # restated here.
 #
 # Refusal is fail-closed: a lane that serves the repository but cannot be reached
+# - no key for its registered name, no wire on the machine, or a refused send -
 # leaves the note and its wake row where they are, retryable, instead of
-# reporting a delivery that did not happen. A repository with no lane, and a
-# machine with no wire installed, both keep the pre-existing archive path.
+# reporting a delivery that did not happen. A repository with no lane takes the
+# pre-existing archive path.
 FM_MACHINE_FILE=${FM_MACHINE_FILE:-$HOME/AGENTS.md}
 FM_WIRE_CONFIG=${FM_WIRE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/wire/config.json}
 FM_INBOX_DISPATCH_LANE=
@@ -229,8 +230,9 @@ FM_INBOX_DISPATCH_ERROR=
 # parentheses - and an unparsable line declares no lane instead of a wrong one.
 lane_dispatch_lines() {
   local file=$FM_MACHINE_FILE
-  [ -f "$file" ] && [ ! -L "$file" ] || return 0
+  [ -f "$file" ] || return 0
   python3 - "$file" <<'PY'
+import os
 import re
 import sys
 
@@ -245,7 +247,7 @@ for name, directory in re.findall(
     r"`([A-Za-z0-9._-]+)`\s*\(pane\s*`[^`]+`,\s*`([^`]+)`\)",
     match.group(1).split(";")[0],
 ):
-    print(f"{name}\t{directory}")
+    print(f"{name}\t{os.path.expanduser(directory)}")
 PY
 }
 
