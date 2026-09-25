@@ -6,7 +6,8 @@ That gap is the defect this document designs against: the rule text is present a
 
 The measurements behind the design come from one long firstmate session (1672 assistant messages), and they are the reason the first batch below is what it is:
 
-- The glyph rule (`a reply and its thinking carry no ✓, ✗ or Hmm marks`, as its owning text states it) was broken about 22,833 times inside that scope: 21,889 in thinking, 944 in replies. A further 225 glyphs sat in tool arguments, which the rule as written does not cover and the gate below deliberately adds, so the owning text must be widened before the gate cites it.
+- The glyph rule (`a reply and its thinking carry no ✓, ✗ or Hmm marks`, as its owning text states it) was broken about 22,833 times inside that scope: 21,889 in thinking, 944 in replies.
+  A further 225 glyphs sat in tool arguments, which the rule as written does not cover and the gate below deliberately adds, so the owning text must be widened before the gate cites it.
 - The dispatch-shape rule (a handoff artifact in `~/memory/handoffs/`, plus exactly one `wire send`) ran 111 sends, of which 4 also wrote the artifact.
 - Dispatch authorization (information, a question and a report are not a dispatch) was broken twice, and 10 or more questions were asked in chat instead of through `request_user_input`.
 - Closing a reply with a menu of choices happened about 6 times; a route that was walked but not reported, 4 to 5 times; a write outside the declared write roots, once; a `查`/`研究` trigger that skipped a read-only check, once.
@@ -98,4 +99,5 @@ Cheapest first, each with its acceptance.
 - No new repository: the CI-side checks join `~/code/origmd/scripts/check.mjs`, the hook-side policies join `bin/` in the repository whose harness performs the action, and the vault's own rules are not restated anywhere.
 - The rule text stays owned by origmd — `~/code/origmd/rules/*.md`, the injected `~/code/origmd/inject/global-core.md`, or the fleet skill that owns it — rather than copied here; a checker cites it and a hook names it.
 - The existing gates are read before a new one is written: `bin/fm-arm-pretool-check.sh` with `bin/fm-arm-command-policy.mjs` (shell policy), `bin/fm-cd-pretool-check.sh` (`docs/cd-guard.md`), `bin/fm-subagent-pretool-check.sh` (`docs/subagent-guard.md`), the turn-end hooks (`docs/turnend-guard.md`), `~/code/origmd/extensions/write-scope.ts` (the write-root refusal), and `~/code/origmd/scripts/check.mjs`.
-- This document designs; it implements nothing. Each item above is a task for a later, separately authorized change.
+- This document designs; it implements nothing.
+  Each item above is a task for a later, separately authorized change.

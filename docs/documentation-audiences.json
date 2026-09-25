@@ -381,6 +381,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/rule-enforcement-design.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": "docs/secondmate-parent-channel.md",
       "audience": "maintainer-architecture"
     },
@@ -507,10 +511,6 @@
     {
       "path": "experiments/h-hardening/README.md",
       "audience": "maintainer-verification"
-    },
-    {
-      "path": "docs/rule-enforcement-design.md",
-      "audience": "maintainer-architecture"
     },
     {
       "path": "skills/stow/SKILL.md",
