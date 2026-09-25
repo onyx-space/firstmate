@@ -1,0 +1,1 @@
+check: wake-queue stalled: row=5 kind=check idle=3s
