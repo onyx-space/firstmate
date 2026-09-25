@@ -42,7 +42,7 @@ Placement is decided by where the violation first becomes observable, not by whe
 5. **Nothing**: the rule is marked not mechanizable, and the smallest human practice is named.
 
 Two constraints hold at every rung.
-The rule's text stays in `~/code/origmd/rules/` (a checker cites the rule; it never restates it, and firstmate adds no second copy).
+The rule's text stays owned by origmd — `~/code/origmd/rules/*.md` for most rules, the injected `~/code/origmd/inject/global-core.md` for the glyph rule and the write-root list (a checker cites the rule; it never restates it, and firstmate adds no second copy).
 And no gate may block a *repair*: if the only way to return a system to a good state is the action the gate refuses, the gate is wrong, not the repair.
 
 ## 3. The table
@@ -81,7 +81,7 @@ A gate that cannot name those three is a gate whose false positives will be work
 Cheapest first, each with its acceptance.
 
 1. **Glyph rule at the turn end.** The violation is a byte in text the harness already holds when the turn ends, and the correction is one line.
-   Placement: the pi turn-end extension (`/home/onyx/code/lanes/firstmate/.pi/extensions/fm-primary-turnend-guard.ts`), with the predicate owned once so other harnesses' turn-end hooks reuse it.
+   Placement: the pi turn-end extension (`.pi/extensions/fm-primary-turnend-guard.ts`), with the predicate owned once so other harnesses' turn-end hooks reuse it.
    Acceptance: replay a recorded reply that carried a glyph and show the corrective line in the next context; then show the session-log count for a clean fixture at zero.
    Cost: no new process, no new repository, and a false positive costs one sentence.
 2. **Dispatch pairing at `wire send`.** The rule is the fleet's own (`~/code/origmd/rules/long-lived-lanes.md`: the artifact in `~/memory/handoffs/` plus one `wire send`), the violation is a single call, and the measurement is already in hand (4 of 111).
@@ -97,6 +97,6 @@ Cheapest first, each with its acceptance.
 
 - No new resident process: every gate above runs per event (a tool call, a turn end, a CI job) and exits.
 - No new repository: the CI-side checks join `~/code/origmd/scripts/check.mjs`, the hook-side policies join `bin/` in the repository whose harness performs the action, and the vault's own rules are not restated anywhere.
-- The rule text stays owned by `~/code/origmd/rules/*.md`; a checker cites it and a hook names it.
+- The rule text stays owned by origmd — `~/code/origmd/rules/*.md` for most rules, the injected `~/code/origmd/inject/global-core.md` for the glyph rule and the write-root list; a checker cites it and a hook names it.
 - The existing gates are read before a new one is written: `bin/fm-arm-pretool-check.sh` with `bin/fm-arm-command-policy.mjs` (shell policy), `bin/fm-cd-pretool-check.sh` (`docs/cd-guard.md`), `bin/fm-subagent-pretool-check.sh` (`docs/subagent-guard.md`), the turn-end hooks (`docs/turnend-guard.md`), `~/code/origmd/extensions/write-scope.ts` (the write-root refusal), and `~/code/origmd/scripts/check.mjs`.
 - This document designs; it implements nothing. Each item above is a task for a later, separately authorized change.
