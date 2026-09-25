@@ -211,13 +211,14 @@ inbox_ack_ids_for_rows() { # <rows-file>
   ' "$FM_WAKE_QUEUE" | LC_ALL=C sort -u
 }
 
-# Archive the notes whose wake rows this acknowledgement consumes, and report
-# every automatic archival: a note disappearing without a line saying so would
-# be indistinguishable from a lost one. bin/fm-inbox.sh owns the record, its
-# sources, and the move into handled/, and it leaves a captain-authored note for
-# the explicit `drain --ack`. A failure fails the acknowledgement BEFORE the rows
-# are consumed, so the durable row and its note stay together and the next
-# acknowledgement retries rather than stranding a note nobody will look at again.
+# Archive or dispatch the notes whose wake rows this acknowledgement consumes,
+# and report every automatic archival or dispatch: a note disappearing without a
+# line saying so would be indistinguishable from a lost one. bin/fm-inbox.sh owns
+# the record, its sources, and the moves into handled/ and dispatched/, and it
+# leaves a captain-authored note for the explicit `drain --ack`. A failure fails
+# the acknowledgement BEFORE the rows are consumed, so the durable row and its
+# note stay together and the next acknowledgement retries rather than stranding a
+# note nobody will look at again.
 archive_consumed_inbox_notes() { # <id>...
   local inbox="$SCRIPT_DIR/fm-inbox.sh" out count list rc=0
   [ "$#" -gt 0 ] || return 0
@@ -231,10 +232,21 @@ archive_consumed_inbox_notes() { # <id>...
     return 1
   fi
   count=$(printf '%s\n' "$out" | awk '/^archived / { n++ } END { print n + 0 }')
-  [ "$count" -gt 0 ] || return 0
-  list=$(printf '%s\n' "$out" | awk '/^archived / { sub(/^archived /, ""); printf "%s%s", sep, $0; sep=", " }')
-  printf 'wake drain: archived %s notification note(s) with the wake row(s) just acknowledged: %s\n' \
-    "$count" "$list" >&2
+  if [ "$count" -gt 0 ]; then
+    list=$(printf '%s\n' "$out" | awk '/^archived / { sub(/^archived /, ""); printf "%s%s", sep, $0; sep=", " }')
+    printf 'wake drain: archived %s notification note(s) with the wake row(s) just acknowledged: %s\n' \
+      "$count" "$list" >&2
+  fi
+  # A notification note whose repository a long-lived lane serves is delivered to
+  # that lane instead of being archived as handled; naming it here is what makes
+  # the delivery visible on the acknowledgement's own output rather than only in
+  # the lane's session.
+  count=$(printf '%s\n' "$out" | awk '/^dispatched / { n++ } END { print n + 0 }')
+  if [ "$count" -gt 0 ]; then
+    list=$(printf '%s\n' "$out" | awk '/^dispatched / { sub(/^dispatched /, ""); printf "%s%s", sep, $0; sep=", " }')
+    printf 'wake drain: dispatched %s notification note(s) to the lane serving the repository, with the wake row(s) just acknowledged: %s\n' \
+      "$count" "$list" >&2
+  fi
   return 0
 }
 
