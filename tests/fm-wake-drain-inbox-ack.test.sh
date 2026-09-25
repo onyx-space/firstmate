@@ -74,6 +74,7 @@ make_lane_case() { # <name> <lane> <repo>
   cat > "$dir/machine.md" <<EOF
 - Long-lived maintenance lanes: \`$lane\` (pane \`w1:p2\`, \`$dir/lane\`); captain-owned, not torn down unless stopped.
 EOF
+  printf 'server\n' > "$dir/machine-key"
   printf '{"endpoints":{"h":{"sshAlias":"h","sessions":{"%s":"/x/one.jsonl"}},"m":{"sshAlias":"m"}}}\n' \
     "$lane" > "$dir/wire-config.json"
   cat > "$dir/fakebin/wire" <<SH
@@ -86,12 +87,14 @@ SH
 }
 
 # The same drain-then-acknowledge drive as drain_then_ack, with the machine file,
-# wire config and fake wire visible to both the drain and the acknowledgement.
-# The machine file and HOME default to the plain fixture, so a case can point
-# either at the endpoint's real shape (a symlinked machine file, a ~ directory).
+# wire config, joined lane map, machine key and fake wire visible to both the
+# drain and the acknowledgement. The machine file, joined map and HOME default to
+# the plain fixture, so a case can point at either source or at the endpoint's
+# real shape (a symlinked machine file, a ~ directory).
 drain_then_ack_with_lanes() { # <dir> <state> <tag> [machine-file] [home]
   local dir=$1 state=$2 tag=$3 machine=${4:-$1/machine.md} home=${5:-$HOME} seq gen
   PATH="$dir/fakebin:$PATH" HOME="$home" FM_STATE_OVERRIDE="$state" FM_MACHINE_FILE="$machine" \
+    FM_MACHINE_KEY_FILE="$dir/machine-key" FM_LANES_JSON="$dir/lanes.json" \
     FM_WIRE_CONFIG="$dir/wire-config.json" "$DRAIN" > "$dir/$tag.drain.out" 2> "$dir/$tag.drain.err" \
     || fail "$tag: the drain failed: $(cat "$dir/$tag.drain.err")"
   seq=$(sed -n 's/^WAKE_ACK_REQUIRED:.*--ack-through \([0-9][0-9]*\) --recovery-generation [A-Za-z0-9._-]*$/\1/p' "$dir/$tag.drain.err")
@@ -99,6 +102,7 @@ drain_then_ack_with_lanes() { # <dir> <state> <tag> [machine-file] [home]
   [ -n "$seq" ] && [ -n "$gen" ] \
     || fail "$tag: the drain printed no acknowledgement command: $(cat "$dir/$tag.drain.err")"
   PATH="$dir/fakebin:$PATH" HOME="$home" FM_STATE_OVERRIDE="$state" FM_MACHINE_FILE="$machine" \
+    FM_MACHINE_KEY_FILE="$dir/machine-key" FM_LANES_JSON="$dir/lanes.json" \
     FM_WIRE_CONFIG="$dir/wire-config.json" "$DRAIN" --ack-through "$seq" --recovery-generation "$gen" \
     > "$dir/$tag.ack.out" 2> "$dir/$tag.ack.err" \
     || fail "$tag: the acknowledgement failed: $(cat "$dir/$tag.ack.err")"
@@ -241,6 +245,7 @@ test_an_unregistered_lane_fails_the_acknowledgement_instead_of_losing_the_wake()
     || fail "queueing the merge note failed"
 
   PATH="$dir/fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_MACHINE_FILE="$dir/machine.md" \
+    FM_MACHINE_KEY_FILE="$dir/machine-key" FM_LANES_JSON="$dir/lanes.json" \
     FM_WIRE_CONFIG="$dir/wire-config.json" "$DRAIN" > "$dir/unregistered.drain.out" 2> "$dir/unregistered.drain.err" \
     || fail "the drain failed: $(cat "$dir/unregistered.drain.err")"
   seq=$(sed -n 's/^WAKE_ACK_REQUIRED:.*--ack-through \([0-9][0-9]*\) --recovery-generation [A-Za-z0-9._-]*$/\1/p' "$dir/unregistered.drain.err")
@@ -248,6 +253,7 @@ test_an_unregistered_lane_fails_the_acknowledgement_instead_of_losing_the_wake()
   [ -n "$seq" ] && [ -n "$gen" ] || fail "the drain printed no acknowledgement command"
 
   if PATH="$dir/fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_MACHINE_FILE="$dir/machine.md" \
+    FM_MACHINE_KEY_FILE="$dir/machine-key" FM_LANES_JSON="$dir/lanes.json" \
     FM_WIRE_CONFIG="$dir/wire-config.json" "$DRAIN" --ack-through "$seq" --recovery-generation "$gen" \
     > "$dir/unregistered.ack.out" 2> "$dir/unregistered.ack.err"; then
     fail "an acknowledgement was accepted although its lane dispatch was refused"
@@ -259,6 +265,58 @@ test_an_unregistered_lane_fails_the_acknowledgement_instead_of_losing_the_wake()
   awk -F '\t' 'NF >= 5 { found = 1 } END { exit !found }' "$state/.wake-queue" \
     || fail "a refused dispatch consumed the wake row it could not deliver"
   pass "a lane that serves the repository but cannot be reached keeps the note and its row retryable"
+}
+
+test_the_joined_lane_map_dispatches_a_merge_without_a_machine_file_lane() {
+  local dir state id
+  dir=$(make_case joined-lane-map)
+  state="$dir/state"
+  # The fleet's joined map is the primary source, so it has to answer with no lane
+  # declared in the machine file at all.
+  printf '# no lanes declared here\n' > "$dir/machine.md"
+  printf 'server\n' > "$dir/machine-key"
+  printf '{"github onyx-space/firstmate":{"endpoint":"server","lane":"lane-b"}}\n' > "$dir/lanes.json"
+  printf '{"endpoints":{"h":{"sshAlias":"h","sessions":{"lane-b":"/x/two.jsonl"}}}}\n' > "$dir/wire-config.json"
+  cat > "$dir/fakebin/wire" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$dir/wire.log"
+exit 0
+SH
+  chmod +x "$dir/fakebin/wire"
+  id=$(queue_note_now "$state" relay \
+    '【中继变更】github onyx-space/firstmate#39：open → merged | 标题：x | 链接：https://github.com/onyx-space/firstmate/pull/39') \
+    || fail "queueing the merge note failed"
+
+  drain_then_ack_with_lanes "$dir" "$state" joined >/dev/null || exit 1
+
+  grep -F -- '--to h --session lane-b' "$dir/wire.log" >/dev/null \
+    || fail "the joined lane map did not dispatch the merge: $(cat "$dir/wire.log")"
+  grep -F 'onyx-space/firstmate' "$dir/wire.log" >/dev/null \
+    || fail "the dispatch did not name the repository: $(cat "$dir/wire.log")"
+  [ -f "$state/inbox/dispatched/$id.note" ] \
+    || fail "the dispatched note was not recorded as dispatched"
+  pass "the fleet's joined lane map dispatches a merge with no machine-file lane to parse"
+}
+
+test_a_repository_another_machine_serves_is_not_dispatched_here() {
+  local dir state id
+  dir=$(make_case joined-lane-map-remote)
+  state="$dir/state"
+  printf '# no lanes declared here\n' > "$dir/machine.md"
+  printf 'server\n' > "$dir/machine-key"
+  printf '{"github onyx-space/firstmate":{"endpoint":"mac-mini","lane":"lane-b"}}\n' > "$dir/lanes.json"
+  printf '{"endpoints":{"h":{"sshAlias":"h","sessions":{"lane-b":"/x/two.jsonl"}}}}\n' > "$dir/wire-config.json"
+  id=$(queue_note_now "$state" relay \
+    '【中继变更】github onyx-space/firstmate#39：open → merged | 标题：x | 链接：https://github.com/onyx-space/firstmate/pull/39') \
+    || fail "queueing the merge note failed"
+
+  drain_then_ack_with_lanes "$dir" "$state" remote-lane >/dev/null || exit 1
+
+  [ ! -e "$dir/wire.log" ] \
+    || fail "a lane another machine maintains was dispatched from here: $(cat "$dir/wire.log")"
+  [ -f "$state/inbox/handled/$id.note" ] \
+    || fail "a repository served elsewhere did not take the archive path"
+  pass "a lane the joined map places on another machine is that machine's dispatch, not this one's"
 }
 
 test_captain_note_survives_its_acknowledged_wake_row() {
@@ -420,6 +478,8 @@ test_producer_argv_shape_stays_captain_authored() {
 
 test_captain_note_survives_its_acknowledged_wake_row
 test_notification_note_is_archived_with_its_wake_row
+test_the_joined_lane_map_dispatches_a_merge_without_a_machine_file_lane
+test_a_repository_another_machine_serves_is_not_dispatched_here
 test_merge_wake_for_a_lane_served_repo_is_dispatched_to_the_lane
 test_a_lane_whose_checkout_is_another_repo_does_not_take_the_wake
 test_a_repo_with_no_lane_at_all_archives_as_before
