@@ -30,7 +30,8 @@
 # Every record names its writer in a `source` field: `text` (the default) is the
 # captain writing out of band, `voice` is the captain's own dictation through
 # `say`, and `relay` is a notification one of firstmate's own integrations queued.
-# The source decides WHEN the record is archived, never whether it is presented;
+# The source decides WHEN the record leaves state/inbox/ - archived, or dispatched
+# to a lane that serves it - never whether it is presented;
 # docs/watcher-continuity.md owns that contract. A source value is limited to
 # [A-Za-z0-9._-] so it can never break the record's header, and no record ever
 # carries a credential.
