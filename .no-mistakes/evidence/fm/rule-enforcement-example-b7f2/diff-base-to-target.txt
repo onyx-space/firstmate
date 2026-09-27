@@ -1,0 +1,86 @@
+diff --git a/docs/rule-enforcement-design.md b/docs/rule-enforcement-design.md
+index 221f3f3..211988d 100644
+--- a/docs/rule-enforcement-design.md
++++ b/docs/rule-enforcement-design.md
+@@ -93,7 +93,16 @@ Cheapest first, each with its acceptance.
+    Acceptance: inject a write into a recorded `查` turn and show it refused; run an ordinary turn and show no change.
+    Cost: a misread trigger costs one re-statement; the trigger's own words are quoted in the refusal.
+ 
+-## 6. Boundaries
++## 6. A worked example: the switch was rejected, the identity's source was fixed
++
++The lane question ran the whole loop once, so it is written here as a sample rather than as a proposal.
++The requirement was that a wake reach the lane serving a repository, and the first shape proposed was a **switch**: a spawn-side flag naming a lane, or a firstmate-side convention about who counts as one.
++The captain rejected both in one line - adding a switch means changing what a large word means in order to serve a few cases - and the accepted fix moved instead to the **source of the name**: every name in `endpoints.<key>.sessions` must be produced by the declaration line in `inject/machines/<key>.md`, the generator refuses a name it cannot trace back to that line, and the checker reports a registered-but-undeclared name as an error.
++What made that fix the right shape is exactly this document's placement rule: a session with no declaration has **no name to be addressed by**, so no wake can reach it and no flag is needed - the violation stopped being a judgement about behaviour and became a set difference between two files.
++Owner: `~/code/origmd` (the declaration line, the generator and the checker), already dispatched there.
++The lesson for every row above: when a rule needs a switch, ask first whether the *identity or the source* can be changed so that the state the switch would have flagged cannot exist.
++
++## 7. Boundaries
+ 
+ - No new resident process: every gate above runs per event (a tool call, a turn end, a CI job) and exits.
+ - No new repository: the CI-side checks join `~/code/origmd/scripts/check.mjs`, the hook-side policies join `bin/` in the repository whose harness performs the action, and the vault's own rules are not restated anywhere.
+diff --git a/tests/fm-session-lock-ancestry.test.sh b/tests/fm-session-lock-ancestry.test.sh
+index dbf1e68..3d2dffa 100755
+--- a/tests/fm-session-lock-ancestry.test.sh
++++ b/tests/fm-session-lock-ancestry.test.sh
+@@ -307,8 +307,14 @@ make_primary_home() {  # <dir>
+   cat > "$dir/session.sh" <<'SH'
+ #!/usr/bin/env bash
+ if [ "${FM_FIXTURE_ORPHAN_HERE:-0}" = 1 ]; then
++  # Wait until the launcher has exited and reparented us. Comparing against the
++  # launch parent, not pid 1, keeps this correct on hosts that run a child
++  # subreaper: an orphan lands on the subreaper there, never on init. The pid
++  # comes from the launcher itself, so a fast exit already past the fork does
++  # not leave us comparing against the subreaper forever.
++  launch_ppid=$(tr -d ' ' < "$FM_FIXTURE_LAUNCHER_PID_FILE" 2>/dev/null)
+   i=0
+-  while [ "$i" -lt 200 ] && [ "$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')" != 1 ]; do
++  while [ "$i" -lt 200 ] && [ "$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')" = "$launch_ppid" ]; do
+     sleep 0.05
+     i=$((i + 1))
+   done
+@@ -320,8 +326,12 @@ printf '%s\n' "$?" > "$FM_HOME/state/hook.rc"
+ SH
+   cat > "$dir/daemon.sh" <<'SH'
+ #!/usr/bin/env bash
++# Same launch-parent wait as session.sh: an orphan the launcher reparents can
++# land on a host subreaper instead of pid 1, so compare against the pid the
++# launcher recorded rather than against init.
++launch_ppid=$(tr -d ' ' < "$FM_FIXTURE_LAUNCHER_PID_FILE" 2>/dev/null)
+ i=0
+-while [ "$i" -lt 200 ] && [ "$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')" != 1 ]; do
++while [ "$i" -lt 200 ] && [ "$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')" = "$launch_ppid" ]; do
+   sleep 0.05
+   i=$((i + 1))
+ done
+@@ -333,17 +343,23 @@ SH
+ }
+ 
+ # Start the fixture tree detached from this suite's own process tree: the
+-# launcher exits immediately, so the tree is reparented to init and the ancestry
+-# walk terminates inside the fixture. Returns once the hook has recorded its exit
++# launcher exits immediately, so the tree is reparented away from the suite (to
++# init or a host subreaper) and the ancestry walk terminates inside the fixture.
++# Returns once the hook has recorded its exit
+ # code.
+ run_fixture_tree() {  # <dir> <session-bin> [<daemon-bin>]
+-  local dir=$1 session_bin=$2 daemon_bin=${3:-} i
++  local dir=$1 session_bin=$2 daemon_bin=${3:-} i pidfile
++  # The launcher records its own pid before forking the tree, so the tree can
++  # wait for that exact parent to disappear even if the exit wins the race with
++  # the child's first read of its own ppid.
++  pidfile="$dir/state/.launcher-pid"
+   if [ -n "$daemon_bin" ]; then
+     FM_HOME="$dir" FM_SESSION_BIN="$session_bin" FM_FIXTURE_ORPHAN_HERE=0 \
+-      bash -c '"$0" "$1" &' "$daemon_bin" "$dir/daemon.sh"
++      FM_FIXTURE_LAUNCHER_PID_FILE="$pidfile" \
++      bash -c 'printf "%s\n" "$$" > "$2"; "$0" "$1" &' "$daemon_bin" "$dir/daemon.sh" "$pidfile"
+   else
+-    FM_HOME="$dir" FM_FIXTURE_ORPHAN_HERE=1 \
+-      bash -c '"$0" "$1" &' "$session_bin" "$dir/session.sh"
++    FM_HOME="$dir" FM_FIXTURE_ORPHAN_HERE=1 FM_FIXTURE_LAUNCHER_PID_FILE="$pidfile" \
++      bash -c 'printf "%s\n" "$$" > "$2"; "$0" "$1" &' "$session_bin" "$dir/session.sh" "$pidfile"
+   fi
+   i=0
+   while [ "$i" -lt 400 ] && [ ! -s "$dir/state/hook.rc" ]; do

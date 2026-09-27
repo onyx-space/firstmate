@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>docs/rule-enforcement-design.md (branch fm/rule-enforcement-example-b7f2)</title>
+<style>
+ body { font: 16px/1.6 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; max-width: 820px; margin: 0 auto; padding: 32px; color:#1a1a1a; }
+ h1 { font-size: 1.7em; border-bottom:1px solid #ddd; padding-bottom:.3em; }
+ h2 { font-size: 1.3em; margin-top:1.6em; border-bottom:1px solid #eee; padding-bottom:.2em; }
+ code { background:#f4f4f4; padding:.1em .3em; border-radius:3px; }
+ table { border-collapse:collapse; } td,th { border:1px solid #ccc; padding:.3em .5em; }
+ .wm { background:#fffbe6; border:1px solid #e8d97a; padding:8px 12px; border-radius:6px; font-size:.85em; }
+</style></head>
+<body>
+<div class="wm">Rendered preview of the changed design document at commit 812fda4 (branch fm/rule-enforcement-example-b7f2). Section 6 is the addition under review.</div>
+<h1>Rule enforcement design: making a declared rule actually run</h1>
+<p>A rule in an injected file is read once, at the start of a session, as prose.
+The behaviour it governs happens much later, one tool call at a time, and nothing between the two connects them.
+That gap is the defect this document designs against: the rule text is present and the action still misses it.</p>
+<p>The measurements behind the design come from one long firstmate session (1672 assistant messages), and they are the reason the first batch below is what it is:</p>
+<ul>
+<li>The glyph rule (<code>a reply and its thinking carry no ✓, ✗ or Hmm marks</code>, as its owning text states it) was broken about 22,833 times inside that scope: 21,889 in thinking, 944 in replies.
+A further 225 glyphs sat in tool arguments, which the rule as written does not cover and the gate below deliberately adds, so the owning text must be widened before the gate cites it.</li>
+<li>The dispatch-shape rule (a handoff artifact in <code>~/memory/handoffs/</code>, plus exactly one <code>wire send</code>) ran 111 sends, of which 4 also wrote the artifact.</li>
+<li>Dispatch authorization (information, a question and a report are not a dispatch) was broken twice, and 10 or more questions were asked in chat instead of through <code>request_user_input</code>.</li>
+<li>Closing a reply with a menu of choices happened about 6 times; a route that was walked but not reported, 4 to 5 times; a write outside the declared write roots, once; a <code>查</code>/<code>研究</code> trigger that skipped a read-only check, once.</li>
+</ul>
+<h2>1. The judgeability boundary</h2>
+<p>Three classes, and the middle one is where most of the value is.</p>
+<p><strong>Text-shaped (mechanical on bytes).</strong> The violation exists as bytes at a known place: a glyph in a file, a missing artifact on disk, a path outside a root, a PR body whose visible part is English, a commit subject with no conventional prefix.
+A checker can fail these, because &quot;does this byte exist&quot; needs no judgment.</p>
+<p><strong>Event-shaped (mechanical on an intercepted action).</strong> The violation is a tool call that is about to happen: a <code>wire send</code> with no handoff behind it, a write outside the allowed roots, a <code>cd</code> into a checkout, a merge with no authorizing instruction, a shell command that arms the watcher by hand.
+A PreToolUse hook can refuse these <em>at the moment</em>, because the harness knows the tool, its arguments, and the turn it is in; a turn-end hook arrives only after the call, so it can block the turn end or append a correction rather than refuse the call.</p>
+<p><strong>Judgment-shaped (not mechanizable from the action alone).</strong> Whether a report is a menu, whether the question that was asked was the question to ask, whether a message was an authorization or information, whether a caveat mattered.
+No gate can decide these from the call itself: the same bytes are a correct report in one context and a menu in another.
+A gate can still key on a mechanical corollary of the shape — a turn&#39;s trigger text, the presence of a state-changing call — but that predicate is a <strong>proxy</strong> for the judgment, not the judgment, and the table labels it as one; where no corollary exists the rule is marked <strong>not mechanizable</strong> and the smallest human practice is named instead.</p>
+<p>A rule can be text-shaped and event-shaped at once; the placement rule below decides which one a gate uses.</p>
+<h2>2. Where a gate goes</h2>
+<p>Placement is decided by where the violation first becomes observable, not by where the rule is written:</p>
+<ol>
+<li><strong>The violation is bytes in a tracked repository at a known path</strong> (a doc, a script, a workflow, a commit subject, an inventory): a <strong>CI checker</strong>, added to the fleet&#39;s read-only check (<code>~/code/origmd/scripts/check.mjs</code>) where the repository being checked is a fleet repository, and to that repository&#39;s own CI otherwise.
+This is the cheapest rung: no hook, no harness, and it fails the same way for every agent and every human.</li>
+<li><strong>The violation is a tool call the harness is about to make</strong> (a shell command, a file write, a dispatch, a subagent launch): a <strong>PreToolUse seatbelt</strong>, in the harness the action is performed through, with the <em>policy</em> owned once (the existing shape: <code>bin/fm-arm-command-policy.mjs</code> owns the classification, <code>bin/fm-arm-pretool-check.sh</code> renders each harness&#39;s answer).
+The seatbelt reads the call, never the conversation: this is what keeps its false-positive rate and its cost small.</li>
+<li><strong>The violation is only visible once the turn is over</strong> (a reply shipped with no artifact, a promise with no follow-up, a glyph in the answer): a <strong>turn-end / Stop hook</strong>, which runs on the finished turn and either appends a corrective line to the model&#39;s own context or records the miss.
+A Stop hook cannot un-send a reply, so its value is correction and measurement, not prevention.</li>
+<li><strong>The violation is only visible to a reader&#39;s intent</strong>: <strong>one injected line at the moment of the decision</strong> is the last resort, and it is a reinforcement, not a gate.
+A rule that needs it is also a candidate for the &quot;not mechanizable&quot; line: an injected line that has already failed once at scale is evidence about the rule&#39;s shape, not about the model&#39;s diligence.</li>
+<li><strong>Nothing</strong>: the rule is marked not mechanizable, and the smallest human practice is named.</li>
+</ol>
+<p>Two constraints hold at every rung.
+The rule&#39;s text stays owned by origmd — <code>~/code/origmd/rules/*.md</code>, the injected <code>~/code/origmd/inject/global-core.md</code>, or the fleet skill that owns it — rather than copied here (a checker cites the rule; it never restates it, and firstmate adds no second copy).
+And no gate may block a <em>repair</em>: if the only way to return a system to a good state is the action the gate refuses, the gate is wrong, not the repair.</p>
+<h2>3. The table</h2>
+<p><code>落点</code> names the enforcement point; <code>验收</code> names the observation that proves it, and every acceptance is written so a recorded instance can be replayed against it.</p>
+<table>
+<thead>
+<tr>
+<th>规则</th>
+<th>可判形式</th>
+<th>落点</th>
+<th>验收怎么证</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>A reply and its thinking carry no <code>✓</code> / <code>✗</code> / <code>Hmm</code>; the gate also reads tool arguments, a widening the owning text must make before the gate cites it</td>
+<td>the glyphs, in the finished turn&#39;s own text and its tool arguments, matched as bytes</td>
+<td><strong>Stop hook</strong> (pi: the turn-end extension; other harnesses: their turn-end hook) appends one corrective line; <strong>session-log counter</strong> in the fleet&#39;s check reports the rate</td>
+<td>replay a recorded reply that carried a <code>✗</code>: the corrective line appears in the model&#39;s next context; the checker&#39;s count for that session drops to zero on a re-run of the fixture</td>
+</tr>
+<tr>
+<td>A dispatch is a handoff artifact in <code>~/memory/handoffs/</code> <strong>plus one</strong> <code>wire send</code></td>
+<td>the <code>wire send</code> call whose body is task-shaped, checked against an existing <code>~/memory/handoffs/…</code> path named in the same body</td>
+<td><strong>PreToolUse</strong> on <code>wire send</code> (<code>bin/fm-arm-command-policy.mjs</code> classifies; a sibling policy owns this predicate)</td>
+<td>replay a recorded send with no artifact → refused, naming the missing artifact and the rule; the 4 recorded sends that carried an artifact → allowed</td>
+</tr>
+<tr>
+<td>Information, a question and a report are not a dispatch</td>
+<td><strong>proxy</strong> for the authorization judgment (itself not mechanizable): the turn&#39;s trigger text (captain message) plus the presence of a state-changing call in the same turn</td>
+<td><strong>PreToolUse</strong>, turn-scoped: the seatbelt marks a <code>查</code>/<code>研究</code>/report-shaped turn read-only and refuses write, dispatch and card changes in it</td>
+<td>replay a recorded read-only turn with a write injected → refused; an ordinary turn is untouched</td>
+</tr>
+<tr>
+<td>A question is asked through <code>request_user_input</code>, not in chat, and a reply does not close with a menu</td>
+<td><strong>not mechanizable</strong> from the call: the same bytes are a question or a report depending on what the reader already knows</td>
+<td>none</td>
+<td>smallest practice: before sending a reply that ends with choices, the agent rereads the captain&#39;s last message and asks whether a decision is actually open; the fleet&#39;s own <code>/ahoy</code> recap is the human backstop</td>
+</tr>
+<tr>
+<td>A written artifact lands in a declared write root</td>
+<td>the target path, against the declared roots</td>
+<td><strong>PreToolUse / harness write gate</strong> (existing: <code>~/code/origmd/extensions/write-scope.ts</code>, the pi <code>tool_call</code> guard that reads the list out of the injected file; read-back: <code>~/code/origmd/scripts/check.mjs</code>, write routing)</td>
+<td>a write outside the roots is refused by name; the read-back fails on a root this endpoint lacks or a bullet declaring a second root the refusal never reads</td>
+</tr>
+<tr>
+<td>A commit subject carries a conventional prefix; a commit body does not carry an agent co-author</td>
+<td>the subject line and the trailer set, in the repository&#39;s own history</td>
+<td><strong>CI checker</strong> (fleet check, run over the pushed range)</td>
+<td>replay a bad subject and a <code>Co-Authored-By</code> trailer on a scratch branch → refused by name; the repository&#39;s own history passes</td>
+</tr>
+<tr>
+<td>The visible part of a captain-owned repository&#39;s PR description is Chinese and the English body is folded</td>
+<td>the PR body&#39;s shape: the fold marker, and the text before it</td>
+<td><strong>CI checker</strong> (the repository&#39;s own workflow, beside the existing attestation check)</td>
+<td>a body with no fold → fails naming the shape; a compliant body (PR #37 is the recorded sample) passes, and the attestation check keeps passing because the comment stays in the body</td>
+</tr>
+<tr>
+<td>A merge names a current authorizing instruction, or the standing posture</td>
+<td><strong>not mechanizable</strong> as intent; the <em>mechanical</em> half is that every merge goes through the guarded entrypoint</td>
+<td><strong>PreToolUse</strong> on the lower-level forge merge command, and the existing <code>bin/fm-pr-merge.sh</code> guard</td>
+<td>a direct <code>gh pr merge</code> is refused naming the entrypoint; a merge through it records the authorizing line (already the case for the red-check refusal)</td>
+</tr>
+<tr>
+<td>A route that was walked is reported, and a route that was not walked does not appear</td>
+<td><strong>not mechanizable</strong>: this is a comparison between what was done and what is claimed</td>
+<td>none</td>
+<td>smallest practice: the reply&#39;s own report lists the actions taken in the order taken, so an omission is a missing line rather than a hidden one</td>
+</tr>
+<tr>
+<td>A <code>查</code>/<code>研究</code> trigger performs its read-only check</td>
+<td>the turn&#39;s trigger, plus at least one read-only tool call in it</td>
+<td><strong>Stop hook</strong>: a turn triggered read-only that ends with no read-only call gets one corrective line</td>
+<td>replay the recorded <code>fleet-accent</code> turn → the corrective line appears; an ordinary turn is unaffected</td>
+</tr>
+</tbody></table>
+<h2>4. False positives and cost</h2>
+<p>A gate is only worth building when the cost of its false block is smaller than the cost of the miss it prevents, and that comparison is different per rung.</p>
+<ul>
+<li><strong>CI checker</strong>: a false failure blocks a pull request, and the reader pays in one round trip; the escape is a deliberate, visible edit to the checker (a pull request of its own), which is why checkers must assert only what the fleet is willing to defend in public.</li>
+<li><strong>PreToolUse seatbelt</strong>: a false refusal blocks a <em>tool call</em>, and the agent pays immediately by re-wording it; the escape must be a named, attended override (the existing shape: an explicit captain instruction naming the single check waived), never an environment variable a session can set for itself.</li>
+<li><strong>Stop hook</strong>: a false correction costs one wasted sentence and cannot lose work, so it is the right rung for a rule whose detection is uncertain.</li>
+<li><strong>Injected line</strong>: a false line blocks nothing, so its cost is not a refusal but clutter that dulls every later line; the escape is to delete the line once the rule is gated elsewhere, and a line that has survived two sessions without moving the miss rate is evidence about the rule&#39;s shape rather than a reason to keep it.</li>
+<li><strong>Never</strong>: a gate whose refusal can strand a system (a merge the captain ordered, a repair of a broken state) is not built, or is built as a warning plus a recorded miss.</li>
+</ul>
+<p>Every refusal names three things: the rule&#39;s own file and line, the exact condition that fired, and the smallest change that satisfies it.
+A gate that cannot name those three is a gate whose false positives will be worked around blindly, which is worse than the miss.</p>
+<h2>5. The first batch</h2>
+<p>Cheapest first, each with its acceptance.</p>
+<ol>
+<li><strong>Glyph rule at the turn end.</strong> The violation is a byte in text the harness already holds when the turn ends, and the correction is one line.
+Placement: the pi turn-end extension (<code>.pi/extensions/fm-primary-turnend-guard.ts</code>), with the predicate owned once so other harnesses&#39; turn-end hooks reuse it.
+Acceptance: replay a recorded reply that carried a glyph and show the corrective line in the next context; then show the session-log count for a clean fixture at zero.
+Cost: no new process, no new repository, and a false positive costs one sentence.</li>
+<li><strong>Dispatch pairing at <code>wire send</code>.</strong> The rule is the fleet&#39;s own (<code>~/code/origmd/rules/long-lived-lanes.md</code>: the artifact in <code>~/memory/handoffs/</code> plus one <code>wire send</code>), the violation is a single call, and the measurement is already in hand (4 of 111).
+Placement: a PreToolUse policy beside <code>bin/fm-arm-command-policy.mjs</code>; the predicate refuses a task-shaped <code>wire send</code> that names no existing handoff artifact.
+Acceptance: replay the recorded sends without an artifact and show each refused with the missing path named; replay the 4 that carried one and show them allowed; show one ordinary chat-shaped <code>wire send</code> unaffected.
+Cost: refusal is re-worded in place, and the escape is the captain naming the action.</li>
+<li><strong>Read-only turn gate.</strong> The trigger is in the harness&#39;s own hands and the check is a tool-call class, so both halves are mechanical.
+Placement: the same PreToolUse policy, turn-scoped by the trigger text.
+Acceptance: inject a write into a recorded <code>查</code> turn and show it refused; run an ordinary turn and show no change.
+Cost: a misread trigger costs one re-statement; the trigger&#39;s own words are quoted in the refusal.</li>
+</ol>
+<h2>6. A worked example: the switch was rejected, the identity&#39;s source was fixed</h2>
+<p>The lane question ran the whole loop once, so it is written here as a sample rather than as a proposal.
+The requirement was that a wake reach the lane serving a repository, and the first shape proposed was a <strong>switch</strong>: a spawn-side flag naming a lane, or a firstmate-side convention about who counts as one.
+The captain rejected both in one line - adding a switch means changing what a large word means in order to serve a few cases - and the accepted fix moved instead to the <strong>source of the name</strong>: every name in <code>endpoints.&lt;key&gt;.sessions</code> must be produced by the declaration line in <code>inject/machines/&lt;key&gt;.md</code>, the generator refuses a name it cannot trace back to that line, and the checker reports a registered-but-undeclared name as an error.
+What made that fix the right shape is exactly this document&#39;s placement rule: a session with no declaration has <strong>no name to be addressed by</strong>, so no wake can reach it and no flag is needed - the violation stopped being a judgement about behaviour and became a set difference between two files.
+Owner: <code>~/code/origmd</code> (the declaration line, the generator and the checker), already dispatched there.
+The lesson for every row above: when a rule needs a switch, ask first whether the <em>identity or the source</em> can be changed so that the state the switch would have flagged cannot exist.</p>
+<h2>7. Boundaries</h2>
+<ul>
+<li>No new resident process: every gate above runs per event (a tool call, a turn end, a CI job) and exits.</li>
+<li>No new repository: the CI-side checks join <code>~/code/origmd/scripts/check.mjs</code>, the hook-side policies join <code>bin/</code> in the repository whose harness performs the action, and the vault&#39;s own rules are not restated anywhere.</li>
+<li>The rule text stays owned by origmd — <code>~/code/origmd/rules/*.md</code>, the injected <code>~/code/origmd/inject/global-core.md</code>, or the fleet skill that owns it — rather than copied here; a checker cites it and a hook names it.</li>
+<li>The existing gates are read before a new one is written: <code>bin/fm-arm-pretool-check.sh</code> with <code>bin/fm-arm-command-policy.mjs</code> (shell policy), <code>bin/fm-cd-pretool-check.sh</code> (<code>docs/cd-guard.md</code>), <code>bin/fm-subagent-pretool-check.sh</code> (<code>docs/subagent-guard.md</code>), the turn-end hooks (<code>docs/turnend-guard.md</code>), <code>~/code/origmd/extensions/write-scope.ts</code> (the write-root refusal), and <code>~/code/origmd/scripts/check.mjs</code>.</li>
+<li>This document designs; it implements nothing.
+Each item above is a task for a later, separately authorized change.</li>
+</ul>
+
+</body></html>

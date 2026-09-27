@@ -1,0 +1,6 @@
+$ git diff --stat 393ef8b 812fda4
+ docs/rule-enforcement-design.md | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+$ bin/fm-doc-audience-check.sh
+fm-doc-audience-check: ok surfaces=102 local_links=410

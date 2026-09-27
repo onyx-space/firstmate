@@ -1,0 +1,22 @@
+diff --git a/docs/rule-enforcement-design.md b/docs/rule-enforcement-design.md
+index 221f3f3..211988d 100644
+--- a/docs/rule-enforcement-design.md
++++ b/docs/rule-enforcement-design.md
+@@ -93,7 +93,16 @@ Cheapest first, each with its acceptance.
+    Acceptance: inject a write into a recorded `查` turn and show it refused; run an ordinary turn and show no change.
+    Cost: a misread trigger costs one re-statement; the trigger's own words are quoted in the refusal.
+ 
+-## 6. Boundaries
++## 6. A worked example: the switch was rejected, the identity's source was fixed
++
++The lane question ran the whole loop once, so it is written here as a sample rather than as a proposal.
++The requirement was that a wake reach the lane serving a repository, and the first shape proposed was a **switch**: a spawn-side flag naming a lane, or a firstmate-side convention about who counts as one.
++The captain rejected both in one line - adding a switch means changing what a large word means in order to serve a few cases - and the accepted fix moved instead to the **source of the name**: every name in `endpoints.<key>.sessions` must be produced by the declaration line in `inject/machines/<key>.md`, the generator refuses a name it cannot trace back to that line, and the checker reports a registered-but-undeclared name as an error.
++What made that fix the right shape is exactly this document's placement rule: a session with no declaration has **no name to be addressed by**, so no wake can reach it and no flag is needed - the violation stopped being a judgement about behaviour and became a set difference between two files.
++Owner: `~/code/origmd` (the declaration line, the generator and the checker), already dispatched there.
++The lesson for every row above: when a rule needs a switch, ask first whether the *identity or the source* can be changed so that the state the switch would have flagged cannot exist.
++
++## 7. Boundaries
+ 
+ - No new resident process: every gate above runs per event (a tool call, a turn end, a CI job) and exits.
+ - No new repository: the CI-side checks join `~/code/origmd/scripts/check.mjs`, the hook-side policies join `bin/` in the repository whose harness performs the action, and the vault's own rules are not restated anywhere.

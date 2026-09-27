@@ -1,0 +1,7 @@
+$ git diff --stat 393ef8b52f13002f0ea031156127f62ef46c1e15 73840321cc7ae0ea9a849dc87ba183a842e42a02
+ docs/rule-enforcement-design.md        | 11 ++++++++++-
+ tests/fm-session-lock-ancestry.test.sh | 32 ++++++++++++++++++++++++--------
+ 2 files changed, 34 insertions(+), 9 deletions(-)
+
+$ bin/fm-doc-audience-check.sh   # real consumer of docs/documentation-audiences.json
+fm-doc-audience-check: ok surfaces=102 local_links=410
