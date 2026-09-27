@@ -109,6 +109,7 @@ fi
 exit 0
 SH
   chmod +x "$dir/fakebin/wire"
+  ln -sf wire "$dir/fakebin/olink"
 }
 
 # A wire.log with no `send` line is the negative assertion for "this merge was
