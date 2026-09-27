@@ -307,8 +307,14 @@ make_primary_home() {  # <dir>
   cat > "$dir/session.sh" <<'SH'
 #!/usr/bin/env bash
 if [ "${FM_FIXTURE_ORPHAN_HERE:-0}" = 1 ]; then
+  # Wait until the launcher has exited and reparented us. Comparing against the
+  # launch parent, not pid 1, keeps this correct on hosts that run a child
+  # subreaper: an orphan lands on the subreaper there, never on init. The pid
+  # comes from the launcher itself, so a fast exit already past the fork does
+  # not leave us comparing against the subreaper forever.
+  launch_ppid=$(tr -d ' ' < "$FM_FIXTURE_LAUNCHER_PID_FILE" 2>/dev/null)
   i=0
-  while [ "$i" -lt 200 ] && [ "$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')" != 1 ]; do
+  while [ "$i" -lt 200 ] && [ "$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')" = "$launch_ppid" ]; do
     sleep 0.05
     i=$((i + 1))
   done
@@ -320,8 +326,12 @@ printf '%s\n' "$?" > "$FM_HOME/state/hook.rc"
 SH
   cat > "$dir/daemon.sh" <<'SH'
 #!/usr/bin/env bash
+# Same launch-parent wait as session.sh: an orphan the launcher reparents can
+# land on a host subreaper instead of pid 1, so compare against the pid the
+# launcher recorded rather than against init.
+launch_ppid=$(tr -d ' ' < "$FM_FIXTURE_LAUNCHER_PID_FILE" 2>/dev/null)
 i=0
-while [ "$i" -lt 200 ] && [ "$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')" != 1 ]; do
+while [ "$i" -lt 200 ] && [ "$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' ')" = "$launch_ppid" ]; do
   sleep 0.05
   i=$((i + 1))
 done
@@ -333,17 +343,23 @@ SH
 }
 
 # Start the fixture tree detached from this suite's own process tree: the
-# launcher exits immediately, so the tree is reparented to init and the ancestry
-# walk terminates inside the fixture. Returns once the hook has recorded its exit
+# launcher exits immediately, so the tree is reparented away from the suite (to
+# init or a host subreaper) and the ancestry walk terminates inside the fixture.
+# Returns once the hook has recorded its exit
 # code.
 run_fixture_tree() {  # <dir> <session-bin> [<daemon-bin>]
-  local dir=$1 session_bin=$2 daemon_bin=${3:-} i
+  local dir=$1 session_bin=$2 daemon_bin=${3:-} i pidfile
+  # The launcher records its own pid before forking the tree, so the tree can
+  # wait for that exact parent to disappear even if the exit wins the race with
+  # the child's first read of its own ppid.
+  pidfile="$dir/state/.launcher-pid"
   if [ -n "$daemon_bin" ]; then
     FM_HOME="$dir" FM_SESSION_BIN="$session_bin" FM_FIXTURE_ORPHAN_HERE=0 \
-      bash -c '"$0" "$1" &' "$daemon_bin" "$dir/daemon.sh"
+      FM_FIXTURE_LAUNCHER_PID_FILE="$pidfile" \
+      bash -c 'printf "%s\n" "$$" > "$2"; "$0" "$1" &' "$daemon_bin" "$dir/daemon.sh" "$pidfile"
   else
-    FM_HOME="$dir" FM_FIXTURE_ORPHAN_HERE=1 \
-      bash -c '"$0" "$1" &' "$session_bin" "$dir/session.sh"
+    FM_HOME="$dir" FM_FIXTURE_ORPHAN_HERE=1 FM_FIXTURE_LAUNCHER_PID_FILE="$pidfile" \
+      bash -c 'printf "%s\n" "$$" > "$2"; "$0" "$1" &' "$session_bin" "$dir/session.sh" "$pidfile"
   fi
   i=0
   while [ "$i" -lt 400 ] && [ ! -s "$dir/state/hook.rc" ]; do
