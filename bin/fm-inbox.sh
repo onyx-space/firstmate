@@ -59,8 +59,8 @@
 #   FM_HOME              operational home whose state/ and data/ are used.
 #   FM_MACHINE_FILE      machine file whose "Long-lived maintenance lanes" line
 #                        names this endpoint's lanes (default ~/AGENTS.md).
-#   FM_WIRE_CONFIG       wire's own config, read for the endpoint key a lane's
-#                        registered name belongs to (default ~/.config/wire/config.json).
+#   FM_WIRE_CONFIG       olink's own config, read for the endpoint key a lane's
+#                        registered name belongs to (default ~/.config/olink/config.json).
 #
 # PRIVACY: `say` sends your audio and `ask` sends your question to Bedrock.
 # `note`, `status`, `list` and `drain` make no network call at all.
@@ -231,7 +231,7 @@ fm_inbox_source_is_notification() {  # <source>
 # status alone is not evidence; only its `mailbox: present` fact is. A repository
 # with no lane takes the pre-existing archive path.
 FM_MACHINE_FILE=${FM_MACHINE_FILE:-$HOME/AGENTS.md}
-FM_WIRE_CONFIG=${FM_WIRE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/wire/config.json}
+FM_WIRE_CONFIG=${FM_WIRE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/olink/config.json}
 FM_INBOX_DISPATCH_LANE=
 FM_INBOX_DISPATCH_ERROR=
 
@@ -261,14 +261,14 @@ lane_note_repo() {  # <note-file>
 # wire's answer for <repo>, as "routed\t<lane>\t<endpoint key>" when it routes one,
 # "no\t<reason>" when it answers that this endpoint serves no lane, or nothing
 # when wire cannot answer at all (not installed, or a map it refuses to read).
-# wire owns the decision: `wire route` reads the fleet's joined lane map and
+# olink owns the decision: `olink route` reads the fleet's joined lane map and
 # checks it against this endpoint's own registration, so the lane named here is
 # the lane `wire send --repo` would act on, and an answer not verified against
 # that registration is not trusted as a route.
 lane_wire_route() {  # <repo>
   local out served lane endpoint reason
-  command -v wire >/dev/null 2>&1 || return 0
-  out=$(wire route --repo "$1" 2>/dev/null) || return 0
+  command -v olink >/dev/null 2>&1 || return 0
+  out=$(olink route --repo "$1" 2>/dev/null) || return 0
   served=$(printf '%s\n' "$out" | sed -n 's/^  served: //p')
   if [ "$served" = yes ]; then
     [ "$(printf '%s\n' "$out" | sed -n 's/^  registration: //p')" = checked ] || return 0
