@@ -1,0 +1,29 @@
+FM_TEST_BEGIN 2026-09-28T06:39:57Z tests/fm-inbox-config-path.test.sh family=unclassified expected_gate_skip=none
+ok
+FM_TEST_END 2026-09-28T06:39:58Z tests/fm-inbox-config-path.test.sh exit=0 duration_ms=971 gate_skip=false
+FM_TEST_BEGIN 2026-09-28T06:39:58Z tests/fm-wake-drain-inbox-ack.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - a captain-authored note stays in state/inbox/ when its wake row is acknowledged
+ok - a notification note is archived with its wake row and the archival is named
+ok - wire's routed lane dispatches a merge with no machine-file lane to parse
+ok - wire's not-served answer keeps the archive path
+ok - a map entry naming another machine is not second-guessed by the machine file
+ok - a merge is routed by its own token, not a repository named in its title
+ok - a merge wake for a lane-served repository reaches that lane and is recorded as dispatched
+ok - a lane's own checkout decides: a different repository takes the archive path
+ok - a machine declaring no lane keeps the pre-existing archive path
+ok - only a merge reaches a lane; an ordinary relay notification keeps the archive path
+ok - the endpoint's symlinked machine file is read
+ok - a lane directory declared with ~ is resolved against HOME
+ok - a lane that serves the repository but cannot be reached keeps the note and its row retryable
+ok - a send wire did not make present leaves the note and its wake row retryable
+ok - one acknowledged batch archives its notification note and leaves the captain's
+ok - an explicit drain --ack still archives a note of either source
+ok - a source that could inject a record header line is refused and queues nothing
+ok - a legacy record without a header source is not classified by its body
+ok - a note queued through the producer's argv shape counts as captain-authored
+FM_TEST_END 2026-09-28T06:40:28Z tests/fm-wake-drain-inbox-ack.test.sh exit=0 duration_ms=29741 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=0 skipped_gate=0 duration_ms=30826
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=971 failed=0
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=1 duration_ms=29741 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-wake-drain-inbox-ack.test.sh duration_ms=29741
+FM_TEST_SLOWEST rank=2 script=tests/fm-inbox-config-path.test.sh duration_ms=971

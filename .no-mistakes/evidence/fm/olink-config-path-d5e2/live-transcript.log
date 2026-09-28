@@ -1,0 +1,32 @@
+## live scenarios: fm-inbox config path + olink route  (root=/home/onyx/.no-mistakes/worktrees/42774a4b8442/01M3GJZYFEDN6ZBJX1FGGYHER3)
+
+=== S1 default config resolves ~/.config/olink/config.json (no wire path present) ===
+dispatched 1790577583-aJeXsS lane-a
+wire.log: send --to h --session lane-a --text merge wake: onyx-space/firstmate merged - firstmate dispatched this relay notification to the lane serving it (note 1790577583-aJeXsS): 【中继变更】github onyx-space/firstmate#37：open → merged | 标题：x | 链接：https://github.com/onyx-space/firstmate/pull/37
+olink.log: route --repo github onyx-space/firstmate
+PASS: S1: endpoint key h read from ~/.config/olink/config.json; olink route called
+
+=== S2 transitional ~/.config/wire symlink onto ~/.config/olink still dispatches ===
+dispatched 1790577583-kvcmnS lane-a
+PASS: S2: dispatch works with ~/.config/wire symlinked to olink
+
+=== S3 XDG_CONFIG_HOME is honoured ===
+dispatched 1790577584-nLrpm3 lane-a
+PASS: S3: endpoint m read from XDG_CONFIG_HOME/olink/config.json
+
+=== S4 explicit FM_WIRE_CONFIG wins over the olink default (name unchanged) ===
+dispatched 1790577584-xFnGsZ lane-a
+PASS: S4: endpoint d read from explicit FM_WIRE_CONFIG, not the default w
+
+=== S5 route decision comes from olink route, never wire route ===
+dispatched 1790577584-jGYPuU olink-lane
+wire.log: send --to h --session olink-lane --text merge wake: onyx-space/firstmate merged - firstmate dispatched this relay notification to the lane serving it (note 1790577584-jGYPuU): 【中继变更】github onyx-space/firstmate#37：open → merged | 标题：x | 链接：https://github.com/onyx-space/firstmate/pull/37
+olink.log: route --repo github onyx-space/firstmate
+PASS: S5: olink route decided the lane; wire route was not invoked
+
+=== S6 adversarial: no olink on PATH -> no wire route call; machine-file fallback ===
+dispatched 1790577584-JlG19e lane-a
+wire.log: send --to h --session lane-a --text merge wake: onyx-space/firstmate merged - firstmate dispatched this relay notification to the lane serving it (note 1790577584-JlG19e): 【中继变更】github onyx-space/firstmate#37：open → merged | 标题：x | 链接：https://github.com/onyx-space/firstmate/pull/37
+PASS: S6: without olink, no wire route is attempted; machine-file lane-a fallback used
+
+pass=6 fail=0
