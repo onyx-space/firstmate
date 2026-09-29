@@ -59,8 +59,8 @@
 #   FM_HOME              operational home whose state/ and data/ are used.
 #   FM_MACHINE_FILE      machine file whose "Long-lived maintenance lanes" line
 #                        names this endpoint's lanes (default ~/AGENTS.md).
-#   FM_WIRE_CONFIG       wire's own config, read for the endpoint key a lane's
-#                        registered name belongs to (default ~/.config/wire/config.json).
+#   FM_WIRE_CONFIG       olink's own config, read for the endpoint key a lane's
+#                        registered name belongs to (default ~/.config/olink/config.json).
 #
 # PRIVACY: `say` sends your audio and `ask` sends your question to Bedrock.
 # `note`, `status`, `list` and `drain` make no network call at all.
@@ -208,7 +208,7 @@ fm_inbox_source_is_notification() {  # <source>
 # wake exists for, and archiving the note as handled leaves it with nothing.
 # Which repository a note is about comes from the note's own leading relay token,
 # never from a repository named in its title or a link.
-# Which lane serves that repository is asked of wire, whose `route` reads the
+# Which lane serves that repository is asked of olink, whose `route` reads the
 # fleet's joined map, <origmd clone>/ref/lanes.json - written by
 # scripts/owners.mjs from the machine file and each lane's own checkout - together
 # with this endpoint's own registration, so a wake here and a `wire send --repo`
@@ -218,10 +218,11 @@ fm_inbox_source_is_notification() {  # <source>
 # machine file (the injected copy of admin/origmd's inject/machines/<key>.md, whose
 # "Long-lived maintenance lanes" line carries each lane's name and directory) plus
 # the repository each lane's own directory checks out, so a lane checking out a
-# different repository takes the ordinary archive path either way. wire is
-# addressed by the lane name, and the endpoint key `--to` needs comes from wire's
-# own answer - or, when wire is silent and the machine file answers, from wire's
-# own config - so the machine key/endpoint pairing is never restated here.
+# different repository takes the ordinary archive path either way. The dispatch
+# addresses the lane by the name olink resolves, and the endpoint key `--to` needs
+# comes from olink's own answer - or, when olink is silent and the machine file
+# answers, from olink's own config - so the machine key/endpoint pairing is never
+# restated here.
 #
 # Refusal is fail-closed: a lane that serves the repository but cannot be reached
 # - no key for its registered name, no wire on the machine, or a send whose own
@@ -231,7 +232,7 @@ fm_inbox_source_is_notification() {  # <source>
 # status alone is not evidence; only its `mailbox: present` fact is. A repository
 # with no lane takes the pre-existing archive path.
 FM_MACHINE_FILE=${FM_MACHINE_FILE:-$HOME/AGENTS.md}
-FM_WIRE_CONFIG=${FM_WIRE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/wire/config.json}
+FM_WIRE_CONFIG=${FM_WIRE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/olink/config.json}
 FM_INBOX_DISPATCH_LANE=
 FM_INBOX_DISPATCH_ERROR=
 
@@ -258,17 +259,17 @@ lane_note_repo() {  # <note-file>
   printf '%s' "$token"
 }
 
-# wire's answer for <repo>, as "routed\t<lane>\t<endpoint key>" when it routes one,
+# olink's answer for <repo>, as "routed\t<lane>\t<endpoint key>" when it routes one,
 # "no\t<reason>" when it answers that this endpoint serves no lane, or nothing
-# when wire cannot answer at all (not installed, or a map it refuses to read).
-# wire owns the decision: `wire route` reads the fleet's joined lane map and
+# when olink cannot answer at all (not installed, or a map it refuses to read).
+# olink owns the decision: `olink route` reads the fleet's joined lane map and
 # checks it against this endpoint's own registration, so the lane named here is
 # the lane `wire send --repo` would act on, and an answer not verified against
 # that registration is not trusted as a route.
 lane_wire_route() {  # <repo>
   local out served lane endpoint reason
-  command -v wire >/dev/null 2>&1 || return 0
-  out=$(wire route --repo "$1" 2>/dev/null) || return 0
+  command -v olink >/dev/null 2>&1 || return 0
+  out=$(olink route --repo "$1" 2>/dev/null) || return 0
   served=$(printf '%s\n' "$out" | sed -n 's/^  served: //p')
   if [ "$served" = yes ]; then
     [ "$(printf '%s\n' "$out" | sed -n 's/^  registration: //p')" = checked ] || return 0
@@ -322,8 +323,8 @@ lane_repo_of_dir() {  # <directory>
     | sed -E 's#^[A-Za-z][A-Za-z0-9+.-]*://([^/@]+@)?[^/]+/##; s#^[^/@]+@[^/:]+:##; s#\.git$##; s#/$##'
 }
 
-# The endpoint key wire needs to address this endpoint, read from wire's own
-# config: the row whose sessions map registers <lane-name> is this endpoint's
+# The endpoint key the dispatch needs to address this endpoint, read from olink's
+# own config: the row whose sessions map registers <lane-name> is this endpoint's
 # row, because a lane works in a checkout on the endpoint it is declared by. No
 # row or several rows is no answer, never a guessed one.
 lane_endpoint_key() {  # <lane-name>
@@ -353,7 +354,7 @@ PY
 # The lane serving a note's repository, as "<name>\t<endpoint key>\t<owner/name>",
 # or nothing. Only a note whose own token reports a merge qualifies: an ordinary
 # relay notification is something firstmate reads, not a piece of work a lane
-# takes over. wire's answer comes first; the machine file answers only when the
+# takes over. olink's answer comes first; the machine file answers only when the
 # map is silent about this repository - absent, or carrying no entry for it - so a
 # map entry naming another machine ends as no dispatch here rather than as a
 # second, local guess at the same question.
