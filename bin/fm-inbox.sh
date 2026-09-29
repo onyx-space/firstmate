@@ -211,7 +211,7 @@ fm_inbox_source_is_notification() {  # <source>
 # Which lane serves that repository is asked of olink, whose `route` reads the
 # fleet's joined map, <origmd clone>/ref/lanes.json - written by
 # scripts/owners.mjs from the machine file and each lane's own checkout - together
-# with this endpoint's own registration, so a wake here and a `wire send --repo`
+# with this endpoint's own registration, so a wake here and an `olink send --repo`
 # reach the same lane and a repository another machine maintains is never
 # dispatched from here. Only a verified answer counts. When the map is absent or
 # silent about the repository, the same question falls back to this endpoint's
@@ -225,10 +225,10 @@ fm_inbox_source_is_notification() {  # <source>
 # restated here.
 #
 # Refusal is fail-closed: a lane that serves the repository but cannot be reached
-# - no key for its registered name, no wire on the machine, or a send whose own
+# - no key for its registered name, no olink on the machine, or a send whose own
 # report does not put the payload in the mailbox - leaves the note and its wake
 # row where they are, retryable, instead of reporting a delivery that did not
-# happen. wire exits 0 even when it reports `mailbox: unreadable`, so its exit
+# happen. olink exits 0 even when it reports `mailbox: unreadable`, so its exit
 # status alone is not evidence; only its `mailbox: present` fact is. A repository
 # with no lane takes the pre-existing archive path.
 FM_MACHINE_FILE=${FM_MACHINE_FILE:-$HOME/AGENTS.md}
@@ -391,7 +391,7 @@ lane_for_note() {  # <note-file>
 # repository, 2 a lane does and the delivery could not be made
 # (FM_INBOX_DISPATCH_ERROR says why).
 dispatch_note_to_lane() {  # <id>
-  local id=$1 note="$INBOX/$1.note" match lane rest endpoint repo wire body out mailbox rc=0
+  local id=$1 note="$INBOX/$1.note" match lane rest endpoint repo olink body out mailbox rc=0
   FM_INBOX_DISPATCH_LANE=
   FM_INBOX_DISPATCH_ERROR=
   match=$(lane_for_note "$note")
@@ -410,7 +410,7 @@ dispatch_note_to_lane() {  # <id>
   out=$("$olink" send --to "$endpoint" --session "$lane" \
     --text "merge wake: $repo merged - firstmate dispatched this relay notification to the lane serving it (note $id)${body:+: $body}" 2>&1) \
     || rc=$?
-  # wire reports two independent facts and exits 0 even when the mailbox write
+  # olink reports two independent facts and exits 0 even when the mailbox write
   # failed, so the delivery is read from its own report: only `mailbox: present`
   # is a payload the lane can read. Anything else - an absent check, an
   # unreadable one, a nonzero exit, or no fact at all - stays retryable.
