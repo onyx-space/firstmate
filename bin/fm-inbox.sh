@@ -264,7 +264,7 @@ lane_note_repo() {  # <note-file>
 # when olink cannot answer at all (not installed, or a map it refuses to read).
 # olink owns the decision: `olink route` reads the fleet's joined lane map and
 # checks it against this endpoint's own registration, so the lane named here is
-# the lane `wire send --repo` would act on, and an answer not verified against
+# the lane `olink send --repo` would act on, and an answer not verified against
 # that registration is not trusted as a route.
 lane_wire_route() {  # <repo>
   local out served lane endpoint reason
@@ -402,12 +402,12 @@ dispatch_note_to_lane() {  # <id>
     FM_INBOX_DISPATCH_ERROR="lane $lane serves $repo but no endpoint key in $FM_WIRE_CONFIG registers it"
     return 2
   fi
-  if ! wire=$(command -v wire); then
-    FM_INBOX_DISPATCH_ERROR="lane $lane serves $repo but wire is not installed on this endpoint"
+  if ! olink=$(command -v olink); then
+    FM_INBOX_DISPATCH_ERROR="lane $lane serves $repo but olink is not installed on this endpoint"
     return 2
   fi
   body=$(sed -n '/^--$/,$p' "$note" 2>/dev/null | tail -n +2 | head -n 1)
-  out=$("$wire" send --to "$endpoint" --session "$lane" \
+  out=$("$olink" send --to "$endpoint" --session "$lane" \
     --text "merge wake: $repo merged - firstmate dispatched this relay notification to the lane serving it (note $id)${body:+: $body}" 2>&1) \
     || rc=$?
   # wire reports two independent facts and exits 0 even when the mailbox write
@@ -416,7 +416,7 @@ dispatch_note_to_lane() {  # <id>
   # unreadable one, a nonzero exit, or no fact at all - stays retryable.
   mailbox=$(printf '%s\n' "$out" | sed -n 's/^  mailbox: //p')
   if [ "$rc" -ne 0 ] || [ "$mailbox" != present ]; then
-    FM_INBOX_DISPATCH_ERROR="wire send to lane $lane did not put the payload in the mailbox (${mailbox:-no mailbox fact}): ${out:-no output}"
+    FM_INBOX_DISPATCH_ERROR="olink send to lane $lane did not put the payload in the mailbox (${mailbox:-no mailbox fact}): ${out:-no output}"
     return 2
   fi
   FM_INBOX_DISPATCH_LANE=$lane
