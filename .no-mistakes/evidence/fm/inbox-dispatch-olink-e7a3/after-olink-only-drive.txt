@@ -1,0 +1,12 @@
+queued id: 1790678428-zMVkLx
+ack command: --ack-through 1 --recovery-generation 4101227.1790678428.4IOYrg
+drain exit: 0 (ack run)
+=== olink.log ===
+route --repo github onyx-space/firstmate
+send --to h --session lane-a --text merge wake: onyx-space/firstmate merged - firstmate dispatched this relay notification to the lane serving it (note 1790678428-zMVkLx): 【中继变更】github onyx-space/firstmate#37：open → merged | 标题：x | 链接：https://github.com/onyx-space/firstmate/pull/37
+=== ack.err (dispatch/refusal lines) ===
+wake drain: dispatched 1 notification note(s) to the lane serving the repository, with the wake row(s) just acknowledged: 1790678428-zMVkLx lane-a
+=== dispatched record ===
+1790678428-zMVkLx.note
+=== inbox remaining ===
+(no notes left in inbox)

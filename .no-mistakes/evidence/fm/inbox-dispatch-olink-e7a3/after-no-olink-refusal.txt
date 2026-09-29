@@ -1,0 +1,14 @@
+mode=no-olink mailbox=present
+wire resolves to: <none>
+olink resolves to: <none>
+queued id: 1790678458-g8Vz4L
+ack command: --ack-through 1 --recovery-generation 4113944.1790678458.TxpcpU
+ack exit: 1
+=== olink.log ===
+(no olink.log - olink was never invoked)
+=== ack.err (dispatch/refusal lines) ===
+wake drain: the note(s) of the rows being acknowledged could not be archived (dispatch refused 1790678458-g8Vz4L: lane lane-a serves onyx-space/firstmate but olink is not installed on this endpoint); the rows stay queued to retry
+=== dispatched record ===
+(no dispatched dir)
+=== inbox remaining ===
+/tmp/fm-olink-live-after-no-olink/state/inbox/1790678458-g8Vz4L.note

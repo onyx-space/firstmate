@@ -1,0 +1,15 @@
+mode=olink-only mailbox=unreadable
+wire resolves to: <none>
+olink resolves to: /tmp/fm-olink-live-after-unreadable/fakebin/olink
+queued id: 1790678462-P7n4Jk
+ack command: --ack-through 1 --recovery-generation 4116569.1790678462.4fw70x
+ack exit: 1
+=== olink.log ===
+route --repo github onyx-space/firstmate
+send --to h --session lane-a --text merge wake: onyx-space/firstmate merged - firstmate dispatched this relay notification to the lane serving it (note 1790678462-P7n4Jk): 【中继变更】github onyx-space/firstmate#37：open → merged | 标题：x | 链接：https://github.com/onyx-space/firstmate/pull/37
+=== ack.err (dispatch/refusal lines) ===
+wake drain: the note(s) of the rows being acknowledged could not be archived (dispatch refused 1790678462-P7n4Jk: olink send to lane lane-a did not put the payload in the mailbox (unreadable): delivery:
+=== dispatched record ===
+(no dispatched dir)
+=== inbox remaining ===
+/tmp/fm-olink-live-after-unreadable/state/inbox/1790678462-P7n4Jk.note

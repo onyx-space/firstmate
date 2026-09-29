@@ -1,0 +1,11 @@
+queued id: 1790678440-zHeMX6
+ack command: --ack-through 1 --recovery-generation 4106012.1790678440.4a2J2f
+drain exit: 1 (ack run)
+=== olink.log ===
+route --repo github onyx-space/firstmate
+=== ack.err (dispatch/refusal lines) ===
+wake drain: the note(s) of the rows being acknowledged could not be archived (dispatch refused 1790678440-zHeMX6: lane lane-a serves onyx-space/firstmate but wire is not installed on this endpoint); the rows stay queued to retry
+=== dispatched record ===
+(no dispatched dir)
+=== inbox remaining ===
+/tmp/fm-olink-live-before/state/inbox/1790678440-zHeMX6.note
