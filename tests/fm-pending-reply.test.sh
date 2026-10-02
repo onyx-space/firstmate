@@ -429,13 +429,45 @@ test_legacy_escalation_closes_default_decision() {
   printf 'done [corr=%s]: delayed legacy reply\n' "$corr" >> "$state/hibit.status"
 
   fm_pending_reply_try_resolve "$state" "$corr" || fail "legacy reply should resolve its record"
+  # The correlated done: is one of the terminal verbs, so it already superseded
+  # the shared keyless escalation by the time the close runs. The guard finds no
+  # still-open record and writes no redundant resolution line, but the closure
+  # is still recorded so the resolved record does not retry forever.
+  if grep -Fq 'resolved [key=default]: pending-reply-resolved:' "$state/hibit.status"; then
+    fail "legacy escalation wrote a redundant close for a terminal-superseded decision"
+  fi
+  open=$(status_open_decisions "$state/hibit.status")
+  [ -z "$open" ] || fail "resolved legacy escalation remained open: $open"
+  [ -n "$(fm_pending_reply_get "$rec" escalation_closed_epoch)" ] \
+    || fail "legacy escalation closure was not recorded"
+  pass "legacy escalation records closure under the shared default key"
+}
+
+# A non-terminal correlated reply leaves the keyless escalation open, so the
+# library must append the guarded close itself - the path the terminal supersede
+# rule does not take.
+test_legacy_escalation_appends_close_for_a_nonterminal_reply() {
+  local home state corr rec open
+  home=$(setup_parent legacy-append)
+  state="$home/state"
+  export FM_PENDING_REPLY_NOW=4735
+  corr=$(fm_pending_reply_create "$home" "$state" "hibit" "legacy append")
+  fm_pending_reply_mark_delivered "$state" "$corr"
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  fm_pending_reply_set "$rec" phase escalated
+  fm_pending_reply_set "$rec" escalated_epoch 4700
+  printf 'blocked: pending-reply-missed: task=hibit pending-reply-id=%s request=legacy append\n' "$corr" \
+    > "$state/hibit.status"
+  printf 'working [corr=%s]: delayed legacy reply\n' "$corr" >> "$state/hibit.status"
+
+  fm_pending_reply_try_resolve "$state" "$corr" || fail "legacy reply should resolve its record"
   [ "$(grep -Fc "resolved [key=default]: pending-reply-resolved: task=hibit pending-reply-id=$corr" "$state/hibit.status")" -eq 1 ] \
     || fail "legacy escalation did not append one guarded default-key resolution"
   open=$(status_open_decisions "$state/hibit.status")
   [ -z "$open" ] || fail "resolved legacy escalation remained open: $open"
   [ -n "$(fm_pending_reply_get "$rec" escalation_closed_epoch)" ] \
     || fail "legacy escalation closure was not recorded"
-  pass "legacy escalation closes under the shared default key"
+  pass "legacy escalation appends the guarded close for a still-open default decision"
 }
 
 test_legacy_escalation_does_not_close_taken_default_decision() {
@@ -450,8 +482,10 @@ test_legacy_escalation_does_not_close_taken_default_decision() {
   fm_pending_reply_set "$rec" escalated_epoch 4700
   printf 'blocked: pending-reply-missed: task=hibit pending-reply-id=%s request=legacy escalation\n' "$corr" \
     > "$state/hibit.status"
-  printf 'blocked: unrelated operator decision\n' >> "$state/hibit.status"
   printf 'done [corr=%s]: delayed legacy reply\n' "$corr" >> "$state/hibit.status"
+  # A fresh, unrelated keyless decision raised after the reply: the retried
+  # close must not clear it just because it shares the shared default key.
+  printf 'blocked: unrelated operator decision\n' >> "$state/hibit.status"
 
   fm_pending_reply_try_resolve "$state" "$corr" || fail "legacy reply should resolve its record"
   if grep -Fq 'resolved [key=default]: pending-reply-resolved:' "$state/hibit.status"; then
@@ -1629,6 +1663,7 @@ test_second_missed_turn_escalates_once_and_stays_durable
 test_escalation_wakes_and_its_close_stays_quiet
 test_escalation_publication_failure_retries
 test_legacy_escalation_closes_default_decision
+test_legacy_escalation_appends_close_for_a_nonterminal_reply
 test_legacy_escalation_does_not_close_taken_default_decision
 test_foreign_blocker_is_not_selected_as_escalation
 test_concurrent_resolution_closes_escalation_once

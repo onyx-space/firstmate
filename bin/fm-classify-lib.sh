@@ -141,13 +141,15 @@ fm_utc_iso_to_epoch() {  # <timestamp>
 # fm-captain-hold.sh has verified the corresponding captain-held backlog item.
 FM_CLASSIFY_RESOLVE_VERB_DEFAULT='resolved'
 FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT='captain-held'
-# The terminal verbs that SUPERSEDE a KEYLESS open decision. A keyless
-# needs-decision/blocked line carries no key of its own, so no later keyed
-# transition can ever name it and only a keyless close or a terminal line can
-# retire it: the task has moved past whatever it was asking. A terminal line
-# names no key, so it never supersedes a KEYED decision - see
-# tests/fm-wake-drain-open-decisions.test.sh. `done` is not overridable; the
-# pause verb is the FM_CLASSIFY_PAUSED_VERB defined above.
+# The verbs that SUPERSEDE a KEYLESS open decision: the same terminal verbs
+# status_is_terminal_verb names (done, failed) plus the declared pause verb
+# (status_is_paused). A keyless needs-decision/blocked line carries no key of
+# its own, so no later keyed transition can ever name it and only a keyless
+# close or one of these can retire it: the task has moved past whatever it was
+# asking. The rule drops only that keyless record, so it never supersedes a
+# KEYED decision - see tests/fm-wake-drain-open-decisions.test.sh. The sets are
+# read from those two predicates, never restated, so the vocabulary has one
+# owner.
 
 # Return the last non-blank line of a status file (empty if missing/blank).
 last_status_line() {
@@ -437,7 +439,7 @@ EOF
 }
 # Fold ONE status line into an existing "<key>\t<verb>\t<note>\n"-per-line open
 # set, applying the same needs-decision/blocked-opens, resolved/captain-held-closes,
-# done/paused-supersedes-a-keyless-open rule status_open_decisions documents
+# terminal-line-supersedes-a-keyless-open rule status_open_decisions documents
 # above. Pure text transform, no file I/O.
 # This is the ONE place the per-line open/resolved rule is written; both the
 # whole-file fold (status_open_decisions) and the incremental cursor-backed fold
@@ -513,13 +515,15 @@ _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb
       open=$(_fm_decision_drop "$open" "$key")
       [ -n "$open" ] && open="${open}"$'\n'
       ;;
-    done|"${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}")
+    *)
       # A keyless open line lives in the shared "default" bucket, which no keyed
-      # transition can name, so a later terminal line is the only event that
-      # says the task moved past it. Dropping ONLY the default record keeps
-      # every keyed decision untouched.
-      open=$(_fm_decision_drop "$open" default)
-      [ -n "$open" ] && open="${open}"$'\n'
+      # transition can name, so a terminal line or a declared pause is the only
+      # event that says the task moved past it. Dropping ONLY the default record
+      # keeps every keyed decision untouched.
+      if status_is_terminal_verb "$line" || status_is_paused "$line"; then
+        open=$(_fm_decision_drop "$open" default)
+        [ -n "$open" ] && open="${open}"$'\n'
+      fi
       ;;
   esac
   printf '%s' "$open"
@@ -755,10 +759,12 @@ _fm_open_decisions_cursor_path() {  # <status-file>
 # Version 4 was already spent on the bracketed-tag parser change above, and a
 # cursor persisted under that reading predates this one, so it must still be
 # discarded and rebuilt from byte 0 under the new reading.
-# 6: a later done/paused line now supersedes a KEYLESS open decision, so a
-# cursor persisted under version 5 may hold that default record as still open
-# and must be rebuilt from byte 0 under the new reading.
-FM_OPEN_DECISIONS_FOLD_VERSION=6
+# 6: a later done: or paused: line supersedes a KEYLESS open decision.
+# 7: that terminal supersede rule now also covers failed:, the other terminal
+# verb status_is_terminal_verb names, so a cursor persisted under version 6 may
+# hold a default record a failure has since retired and must be rebuilt from
+# byte 0 under the new reading.
+FM_OPEN_DECISIONS_FOLD_VERSION=7
 
 # Portable device:inode identity for the rotation/recreation check below.
 _fm_open_decisions_file_ident() {  # <file> -> strongest available identity
@@ -1743,6 +1749,9 @@ _fm_status_open_decision_origins() {  # <status-file>
         _fm_open_set_has "$after" "$key" || origins=$(_fm_decision_origin_drop "$origins" "$key")
         ;;
     esac
+    # A terminal line can retire the shared keyless record without naming it, so
+    # the origin map may not keep a key the open set no longer holds.
+    _fm_open_set_has "$after" default || origins=$(_fm_decision_origin_drop "$origins" default)
     open=$after
   done < "$f"
   printf '%s' "$origins"
@@ -1813,7 +1822,10 @@ _fm_status_open_decision_origins() {  # <status-file>
 # A run of rounds is visible rather than silent: the round that stops short
 # writes one diagnostic line and leaves FM_CLASSIFY_SPAN_SCAN_NOTICE set for the
 # caller's own log.
-FM_CLASSIFY_SPAN_SCAN_VERSION=2
+# 3: a later terminal line supersedes a keyless open decision, so a cursor
+# persisted under version 2 may hold that default origin as live and must be
+# discarded and rebuilt from the span's first line.
+FM_CLASSIFY_SPAN_SCAN_VERSION=3
 FM_CLASSIFY_SCAN_BUDGET_SECS_DEFAULT=2
 
 _fm_span_scan_cursor_path() {  # <status-file> <start>
@@ -2011,6 +2023,9 @@ _fm_span_scan_fold_line() {  # <line> <position> <resolve-verb> <held-verb> <ver
       _fm_open_set_has "$after" "$key" || _fm_span_origin_drop "$key"
       ;;
   esac
+  # A terminal line can retire the shared keyless record without naming it, so
+  # the origin map may not keep a key the open set no longer holds.
+  _fm_open_set_has "$after" default || _fm_span_origin_drop default
   return 0
 }
 
@@ -2047,13 +2062,14 @@ _fm_span_scan_round() {  # <chunk-file> <rest-file>
     fi
     i=$(( i + 1 ))
     verb=$(status_line_verb "$line")
-    # Only a transition verb can move the open set, so only those lines pay for a
-    # fold; every other line leaves _fm_decision_fold_line's result untouched.
-    case "$verb" in
-      needs-decision|blocked|"$resolve"|"$held")
-        _fm_span_scan_fold_line "$line" "$(( FM_SPAN_SCAN_LINE + i ))" "$resolve" "$held" "$verb"
-        ;;
-    esac
+    # Only a verb that can move the open set pays for a fold: the transition
+    # verbs below, the terminal verbs status_is_terminal_verb names (which
+    # include a keyless needs-decision/blocked open), and a declared pause. Every
+    # other line leaves _fm_decision_fold_line's result untouched.
+    if [ "$verb" = "$resolve" ] || [ "$verb" = "$held" ] \
+      || status_is_terminal_verb "$line" || status_is_paused "$line"; then
+      _fm_span_scan_fold_line "$line" "$(( FM_SPAN_SCAN_LINE + i ))" "$resolve" "$held" "$verb"
+    fi
     if status_is_captain_held "$line"; then
       # A transfer closes the status-log decision and remains non-actionable to
       # stale classification. The side-band marker lets signal routing surface

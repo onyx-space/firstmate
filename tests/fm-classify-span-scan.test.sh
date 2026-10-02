@@ -325,6 +325,45 @@ if [ -e "$mid_line_dir/.status.span-scan-cursor.$mid_line_start" ]; then
 fi
 pass "mid-line span: the live declaration is reported, the superseded one is not, and the fold is the side that dropped it"
 
+# --- a keyless decision retired by a later terminal line --------------------
+
+# The drain's reported noise (h, 2026-10-02, retired-repo-cleanup-x1): a keyless
+# blocked line is superseded by the task's own terminal line, so the whole-file
+# fold lists nothing. The span scan must agree - otherwise a watcher whose span
+# starts before the blocked line re-signals a finished blocker on every restart.
+superseded_dir="$STATE/keyless-superseded"
+mkdir -p "$superseded_dir" || fail "could not create $superseded_dir"
+superseded_log="$superseded_dir/status.status"
+printf '%s\n' \
+  'needs-decision [key=dsh-search-cleanup-approval]: approve the cleanup' \
+  'blocked: dsh-search - w unreachable, remote delete paused' \
+  'resolved [key=dsh-search-cleanup-approval]: approved, executed' \
+  'paused: dsh-search cleanup complete' > "$superseded_log" \
+  || fail "could not build the superseded-keyless fixture"
+superseded_rc=0
+superseded_record=$(status_span_first_actionable "$superseded_log" 0) || superseded_rc=$?
+assert_equals 1 "$superseded_rc" \
+  "the span scan re-signalled a keyless blocker a later pause had superseded"
+assert_equals '' "$superseded_record" \
+  "the span scan returned a superseded keyless blocker as actionable"
+[ -z "$(status_open_decisions "$superseded_log")" ] \
+  || fail "the whole-file fold and the span scan disagree on the superseded keyless blocker"
+
+# A failure is a terminal verb by the same shared predicate. The failed: line
+# is itself captain-relevant and stays in the record; only the superseded
+# keyless blocker it retired may not be re-signalled.
+printf 'blocked: waiting on the forge\nfailed: the forge never came back\n' > "$superseded_dir/failed.status" \
+  || fail "could not build the failed-keyless fixture"
+failed_rc=0
+failed_record=$(status_span_first_actionable "$superseded_dir/failed.status" 0) || failed_rc=$?
+assert_equals 0 "$failed_rc" \
+  "the span scan lost the actionable failure event"
+assert_not_contains "$failed_record" 'blocked: waiting on the forge' \
+  "the span scan returned a failure-superseded keyless blocker as actionable"
+assert_contains "$failed_record" 'failed: the forge never came back' \
+  "the span scan dropped the failure event that superseded the blocker"
+pass "a keyless decision retired by a later terminal line is not re-signalled by the span scan"
+
 # The reused path matters: the same log classified twice must not carry state
 # from the first pass into the second.
 assert_equivalent "$eq_log" 0 "repeated classification of the same log"

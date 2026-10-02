@@ -352,7 +352,7 @@ test_previous_fold_cache_is_refolded_under_current_semantics() {
 # open. The version bump must rebuild it from byte 0, or the drain keeps
 # re-listing the finished blocker out of stale cached state forever.
 test_fold_version_bump_drops_a_stale_keyless_blocker() {
-  local dir state status cursor out stale
+  local dir state status cursor out stale current_version
   dir=$(make_case fold-version-keyless)
   state="$dir/state"
   status="$state/task10.status"
@@ -379,7 +379,10 @@ test_fold_version_bump_drops_a_stale_keyless_blocker() {
   if grep -F 'OPEN DECISIONS' "$out" >/dev/null; then
     fail "the stale pre-fix cursor kept the superseded blocker open: $(cat "$out")"
   fi
-  grep -F 'version=6' "$cursor" >/dev/null \
+  current_version=$(bash -c '. "$1"; printf "%s" "$FM_OPEN_DECISIONS_FOLD_VERSION"' _ \
+    "$ROOT/bin/fm-classify-lib.sh")
+  [ -n "$current_version" ] || fail "could not read the current fold version from fm-classify-lib.sh"
+  grep -F "version=$current_version" "$cursor" >/dev/null \
     || fail "the cursor was not rewritten under the current fold version: $(cat "$cursor")"
 
   pass "a cursor from the pre-supersede fold version is rebuilt and drops the stale blocker"

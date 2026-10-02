@@ -230,11 +230,12 @@ test_status_span_survives_a_later_routine_append() {
   event=$(status_span_first_actionable "$state/release.status" 0)
   [ "$event" = "done: release 1.4.0 published and installed" ] \
     || fail "the span reported '$event' instead of the completion it found"
-  # A blocker is the away-mode shape of the same masking.
-  printf 'blocked: cannot reach the release host\npaused: waiting for release access\n' \
+  # A blocker is the away-mode shape of the same masking. The later append is
+  # routine chatter; a declared paused: would supersede the keyless blocker.
+  printf 'blocked: cannot reach the release host\nworking: still waiting on the release host\n' \
     > "$state/blocked.status"
   status_span_has_actionable "$state/blocked.status" 0 \
-    || fail "a blocked: event hidden behind a current wait was classified routine"
+    || fail "a blocked: event hidden behind later routine appends was classified routine"
   pass "an actionable event is not hidden by later routine appends, and is named as itself"
 }
 

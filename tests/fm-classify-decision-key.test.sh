@@ -288,6 +288,24 @@ done: the forge came back and the work landed
 EOF
   assert_fold "$dir/done.status" "" "keyless blocked superseded by a later done"
 
+  # failed: is one of status_is_terminal_verb's terminal verbs too, so it
+  # retires the keyless record by the same rule.
+  cat > "$dir/failed.status" <<'EOF'
+blocked: waiting on the forge
+failed: the forge never came back
+EOF
+  assert_fold "$dir/failed.status" "" "keyless blocked superseded by a later failure"
+
+  # A terminal line that names a key still retires only the keyless record; the
+  # named key's decision stays open.
+  cat > "$dir/keyed-terminal.status" <<'EOF'
+blocked: waiting on the forge
+needs-decision [key=api-shape]: pick REST or RPC
+done [key=api-shape]: unrelated later milestone
+EOF
+  assert_fold "$dir/keyed-terminal.status" "$(printf 'api-shape\tneeds-decision\tpick REST or RPC\n')" \
+    "a keyed terminal line retires the keyless record but not its own key"
+
   # Regression guard, and the whole point of leaving the rule narrow: with NO
   # later terminal line the keyless record is still open, exactly as before.
   cat > "$dir/still-open.status" <<'EOF'

@@ -237,6 +237,13 @@ EOF
     fail "a finished keyless blocker was still listed: $(cat "$out")"
   fi
 
+  # A failure is a terminal verb by the same shared predicate.
+  printf 'blocked: the forge never answered\nfailed: the forge never came back\n' > "$state/task10.status"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain failed on a failure-superseded keyless blocker"
+  if grep -F 'task10' "$out" | grep -F 'the forge never answered' >/dev/null; then
+    fail "a keyless blocker superseded by a later failure was still listed: $(cat "$out")"
+  fi
+
   # Guard: the same keyless blocker with no later terminal line still lists.
   printf 'blocked: waiting on the forge\n' > "$state/task9.status"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain failed on a still-open keyless blocker"
