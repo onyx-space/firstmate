@@ -347,10 +347,49 @@ test_previous_fold_cache_is_refolded_under_current_semantics() {
   pass "an old fold cache is rebuilt once before same-version incremental reads resume"
 }
 
+# The supersede rule is a change to _fm_decision_fold_line's semantics, so a
+# cursor persisted under the previous reading still holds a keyless blocker as
+# open. The version bump must rebuild it from byte 0, or the drain keeps
+# re-listing the finished blocker out of stale cached state forever.
+test_fold_version_bump_drops_a_stale_keyless_blocker() {
+  local dir state status cursor out stale
+  dir=$(make_case fold-version-keyless)
+  state="$dir/state"
+  status="$state/task10.status"
+  cursor="$state/.task10.open-decisions-cursor"
+  out="$dir/drain.out"
+  stale=$(printf 'default\tblocked\tdsh-search - w unreachable, remote delete paused')
+
+  printf 'blocked: dsh-search - w unreachable, remote delete paused\n' > "$status"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "bootstrap drain for the fold-version migration failed"
+  grep -F 'task10 blocked: dsh-search' "$out" >/dev/null \
+    || fail "the bootstrap drain did not list the keyless blocker: $(cat "$out")"
+
+  # Rewrite the cursor's version line to the pre-fix reading; the folded record
+  # and the end offset stay exactly as a real pre-fix drain left them.
+  {
+    printf 'version=5\n'
+    tail -n +2 "$cursor"
+  } > "$cursor.new" && mv "$cursor.new" "$cursor"
+  grep -F "$stale" "$cursor" >/dev/null \
+    || fail "the simulated pre-fix cursor lost its stale keyless record: $(cat "$cursor")"
+
+  printf 'paused: dsh-search cleanup complete\n' >> "$status"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain failed while upgrading the pre-fix cursor"
+  if grep -F 'OPEN DECISIONS' "$out" >/dev/null; then
+    fail "the stale pre-fix cursor kept the superseded blocker open: $(cat "$out")"
+  fi
+  grep -F 'version=6' "$cursor" >/dev/null \
+    || fail "the cursor was not rewritten under the current fold version: $(cat "$cursor")"
+
+  pass "a cursor from the pre-supersede fold version is rebuilt and drops the stale blocker"
+}
+
 test_truncated_log_falls_back_to_a_full_refold_not_a_dropped_decision
 test_same_size_rewrite_is_detected_via_inode_identity
 test_read_failure_preserves_state_for_retry
 test_cursor_cache_read_failure_refolds_without_replaying_unread_status
 test_pre_fix_cursor_refolds_corr_tagged_decision
 test_previous_fold_cache_is_refolded_under_current_semantics
+test_fold_version_bump_drops_a_stale_keyless_blocker
 test_buried_decision_survives_many_growing_drains_and_resolution_clears_it

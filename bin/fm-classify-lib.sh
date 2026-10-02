@@ -141,6 +141,13 @@ fm_utc_iso_to_epoch() {  # <timestamp>
 # fm-captain-hold.sh has verified the corresponding captain-held backlog item.
 FM_CLASSIFY_RESOLVE_VERB_DEFAULT='resolved'
 FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT='captain-held'
+# The terminal verbs that SUPERSEDE a KEYLESS open decision. A keyless
+# needs-decision/blocked line carries no key of its own, so no later keyed
+# transition can ever name it and only a keyless close or a terminal line can
+# retire it: the task has moved past whatever it was asking. A terminal line
+# names no key, so it never supersedes a KEYED decision - see
+# tests/fm-wake-drain-open-decisions.test.sh. `done` is not overridable; the
+# pause verb is the FM_CLASSIFY_PAUSED_VERB defined above.
 
 # Return the last non-blank line of a status file (empty if missing/blank).
 last_status_line() {
@@ -429,8 +436,9 @@ EOF
   printf '%s' "$out"
 }
 # Fold ONE status line into an existing "<key>\t<verb>\t<note>\n"-per-line open
-# set, applying the same needs-decision/blocked-opens, resolved/captain-held-closes
-# rule status_open_decisions documents above. Pure text transform, no file I/O.
+# set, applying the same needs-decision/blocked-opens, resolved/captain-held-closes,
+# done/paused-supersedes-a-keyless-open rule status_open_decisions documents
+# above. Pure text transform, no file I/O.
 # This is the ONE place the per-line open/resolved rule is written; both the
 # whole-file fold (status_open_decisions) and the incremental cursor-backed fold
 # (status_open_decisions_incremental) below call this instead of re-deriving the
@@ -503,6 +511,14 @@ _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb
       ;;
     "$resolve"|"$held")
       open=$(_fm_decision_drop "$open" "$key")
+      [ -n "$open" ] && open="${open}"$'\n'
+      ;;
+    done|"${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}")
+      # A keyless open line lives in the shared "default" bucket, which no keyed
+      # transition can name, so a later terminal line is the only event that
+      # says the task moved past it. Dropping ONLY the default record keeps
+      # every keyed decision untouched.
+      open=$(_fm_decision_drop "$open" default)
       [ -n "$open" ] && open="${open}"$'\n'
       ;;
   esac
@@ -681,11 +697,14 @@ EOF
 # is open. Cost is bounded by NEW appends since the last drain, not by the
 # status file's total lifetime size.
 #
-# Correctness invariant (unchanged from the whole-file fold): an open decision
-# is dropped ONLY by an explicit resolved/captain-held line for its exact key,
+# Correctness invariant (unchanged from the whole-file fold, apart from the
+# keyless supersede rule _fm_decision_fold_line owns): a KEYED open decision is
+# dropped ONLY by an explicit resolved/captain-held line for its exact key,
 # never by cursor advancement, age, or being buried under later appends - the
 # persisted open-set carries every still-open key forward across calls
-# regardless of how much new unrelated log content has since been folded in.
+# regardless of how much new unrelated log content has since been folded in. A
+# KEYLESS open decision sits in the shared "default" bucket, which no keyed
+# line can name, so a later terminal line supersedes it too.
 #
 # The cursor format is `version`, `offset`, `ident`, then the folded open set.
 # FM_OPEN_DECISIONS_FOLD_VERSION must be bumped whenever
@@ -736,7 +755,10 @@ _fm_open_decisions_cursor_path() {  # <status-file>
 # Version 4 was already spent on the bracketed-tag parser change above, and a
 # cursor persisted under that reading predates this one, so it must still be
 # discarded and rebuilt from byte 0 under the new reading.
-FM_OPEN_DECISIONS_FOLD_VERSION=5
+# 6: a later done/paused line now supersedes a KEYLESS open decision, so a
+# cursor persisted under version 5 may hold that default record as still open
+# and must be rebuilt from byte 0 under the new reading.
+FM_OPEN_DECISIONS_FOLD_VERSION=6
 
 # Portable device:inode identity for the rotation/recreation check below.
 _fm_open_decisions_file_ident() {  # <file> -> strongest available identity
