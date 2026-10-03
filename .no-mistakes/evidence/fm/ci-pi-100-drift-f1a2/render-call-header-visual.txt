@@ -1,0 +1,16 @@
+--- fm_branch_outcomes args={"recent":2} expanded=false ---
+  pi 1.0.0 stock : [" fm_branch_outcomes recent=2"]
+  extension header: [" fm_branch_outcomes recent=2"]
+  identical: true
+--- fm_branch_outcomes args={"recent":2} expanded=true ---
+  pi 1.0.0 stock : [" fm_branch_outcomes","   recent: 2"]
+  extension header: [" fm_branch_outcomes","   recent: 2"]
+  identical: true
+--- fm_branch_processed args={"through":7} expanded=false ---
+  pi 1.0.0 stock : [" fm_branch_processed through=7"]
+  extension header: [" fm_branch_processed through=7"]
+  identical: true
+--- fm_branch_processed args={"through":7} expanded=true ---
+  pi 1.0.0 stock : [" fm_branch_processed","   through: 7"]
+  extension header: [" fm_branch_processed","   through: 7"]
+  identical: true

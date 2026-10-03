@@ -1,0 +1,6 @@
+wait_for_exit limit=150 (nominal 15s of 0.1s ticks) on a never-exiting process -> rc=124 elapsed=22s
+waiter still alive after return: no
+wait_for_exit limit=150 on an immediate-exit process -> rc=0 elapsed=0s
+bounded=yes (returns 124 and kills the never-exiting waiter, returns promptly for an exiting one)
+BOUNDED_OK
+EXIT=0

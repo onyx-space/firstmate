@@ -1,0 +1,15 @@
+############ real ############
+collapsed whole-row byte-equal=true
+expanded whole-row byte-equal=true
+in-suite fixture verdict = PASS
+exit=0
+############ mutant-collapsed ############
+collapsed whole-row byte-equal=false
+expanded whole-row byte-equal=true
+in-suite fixture verdict = FAIL(guard would red)
+exit=1
+############ mutant-expanded ############
+collapsed whole-row byte-equal=true
+expanded whole-row byte-equal=false
+in-suite fixture verdict = FAIL(guard would red)
+exit=1

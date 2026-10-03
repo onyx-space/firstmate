@@ -1,0 +1,20 @@
+pi version: 1.0.0
+Rendered call header, actual extension vs Pi stock fallback (ANSI stripped):
+
+tool=fm_branch_outcomes args={"recent":2} expanded=false
+  stock : " fm_branch_outcomes recent=2                                                                                            "
+  actual: " fm_branch_outcomes recent=2                                                                                            "
+  byte-equal=true
+
+tool=fm_branch_processed args={"through":7} expanded=false
+  stock : " fm_branch_processed through=7                                                                                          "
+  actual: " fm_branch_processed through=7                                                                                          "
+  byte-equal=true
+
+tool=fm_branch_processed args={"through":7} expanded=true
+  stock : " fm_branch_processed                                                                                                    "
+  actual: " fm_branch_processed                                                                                                    "
+  byte-equal=true
+
+all byte-equal = TRUE
+EXIT=0

@@ -1,0 +1,35 @@
+############ VARIANT: real ############
+tool=fm_branch_outcomes args={"recent":2} expanded=false header-byte-equal=true
+tool=fm_branch_outcomes args={"recent":2} expanded=true header-byte-equal=true
+tool=fm_branch_processed args={"through":7} expanded=false header-byte-equal=true
+tool=fm_branch_processed args={"through":7} expanded=true header-byte-equal=true
+tool=fm_branch_outcomes args={} expanded=false header-byte-equal=true
+tool=fm_branch_outcomes args=undefined expanded=false header-byte-equal=true
+all header byte-equal = TRUE
+exit=0
+############ VARIANT: mutant-collapsed ############
+tool=fm_branch_outcomes args={"recent":2} expanded=false header-byte-equal=false
+  stock : "\n                                                                                                    \n fm_branch_outcomes recent=2                                                                        \n                                                                                                    "
+  actual: "\n                                                                                                    \n fm_branch_outcomes  recent=2                                                                       \n                                                                                                    "
+tool=fm_branch_outcomes args={"recent":2} expanded=true header-byte-equal=true
+tool=fm_branch_processed args={"through":7} expanded=false header-byte-equal=false
+  stock : "\n                                                                                                    \n fm_branch_processed through=7                                                                      \n                                                                                                    "
+  actual: "\n                                                                                                    \n fm_branch_processed  through=7                                                                     \n                                                                                                    "
+tool=fm_branch_processed args={"through":7} expanded=true header-byte-equal=true
+tool=fm_branch_outcomes args={} expanded=false header-byte-equal=true
+tool=fm_branch_outcomes args=undefined expanded=false header-byte-equal=true
+all header byte-equal = FALSE
+exit=1
+############ VARIANT: mutant-expanded ############
+tool=fm_branch_outcomes args={"recent":2} expanded=false header-byte-equal=true
+tool=fm_branch_outcomes args={"recent":2} expanded=true header-byte-equal=false
+  stock : "\n                                                                                                    \n fm_branch_outcomes                                                                                 \n   recent: 2                                                                                        \n                                                                                                    "
+  actual: "\n                                                                                                    \n fm_branch_outcomes                                                                                 \n    recent: 2                                                                                       \n                                                                                                    "
+tool=fm_branch_processed args={"through":7} expanded=false header-byte-equal=true
+tool=fm_branch_processed args={"through":7} expanded=true header-byte-equal=false
+  stock : "\n                                                                                                    \n fm_branch_processed                                                                                \n   through: 7                                                                                       \n                                                                                                    "
+  actual: "\n                                                                                                    \n fm_branch_processed                                                                                \n    through: 7                                                                                      \n                                                                                                    "
+tool=fm_branch_outcomes args={} expanded=false header-byte-equal=true
+tool=fm_branch_outcomes args=undefined expanded=false header-byte-equal=true
+all header byte-equal = FALSE
+exit=1

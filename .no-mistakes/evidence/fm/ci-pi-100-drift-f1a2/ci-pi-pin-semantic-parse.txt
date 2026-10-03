@@ -1,0 +1,9 @@
+Semantic parse of .github/workflows/ci.yml (js-yaml), enumerating every job step
+command that installs @earendil-works/pi-coding-agent:
+
+  job=tests-portable-parallel-1 step="Install the Pi package for the Pi extension tests" cmd="npm install -g @earendil-works/pi-coding-agent@1.0.0"
+  job=tests-portable-parallel-2 step="Install the Pi package for the Pi extension tests" cmd="npm install -g @earendil-works/pi-coding-agent@1.0.0"
+  job=tests-portable-serial step="Install the Pi package for the Pi extension tests" cmd="npm install -g @earendil-works/pi-coding-agent@1.0.0"
+
+pi install sites: 3
+all_pinned_exactly_1_0_0=true
