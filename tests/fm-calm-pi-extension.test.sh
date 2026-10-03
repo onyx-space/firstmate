@@ -3744,7 +3744,14 @@ if (!messages || !tree) process.exit(1);
 if (!/<div class="user-message"[^>]*>[\s\S]*Show a deterministic tool example\./.test(messages)) process.exit(1);
 if (!/<div class="assistant-message"[^>]*>[\s\S]*The deterministic tool example is complete\./.test(messages)) process.exit(1);
 if (messages.includes('<div class="hook-message"')) process.exit(1);
-if (messages.includes("[firstmate-synthetic-input]")) process.exit(1);
+// Pi 1.0.0 keeps `display:false` custom messages in the export DOM inside a
+// CSS-hidden `hook-message-hidden` shell (H toggles them) instead of omitting
+// them. The Calm boundary is that the synthetic operational row is never
+// visible, so every synthetic type label must sit inside one of those hidden
+// shells and never in a visible transcript row.
+const labelCount = (messages.match(/\[firstmate-synthetic-input\]/g) ?? []).length;
+const hiddenLabelCount = (messages.match(/<div class="hook-message hook-message-hidden"[^>]*>(?:(?!<div class="hook-message)[\s\S])*?<div class="hook-type">\[firstmate-synthetic-input\]/g) ?? []).length;
+if (labelCount !== hiddenLabelCount) process.exit(1);
 for (const current of ["CURRENT_WATCHER_E2E", "CURRENT_TURN_END_E2E", "CURRENT_AWAY_E2E", "CURRENT_FROM_FIRSTMATE_E2E", "CURRENT_LAUNCH_BRIEF_E2E"]) {
   if (!messages.includes(current)) process.exit(1);
 }
