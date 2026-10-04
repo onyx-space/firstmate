@@ -155,6 +155,12 @@ MODE=
 MODE_SET=0
 POS=()
 want_value=
+# A positional argument is checked before anything else, so a caller who omits one
+# reads which argument is missing and the usage rather than a later complaint about
+# an option, or a shell's unbound variable error naming no argument at all.
+ID=${POS[0]:-}
+[ -n "$ID" ] || { echo "error: <task-id> is required" >&2; usage >&2; exit 2; }
+
 for a in "$@"; do
   if [ -n "$want_value" ]; then
     case "$a" in
@@ -201,7 +207,9 @@ elif [ "$MODE_SET" -eq 1 ]; then
   echo "error: --mode applies only to ship briefs; a scout delivers a report and a secondmate charter is not a delivery contract" >&2
   exit 1
 fi
-ID=${POS[0]}
+# A positional argument is checked where it is taken, so a caller who omits one
+# reads which argument is missing and the usage rather than a shell's unbound
+# variable error naming no argument at all.
 
 if [ "$KIND" = secondmate ] && [ "$HERDR_LAB" -eq 1 ]; then
   echo "error: --herdr-lab applies only to crewmate ship or scout briefs" >&2
@@ -360,7 +368,8 @@ fi
 exit 0
 fi
 
-REPO=${POS[1]}
+REPO=${POS[1]:-}
+[ -n "$REPO" ] || { echo "error: <repo-name> is required for a crewmate ship or scout brief" >&2; usage >&2; exit 2; }
 
 if [ "$HERDR_LAB" -eq 1 ]; then
 HERDR_LAB_HELPER=$(shell_quote "$FM_ROOT/bin/fm-herdr-lab.sh")
