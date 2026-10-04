@@ -90,13 +90,20 @@ carries-warning:Warning: slow:0
 missing-ok:all good:0
 CASES
 
-# 3. a failing run leaves the checkout at the head it started from.
+# 3. a failing run that has already fast-forwarded returns the checkout to the
+#    head it started from. The case moves origin first, so the rollback has real
+#    work: without that, a broken rollback would pass this case unnoticed.
 home=$(new_home rollback); fake_pi "$tmp/pi-bad" "Error: boom" 0
+advance_origin rollback
+git -C "$home" fetch -q origin
 before=$(git -C "$home" rev-parse HEAD)
+[ "$before" != "$(git -C "$home" rev-parse origin/main)" ] || fail "the rollback case has nothing to fast-forward"
 run_chain "$home" "$tmp/pi-bad" >/dev/null
 after=$(git -C "$home" rev-parse HEAD)
 [ "$before" = "$after" ] || fail "rollback moved HEAD from $before to $after"
-ok "a failed run leaves the checkout at its starting head"
+grep -q "pull: fast-forwarded" "$tmp/out" || fail "the failing run never fast-forwarded, so the rollback was untested"
+grep -q "rollback: returned to" "$tmp/out" || fail "the run reported no rollback"
+ok "a failing run that fast-forwarded returns the checkout to its starting head"
 
 # 4. an executable-bit mismatch on a git-recorded 100755 file is repaired, and a
 #    100644 library is left alone (the mistake that would dirty the tree).

@@ -89,7 +89,15 @@ bound() {
   return "$rc"
 }
 
-clean_tree() { [ -z "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ]; }
+clean_tree() {
+  # The install stage may create the CLAUDE.md pointer and the .claude/skills
+  # link, and every run writes its own records under state/; those are this
+  # chain's own artifacts, so they must not block the gates this function serves.
+  # Everything else counts, including work a person left in the checkout.
+  [ -z "$(git -C "$ROOT" status --porcelain -- . \
+    ':(exclude)CLAUDE.md' ':(exclude).claude' ':(exclude).claude/**' \
+    ':(exclude)state' ':(exclude)state/**' 2>/dev/null)" ]
+}
 head_now() { git -C "$ROOT" rev-parse HEAD 2>/dev/null; }
 
 mkdir -p "$STATE"
