@@ -19,7 +19,7 @@ This document owns the contract, the doorbell that invokes it, and the two wirin
 
 | stage | what it does | how it fails |
 |---|---|---|
-| pull | fast-forwards the default branch from `origin` under the guarded fast-forward rule (default branch, clean tree, real fast-forward). `bin/fm-ff-lib.sh` owns that rule for the other sync paths; this stage keeps its own copy so the chain's untracked launch artifacts do not count as dirty and an unreachable origin or a failed advance is an alarm rather than a skip | an unreadable remote: alarm, no move; a diverged remote: skipped, no move |
+| pull | fast-forwards the default branch from `origin` under the guarded fast-forward rule (default branch, clean tree, real fast-forward). `bin/fm-ff-lib.sh` owns that rule for the other sync paths; this stage keeps its own copy so this chain's own launch artifacts (the `CLAUDE.md` pointer, the `.claude/skills` link, `state/` records) and a mode-only executable-bit difference do not count as dirty, and an unreachable origin or a failed advance is an alarm rather than a skip | an unreadable remote: alarm, no move; a diverged remote: skipped, no move |
 | install | puts the tracked launch surfaces in place: repairs an executable bit only where git records mode 100755 (the 100644 entries are libraries meant to be sourced), writes the `CLAUDE.md` pointer, relinks `.claude/skills`, and checks both project extensions are readable | a missing surface: alarm |
 | smoke | starts Pi once in this home (`pi -p "reply with OK" --no-session`) and asserts four facts: exit 0, no `Error:`, no `Warning:`, and the reply | any of the four: alarm |
 | rollback | returns the checkout to the pre-run head, only with a clean tree | a dirty tree: alarm and no move |
@@ -34,7 +34,7 @@ That session writes one request file with `bin/fm-cd-request.sh`, and the platfo
 
 - **Only the merged transition is accepted.** The relay's report tells the two apart in its own line (`open → merged` against `open → closed`); `bin/fm-cd-request.sh` refuses anything but `--event merged`, because installing a commit nobody merged is the failure this rule exists to prevent.
 - **The request's shape is the fleet's existing one**, so no second mechanism exists: `{"repository", exactly one of "pr" or "commit", "asked_by", "at"}`, written to `${XDG_CONFIG_HOME:-$HOME/.config}/olink/deploy/request.json`, landed by writing a temporary file and renaming it into place.
-  A malformed request is refused by name rather than guessed at, and a run that finds no request is a no-op.
+  A malformed request is refused by name rather than guessed at.
 - **An unread wake means no run.** If no session reads the merge report, no request file appears and nothing is installed; there is no interval fallback, and the manual `/updatefirstmate` path remains.
 
 ## Wiring

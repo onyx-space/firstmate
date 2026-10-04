@@ -15,10 +15,11 @@
 #   1. pull      - fast-forward this home's default branch from origin under the
 #                  guarded fast-forward rule (default branch, clean tree, a real
 #                  fast-forward). bin/fm-ff-lib.sh owns that rule for the other
-#                  sync paths; this stage keeps its own copy because the chain's
-#                  untracked launch artifacts must not count as dirty and an
-#                  unreachable origin or a failed advance is an alarm here, not a
-#                  skip. Keep the two copies in step.
+#                  sync paths; this stage keeps its own copy because this chain's
+#                  own launch artifacts (the CLAUDE.md pointer, the .claude/skills
+#                  link, state/ records) and a mode-only executable-bit difference
+#                  must not count as dirty, and an unreachable origin or a failed
+#                  advance is an alarm here, not a skip. Keep the two copies in step.
 #   2. install   - put the tracked launch surfaces in place: executable bits on
 #                  bin/*.sh, the CLAUDE.md pointer to AGENTS.md, the
 #                  .claude/skills symlink, and the two project extensions' presence.
