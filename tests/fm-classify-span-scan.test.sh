@@ -364,6 +364,41 @@ assert_contains "$failed_record" 'failed: the forge never came back' \
   "the span scan dropped the failure event that superseded the blocker"
 pass "a keyless decision retired by a later terminal line is not re-signalled by the span scan"
 
+# A partial-scan cursor persisted under the previous scanner version (2) had
+# already folded past the terminal line under the old reading, so its persisted
+# open set still holds the keyless "default" record as live. The version bump
+# must make the loader reject that cursor and rebuild from the span's first
+# line; a loader that accepted it would answer from the stale prefix and
+# re-signal the finished blocker on the next poll. This is the regression pin
+# for FM_CLASSIFY_SPAN_SCAN_VERSION.
+bump_dir="$STATE/span-scan-version"
+mkdir -p "$bump_dir" || fail "could not create $bump_dir"
+bump_log="$bump_dir/status.status"
+printf '%s\n' \
+  'blocked: dsh-search - w unreachable, remote delete paused' \
+  'paused: dsh-search cleanup complete' \
+  'working: routine progress after the terminal line' > "$bump_log" \
+  || fail "could not build the span-scan-version fixture"
+bump_size=$(wc -c < "$bump_log" | tr -d ' ')
+bump_ident=$(_fm_open_decisions_file_ident "$bump_log") || fail "could not identify the fixture"
+bump_cursor="$bump_dir/.status.span-scan-cursor.0"
+{
+  printf 'version=2\n'
+  printf 'ident=%s\n' "$bump_ident"
+  printf 'start=0\nsize=%s\nline=2\nnd=0\nndp=0\n' "$bump_size"
+  printf 'o\tdefault\tblocked\t%s\n' 'dsh-search - w unreachable, remote delete paused'
+  printf 'p\tdefault\t1\n'
+  printf 'e\tD\tdefault\t1\tblocked\tblocked: dsh-search - w unreachable, remote delete paused\n'
+} > "$bump_cursor"
+bump_rc=0
+bump_record=$(status_span_first_actionable "$bump_log" 0) || bump_rc=$?
+assert_equals 1 "$bump_rc" \
+  "a pre-fix span-scan cursor was trusted and re-signalled a superseded keyless blocker"
+assert_equals '' "$bump_record" \
+  "a pre-fix span-scan cursor left the superseded keyless blocker in the record"
+if [ -e "$bump_cursor" ]; then fail "the rebuilt scan left the rejected pre-fix cursor behind"; fi
+pass "a pre-fix span-scan cursor is discarded and the span rebuilt under the supersede rule"
+
 # The reused path matters: the same log classified twice must not carry state
 # from the first pass into the second.
 assert_equivalent "$eq_log" 0 "repeated classification of the same log"
