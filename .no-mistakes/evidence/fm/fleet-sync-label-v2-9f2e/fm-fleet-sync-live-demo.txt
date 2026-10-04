@@ -1,0 +1,29 @@
+===== fm-fleet-sync.sh (single-project form, explicit path) =====
+one (/tmp/tmp.SdLz6BXNKM/home/projects/one): synced 0101495..e0447cb
+
+===== fm-fleet-sync.sh (whole-fleet form over $HOME/projects) =====
+current (/tmp/tmp.SdLz6BXNKM/home/projects/current): already current
+dirty (/tmp/tmp.SdLz6BXNKM/home/projects/dirty): STUCK: on branch main with uncommitted changes, 1 commits behind origin/main - needs attention
+local-only (/tmp/tmp.SdLz6BXNKM/home/projects/local-only): skipped: local-only project
+no-origin (/tmp/tmp.SdLz6BXNKM/home/projects/no-origin): skipped: no origin remote
+one (/tmp/tmp.SdLz6BXNKM/home/projects/one): already current
+two (/tmp/tmp.SdLz6BXNKM/home/projects/two): synced 0101495..ea7d2ed
+
+===== second run over the unchanged 'one' clone =====
+one (/tmp/tmp.SdLz6BXNKM/home/projects/one): already current
+
+===== local-only adversarial check =====
+bare origin main:         e0447cbb8eb1e2c0887d9d435ba7326a6ab12fb5
+clone origin/main before: 0101495472d774491f671f3fb692f0b0b287b9de
+clone origin/main after:  0101495472d774491f671f3fb692f0b0b287b9de
+clone HEAD before:        0101495472d774491f671f3fb692f0b0b287b9de
+clone HEAD after:         0101495472d774491f671f3fb692f0b0b287b9de
+PRE: clone is genuinely one commit behind the real bare origin
+RESULT: local-only clone HEAD unchanged (never fetched/advanced)
+RESULT: clone's origin/main tracking ref unmoved (sync never fetched it)
+
+===== local-only via bare project name (single-project form) =====
+local-only (/tmp/tmp.SdLz6BXNKM/home/projects/local-only): skipped: local-only project
+RESULT: bare-name local-only run also left the clone untouched
+
+ALL LIVE DEMO SCENARIOS COMPLETED

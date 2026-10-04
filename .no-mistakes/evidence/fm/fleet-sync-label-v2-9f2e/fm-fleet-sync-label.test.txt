@@ -1,0 +1,6 @@
+warning: You appear to have cloned an empty repository.
+ok - a clone one commit behind is fast-forwarded and the line names its directory
+ok - the second run reports already current with the same attribution
+warning: You appear to have cloned an empty repository.
+ok - a clone two commits behind is fast-forwarded, and the verdict is not already current
+ok
