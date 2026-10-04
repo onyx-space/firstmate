@@ -90,6 +90,33 @@ import { Box, Container, fuzzyFilter, Input, SelectList, Text } from "@earendil-
 import { Type } from "typebox";
 import { registerFirstmateTool } from "./lib/fm-native-contract.ts";
 import { runCommandAsync } from "./lib/fm-async-exec.ts";
+
+// Pi 1.0.0 renders a tool call's own header as the title plus its arguments
+// (`render-utils.ts`'s formatToolCallWithArgs, which pi does not export). Calm's
+// off path must stay byte-identical to that stock fallback, so the shape is
+// mirrored here; tests/fm-pi-branch-extension.test.sh compares this extension's
+// rows against Pi's own fallback byte for byte and reds the moment pi changes it.
+const COLLAPSED_ARGS_CHARS = 100;
+
+function formatToolCallHeader(title: string, args: unknown, theme: any, expanded: boolean): string {
+  const header = theme.fg("toolTitle", theme.bold(title));
+  if (args == null) return header;
+  const entries: [string, unknown][] =
+    typeof args === "object" && !Array.isArray(args)
+      ? Object.entries(args as Record<string, unknown>)
+      : [["args", args]];
+  if (entries.length === 0) return header;
+  if (expanded) {
+    const lines = entries.map(([key, value]) => {
+      const text = typeof value === "string" ? value : (JSON.stringify(value, null, 2) ?? String(value));
+      return `  ${key}: ${text.replace(/\t/g, "   ").replace(/\r/g, "").split("\n").join("\n    ")}`;
+    });
+    return `${header}\n${theme.fg("muted", lines.join("\n"))}`;
+  }
+  const pairs = entries.map(([key, value]) => `${key}=${JSON.stringify(value) ?? String(value)}`).join(" ");
+  const preview = pairs.length > COLLAPSED_ARGS_CHARS ? `${pairs.slice(0, COLLAPSED_ARGS_CHARS - 3)}...` : pairs;
+  return `${header} ${theme.fg("muted", preview)}`;
+}
 import {
   type CalmPresentationState,
   calmTranscriptClassIsVisible,
@@ -2071,11 +2098,11 @@ ${context.command}
       recent: Type.Optional(Type.Number({ description: "How many most-recent outcomes to read (default 20)" })),
     }),
     renderShell: "self",
-    renderCall: (_args, theme, context) => {
+    renderCall: (args, theme, context) => {
       if (calmPresentation.stockExportRendering) throw new Error("Use Pi stock export rendering");
       if (calmHides("assistant-tool-call")) return new Container();
       const shellState = context.state as OutcomesToolShellState;
-      shellState.call = new Text(theme.fg("toolTitle", theme.bold("fm_branch_outcomes")), 0, 0);
+      shellState.call = new Text(formatToolCallHeader("fm_branch_outcomes", args, theme, Boolean(context.expanded)), 0, 0);
       return refreshOutcomesToolShell(shellState, theme, context);
     },
     renderResult: (result, options, theme, context) => {
@@ -2133,11 +2160,11 @@ ${context.command}
       through: Type.Number({ description: "The highest outcome sequence number this conversation has processed" }),
     }),
     renderShell: "self",
-    renderCall: (_args, theme, context) => {
+    renderCall: (args, theme, context) => {
       if (calmPresentation.stockExportRendering) throw new Error("Use Pi stock export rendering");
       if (calmHides("assistant-tool-call")) return new Container();
       const shellState = context.state as OutcomesToolShellState;
-      shellState.call = new Text(theme.fg("toolTitle", theme.bold("fm_branch_processed")), 0, 0);
+      shellState.call = new Text(formatToolCallHeader("fm_branch_processed", args, theme, Boolean(context.expanded)), 0, 0);
       return refreshOutcomesToolShell(shellState, theme, context);
     },
     renderResult: (result, _options, theme, context) => {
