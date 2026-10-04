@@ -12,10 +12,13 @@
 # no-op that says so, so a replayed event or a second caller costs nothing.
 #
 # Stages, in order, all bounded:
-#   1. pull      - fast-forward this home's default branch from origin, using the
-#                  same discipline bin/fm-ff-lib.sh enforces: refuse unless the
-#                  tree is clean, the branch is the default, and the move is a
-#                  real fast-forward; otherwise skip and report.
+#   1. pull      - fast-forward this home's default branch from origin under the
+#                  guarded fast-forward rule (default branch, clean tree, a real
+#                  fast-forward). bin/fm-ff-lib.sh owns that rule for the other
+#                  sync paths; this stage keeps its own copy because the chain's
+#                  untracked launch artifacts must not count as dirty and an
+#                  unreachable origin or a failed advance is an alarm here, not a
+#                  skip. Keep the two copies in step.
 #   2. install   - put the tracked launch surfaces in place: executable bits on
 #                  bin/*.sh, the CLAUDE.md pointer to AGENTS.md, the
 #                  .claude/skills symlink, and the two project extensions' presence.
@@ -45,8 +48,11 @@ set -euo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SELF_DIR/.." && pwd)"
+# shellcheck source=bin/fm-timeout-lib.sh
+. "$SELF_DIR/fm-timeout-lib.sh"
 STATE="$ROOT/state"
 SMOKE_TIMEOUT="${FM_CD_SMOKE_TIMEOUT:-90}"
+case "$SMOKE_TIMEOUT" in ''|*[!0-9]*|0) SMOKE_TIMEOUT=90 ;; esac
 PI_BIN="${FM_CD_PI:-pi}"
 SMOKE_LOG="${FM_CD_SMOKE_LOG:-$STATE/fm-cd-smoke.log}"
 DEFAULT_BRANCH="${FM_CD_DEFAULT_BRANCH:-main}"
@@ -68,26 +74,6 @@ done
 
 say() { printf 'fm-cd: %s\n' "$*"; }
 alarm() { printf 'fm-cd: ALARM %s\n' "$*" >&2; }
-
-# bound <seconds> <command...> - the same shape the fleet's user-extension chain
-# uses, because macOS ships no timeout(1). A timeout binary, when present, is the
-# clearer path; otherwise the child is killed after the bound, first politely.
-bound() {
-  local secs="$1"; shift
-  local tb
-  for tb in timeout gtimeout; do
-    if command -v "$tb" >/dev/null 2>&1; then "$tb" "$secs" "$@"; return $?; fi
-  done
-  "$@" &
-  local pid=$! killer
-  { command sleep "$secs"; kill -TERM "$pid" 2>/dev/null || true; command sleep 5; kill -KILL "$pid" 2>/dev/null || true; } >/dev/null 2>&1 &
-  killer=$!
-  local rc=0
-  wait "$pid" 2>/dev/null || rc=$?
-  kill "$killer" 2>/dev/null || true
-  wait "$killer" 2>/dev/null || true
-  return "$rc"
-}
 
 clean_tree() {
   # The install stage may create the CLAUDE.md pointer and the .claude/skills
@@ -196,7 +182,7 @@ smoke_stage() {
     return 1
   fi
   local out rc=0
-  out="$(cd "$ROOT" && bound "$SMOKE_TIMEOUT" "$PI_BIN" -p "reply with OK" --no-session < /dev/null 2>&1)" || rc=$?
+  out="$(cd "$ROOT" && fm_run_timed "$SMOKE_TIMEOUT" "$PI_BIN" -p "reply with OK" --no-session < /dev/null 2>&1)" || rc=$?
   {
     printf '=== %s rc=%s head=%s\n' "$(date -u +%FT%TZ)" "$rc" "$(git -C "$ROOT" rev-parse --short HEAD)"
     printf '%s\n' "$out"
@@ -204,7 +190,7 @@ smoke_stage() {
   if [ "$rc" -ne 0 ]; then alarm "smoke: $PI_BIN exited $rc"; return 1; fi
   case "$out" in *"Error:"*) alarm "smoke: output carries an Error:"; return 1 ;; esac
   case "$out" in *"Warning:"*) alarm "smoke: output carries a Warning:"; return 1 ;; esac
-  case "$out" in *OK*) ;; *) alarm "smoke: reply did not carry OK"; return 1 ;; esac
+  if ! printf '%s\n' "$out" | grep -qx 'OK'; then alarm "smoke: reply did not carry an OK line"; return 1; fi
   say "smoke: $PI_BIN started clean and answered OK (head $(git -C "$ROOT" rev-parse --short HEAD))"
   return 0
 }

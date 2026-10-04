@@ -9,7 +9,7 @@ This document owns the contract, the doorbell that invokes it, and the two wirin
 - **One action per event.** A merge report invokes the script once; it exits when that run ends.
   No daemon, no interval, and nothing resident.
 - **Re-entrant and idempotent.** A replayed event, or a second caller, costs nothing: an already-current home reports `pull: already current` and the smoke run repeats under its own bound.
-- **Bounded.** The smoke run carries a timeout (`FM_CD_SMOKE_TIMEOUT`, 90 seconds by default) with the same fallback shape the user-extension chain uses, because macOS ships no `timeout(1)`.
+- **Bounded.** The smoke run is hard-bounded by `bin/fm-timeout-lib.sh`'s `fm_run_timed` (`FM_CD_SMOKE_TIMEOUT`, 90 seconds by default), the repo's single owner of bounded execution, so a hung child or grandchild cannot outlive the bound.
 - **Recorded, then ignored.** `--reason` and `--repo` are written into the run's own output and into the failure record; nothing branches on them.
 - **Failure keeps the scope.** A failed run returns the checkout to the head recorded before stage 1, only when the tree is clean and only over the commits this run moved, and appends one line to `state/fm-cd-failures.log`.
   It never forces, never stashes, and never discards unlanded work.
@@ -19,7 +19,7 @@ This document owns the contract, the doorbell that invokes it, and the two wirin
 
 | stage | what it does | how it fails |
 |---|---|---|
-| pull | fast-forwards the default branch from `origin`, under the discipline `bin/fm-ff-lib.sh` enforces: refuse unless the branch is the default, the tree is clean, and the move is a real fast-forward | an unreadable remote: alarm, no move; a diverged remote: skipped, no move |
+| pull | fast-forwards the default branch from `origin` under the guarded fast-forward rule (default branch, clean tree, real fast-forward). `bin/fm-ff-lib.sh` owns that rule for the other sync paths; this stage keeps its own copy so the chain's untracked launch artifacts do not count as dirty and an unreachable origin or a failed advance is an alarm rather than a skip | an unreadable remote: alarm, no move; a diverged remote: skipped, no move |
 | install | puts the tracked launch surfaces in place: repairs an executable bit only where git records mode 100755 (the 100644 entries are libraries meant to be sourced), writes the `CLAUDE.md` pointer, relinks `.claude/skills`, and checks both project extensions are readable | a missing surface: alarm |
 | smoke | starts Pi once in this home (`pi -p "reply with OK" --no-session`) and asserts four facts: exit 0, no `Error:`, no `Warning:`, and the reply | any of the four: alarm |
 | rollback | returns the checkout to the pre-run head, only with a clean tree | a dirty tree: alarm and no move |

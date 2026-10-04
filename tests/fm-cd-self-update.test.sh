@@ -20,6 +20,7 @@ new_home() {  # <name> -> echoes the home path
   mkdir -p "$home/bin" "$home/.pi/extensions" "$home/state"
   cp "$CHAIN" "$home/bin/fm-cd-self-update.sh"
   chmod +x "$home/bin/fm-cd-self-update.sh"
+  cp "$ROOT/bin/fm-timeout-lib.sh" "$home/bin/fm-timeout-lib.sh"
   printf 'export const x = 1;\n' > "$home/.pi/extensions/fm-primary-turnend-guard.ts"
   printf 'export const y = 1;\n' > "$home/.pi/extensions/fm-primary-pi-watch.ts"
   git init -q --bare "$remote"
@@ -88,6 +89,7 @@ nonzero-exit|OK|3
 carries-error|Error: boom|0
 carries-warning|Warning: slow|0
 missing-ok|all good|0
+ok-substring|BROKEN|0
 CASES
 
 # 3. a failing run that has already fast-forwarded returns the checkout to the
