@@ -299,7 +299,12 @@ report_stuck() {
 
 sync_project() {
   PROJ=$1
-  label=$(project_label)
+  # The verdict lines name the directory the run acted on: a bare project label
+  # cannot be checked against anything when the endpoint carries more than one
+  # checkout of the same repository (a source checkout is advanced by the chain's
+  # own push-clone path, never by this script), and a reader measuring the other
+  # checkout then reads this script's verdict as a lie about the one they hold.
+  label="$(project_label) ($PROJ)"
 
   if [ ! -d "$PROJ" ]; then
     echo "$label: skipped: not a directory"
