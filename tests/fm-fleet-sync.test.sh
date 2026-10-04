@@ -247,7 +247,7 @@ test_detached_clean_ancestor_recovers() {
 
   out=$(run_sync "$home" "$clone")
 
-  assert_contains "$out" "alpha: recovered: re-attached main, synced" "detached-clean-ancestor reports recovered"
+  assert_contains "$out" "alpha ($clone): recovered: re-attached main, synced" "detached-clean-ancestor reports recovered"
   assert_not_contains "$out" "STUCK" "recovered case is not flagged STUCK"
   [ "$(git -C "$clone" symbolic-ref --short HEAD 2>/dev/null)" = "main" ] \
     || fail "expected re-attach to main, HEAD still detached"
@@ -269,7 +269,7 @@ test_detached_unique_commit_is_stuck_untouched() {
 
   out=$(run_sync "$home" "$clone")
 
-  assert_contains "$out" "beta: STUCK:" "detached-with-unique-commit reports STUCK"
+  assert_contains "$out" "beta ($clone): STUCK:" "detached-with-unique-commit reports STUCK"
   assert_contains "$out" "unique commits" "STUCK names the unique-commit state"
   assert_contains "$out" "commits behind origin/main - needs attention" "STUCK is quantified"
   assert_not_contains "$out" "recovered" "unique-commit case is never recovered"
@@ -289,7 +289,7 @@ test_detached_clean_ancestor_with_diverged_local_default_is_stuck_untouched() {
 
   out=$(run_sync "$home" "$clone")
 
-  assert_contains "$out" "beta-local-default: STUCK:" "diverged local default reports STUCK"
+  assert_contains "$out" "beta-local-default ($clone): STUCK:" "diverged local default reports STUCK"
   assert_contains "$out" "local main diverged from origin/main" "STUCK names the unsafe local default"
   assert_not_contains "$out" "recovered" "diverged local default is never recovered"
   [ "$(head_sha "$clone")" = "$before" ] || fail "detached HEAD was moved"
@@ -308,7 +308,7 @@ test_dirty_is_stuck_untouched() {
 
   out=$(run_sync "$home" "$clone")
 
-  assert_contains "$out" "gamma: STUCK:" "dirty clone reports STUCK"
+  assert_contains "$out" "gamma ($clone): STUCK:" "dirty clone reports STUCK"
   assert_contains "$out" "uncommitted changes" "STUCK names the dirty state"
   assert_contains "$out" "1 commits behind origin/main" "STUCK quantifies how far behind"
   [ "$(head_sha "$clone")" = "$before" ] || fail "dirty clone HEAD was moved"
@@ -325,7 +325,7 @@ test_non_default_branch_is_stuck_untouched() {
 
   out=$(run_sync "$home" "$clone")
 
-  assert_contains "$out" "delta: STUCK: on branch feature" "non-default branch reports STUCK with branch name"
+  assert_contains "$out" "delta ($clone): STUCK: on branch feature" "non-default branch reports STUCK with branch name"
   assert_contains "$out" "commits behind origin/main - needs attention" "STUCK is quantified"
   assert_not_contains "$out" "recovered" "named branch is never auto-changed"
   [ "$(git -C "$clone" symbolic-ref --short HEAD)" = "feature" ] || fail "named branch checkout was changed"
@@ -343,7 +343,7 @@ test_diverged_is_stuck_untouched() {
 
   out=$(run_sync "$home" "$clone")
 
-  assert_contains "$out" "epsilon: STUCK:" "diverged clone reports STUCK"
+  assert_contains "$out" "epsilon ($clone): STUCK:" "diverged clone reports STUCK"
   assert_contains "$out" "diverged main" "STUCK names the diverged state"
   assert_contains "$out" "commits behind origin/main - needs attention" "STUCK is quantified"
   [ "$(head_sha "$clone")" = "$before" ] || fail "diverged clone was moved"
@@ -358,7 +358,7 @@ test_on_default_clean_behind_fast_forwards() {
 
   out=$(run_sync "$home" "$clone")
 
-  assert_contains "$out" "zeta: synced" "on-default clean behind fast-forwards as before"
+  assert_contains "$out" "zeta ($clone): synced" "on-default clean behind fast-forwards as before"
   assert_not_contains "$out" "recovered" "ordinary fast-forward is not labelled recovered"
   assert_not_contains "$out" "STUCK" "ordinary fast-forward is not flagged STUCK"
   [ "$(head_sha "$clone")" = "$(git -C "$clone" rev-parse origin/main)" ] || fail "clone was not fast-forwarded"
@@ -373,7 +373,7 @@ test_already_current_unchanged() {
 
   out=$(run_sync "$home" "$clone")
 
-  assert_contains "$out" "eta: already current" "already-current clone reports unchanged"
+  assert_contains "$out" "eta ($clone): already current" "already-current clone reports unchanged"
   assert_not_contains "$out" "STUCK" "already-current is not flagged STUCK"
   assert_not_contains "$out" "recovered" "already-current is not labelled recovered"
   [ "$(head_sha "$clone")" = "$before" ] || fail "already-current clone was moved"
@@ -390,7 +390,7 @@ test_no_origin_skipped() {
 
   out=$(run_sync "$home" "$clone")
 
-  assert_contains "$out" "theta: skipped: no origin remote" "no-origin clone is skipped as before"
+  assert_contains "$out" "theta ($clone): skipped: no origin remote" "no-origin clone is skipped as before"
   assert_not_contains "$out" "STUCK" "no-origin skip is not escalated to STUCK"
   pass "no-origin clone is skipped (benign), not flagged STUCK"
 }
@@ -405,7 +405,7 @@ test_local_only_skipped() {
 
   out=$(run_sync "$home" "$clone")
 
-  assert_contains "$out" "iota: skipped: local-only project" "local-only clone is skipped as before"
+  assert_contains "$out" "iota ($clone): skipped: local-only project" "local-only clone is skipped as before"
   assert_not_contains "$out" "STUCK" "local-only skip is not escalated to STUCK"
   pass "local-only clone is skipped (benign), not flagged STUCK"
 }
@@ -418,7 +418,7 @@ test_single_project_by_bare_name_resolves() {
 
   out=$(run_sync "$home" "kappa")
 
-  assert_contains "$out" "kappa: synced" "bare project name resolves against the home's projects dir"
+  assert_contains "$out" "kappa ($home/projects/kappa): synced" "bare project name resolves against the home's projects dir"
   pass "single-project form accepts a bare project name"
 }
 
@@ -432,7 +432,7 @@ test_single_project_by_bare_name_ignores_cwd_shadow() {
 
   out=$(cd "$cwd" && run_sync "$home" "mu")
 
-  assert_contains "$out" "mu: synced" "bare project name prefers the home's projects dir"
+  assert_contains "$out" "mu ($home/projects/mu): synced" "bare project name prefers the home's projects dir"
   assert_not_contains "$out" "skipped: not a git repo" "bare project name ignores a cwd shadow directory"
   pass "single-project bare name resolution is not cwd-sensitive"
 }
@@ -445,7 +445,7 @@ test_single_project_by_projects_relative_name_resolves() {
 
   out=$(run_sync "$home" "projects/lambda")
 
-  assert_contains "$out" "lambda: synced" "projects/<name> form resolves against the home's projects dir"
+  assert_contains "$out" "lambda ($home/projects/lambda): synced" "projects/<name> form resolves against the home's projects dir"
   pass "single-project form accepts a projects/<name> relative name"
 }
 
@@ -459,7 +459,7 @@ test_single_project_by_projects_relative_name_ignores_cwd_shadow() {
 
   out=$(cd "$cwd" && run_sync "$home" "projects/nu")
 
-  assert_contains "$out" "nu: synced" "projects/<name> form prefers the home's projects dir"
+  assert_contains "$out" "nu ($home/projects/nu): synced" "projects/<name> form prefers the home's projects dir"
   assert_not_contains "$out" "skipped: not a git repo" "projects/<name> form ignores a cwd shadow directory"
   pass "single-project projects/<name> resolution is not cwd-sensitive"
 }
@@ -484,8 +484,8 @@ test_whole_fleet_form() {
   # Whole-fleet form: no project-dir argument.
   out=$(run_sync "$home")
 
-  assert_contains "$out" "fleet-behind: synced" "whole-fleet form syncs a behind clone"
-  assert_contains "$out" "fleet-current: already current" "whole-fleet form reports a current clone"
+  assert_contains "$out" "fleet-behind ($behind): synced" "whole-fleet form syncs a behind clone"
+  assert_contains "$out" "fleet-current ($current): already current" "whole-fleet form reports a current clone"
   : "$behind $current"
   pass "whole-fleet form processes every clone under projects/"
 }
@@ -505,8 +505,8 @@ test_bootstrap_relays_recovered_and_stuck() {
   # We only assert the fleet-sync relay lines; other detect lines are irrelevant.
   out=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-bootstrap.sh" 2>/dev/null)
 
-  assert_contains "$out" "FLEET_SYNC: stuck-clone: STUCK:" "bootstrap relays the STUCK outcome"
-  assert_contains "$out" "FLEET_SYNC: rec-clone: recovered:" "bootstrap relays the recovered outcome"
+  assert_contains "$out" "FLEET_SYNC: stuck-clone ($stuck): STUCK:" "bootstrap relays the STUCK outcome"
+  assert_contains "$out" "FLEET_SYNC: rec-clone ($rec): recovered:" "bootstrap relays the recovered outcome"
   pass "bootstrap relays recovered: and STUCK: fleet-sync outcomes"
 }
 
@@ -532,7 +532,7 @@ test_orphaned_stale_packed_refs_lock_recovers() {
     "stale lock: guard did not force-remove the provably-stale lock"
   assert_grep "fetch succeeded after stale packed-refs lock cleanup" "$err" \
     "stale lock: fetch did not succeed after cleanup"
-  assert_contains "$(cat "$out")" "lockstale: synced" "stale lock: clone did not sync after recovery"
+  assert_contains "$(cat "$out")" "lockstale ($clone): synced" "stale lock: clone did not sync after recovery"
   assert_grep "recovered: removed a stale packed-refs lock" "$out" \
     "stale lock: recovery summary not emitted on stdout (bootstrap relays stdout, discards stderr)"
   assert_absent "$clone/.git/packed-refs.lock" "stale lock: lock should be gone after removal"
@@ -561,7 +561,7 @@ test_live_packed_refs_lock_is_never_removed() {
   assert_grep "is not provably stale" "$err" "live lock: guard did not explain the refusal"
   assert_no_grep "removed provably-stale packed-refs lock" "$err" \
     "live lock: guard force-removed a live lock"
-  assert_contains "$(cat "$out")" "locklive: skipped: fetch failed" "live lock: fleet-sync did not skip"
+  assert_contains "$(cat "$out")" "locklive ($clone): skipped: fetch failed" "live lock: fleet-sync did not skip"
   assert_present "$clone/.git/packed-refs.lock" "live lock: lock must never be removed"
   [ "$(head_sha "$clone")" = "$before" ] || fail "live lock: clone was advanced despite the refusal"
   pass "a live packed-refs.lock is never removed and the sync fails loudly"
@@ -615,7 +615,7 @@ test_transient_packed_refs_lock_self_clears() {
   assert_grep "cleared on its own" "$err" "transient lock: guard did not report the self-clear"
   assert_no_grep "removed provably-stale packed-refs lock" "$err" \
     "transient lock: guard force-removed a lock that only needed patience"
-  assert_contains "$(cat "$out")" "locktrans: synced" "transient lock: clone did not sync after self-clear"
+  assert_contains "$(cat "$out")" "locktrans ($clone): synced" "transient lock: clone did not sync after self-clear"
   assert_grep "recovered: packed-refs lock cleared on its own" "$out" \
     "transient lock: recovery summary not emitted on stdout"
   assert_absent "$clone/.git/packed-refs.lock" "transient lock: lock should be gone after self-clear"
@@ -632,9 +632,9 @@ test_non_clone_dir_never_syncs_the_enclosing_repo() {
   out=$(run_sync "$home")
   after=$(head_sha "$home")
 
-  assert_contains "$out" "not-a-clone: skipped: not a clone root" \
+  assert_contains "$out" "not-a-clone ($home/projects/not-a-clone): skipped: not a clone root" \
     "a non-repo directory under projects/ must be skipped by name"
-  assert_not_contains "$out" "not-a-clone: synced" \
+  assert_not_contains "$out" "not-a-clone ($home/projects/not-a-clone): synced" \
     "a non-repo directory must never be reported as a synced project"
   [ "$before" = "$after" ] || \
     fail "fleet-sync fast-forwarded the enclosing repo ($before -> $after) under a project's label"
@@ -650,7 +650,7 @@ test_non_clone_dir_named_directly_never_syncs_the_enclosing_repo() {
   out=$(run_sync "$home" not-a-clone)
   after=$(head_sha "$home")
 
-  assert_contains "$out" "not-a-clone: skipped: not a clone root" \
+  assert_contains "$out" "not-a-clone ($home/projects/not-a-clone): skipped: not a clone root" \
     "the single-project form must apply the same clone-root guard"
   [ "$before" = "$after" ] || \
     fail "the single-project form fast-forwarded the enclosing repo ($before -> $after)"
@@ -669,7 +669,7 @@ test_symlinked_clone_still_syncs() {
 
   out=$(run_sync "$home")
 
-  assert_contains "$out" "sigma: synced" "a symlinked clone must still fast-forward"
+  assert_contains "$out" "sigma ($clone): synced" "a symlinked clone must still fast-forward"
   pass "the clone-root guard accepts a symlinked clone directory"
 }
 
@@ -688,7 +688,7 @@ test_non_signature_fetch_failure_is_not_retried() {
     run_sync_guarded "$home" "$fakebin" "$out" "$err" locknonsig
   set -e
 
-  assert_contains "$(cat "$out")" "locknonsig: skipped: fetch failed" "non-signature: fleet-sync did not report the fetch failure"
+  assert_contains "$(cat "$out")" "locknonsig ($clone): skipped: fetch failed" "non-signature: fleet-sync did not report the fetch failure"
   assert_no_grep "waiting" "$err" "non-signature: a non-lock failure was wrongly retried"
   assert_no_grep "packed-refs lock" "$err" "non-signature: a non-lock failure entered the lock guard"
   pass "a non-packed-refs.lock fetch failure keeps today's behavior (no retry)"

@@ -304,7 +304,8 @@ sync_project() {
   # checkout of the same repository (a source checkout is advanced by the chain's
   # own push-clone path, never by this script), and a reader measuring the other
   # checkout then reads this script's verdict as a lie about the one they hold.
-  label="$(project_label) ($PROJ)"
+  mode_name=$(project_label)
+  label="$mode_name ($PROJ)"
 
   if [ ! -d "$PROJ" ]; then
     echo "$label: skipped: not a directory"
@@ -329,7 +330,7 @@ sync_project() {
     echo "$label: skipped: not a clone root (git would act on $proj_top)"
     return 0
   fi
-  mode_line=$("$FM_ROOT/bin/fm-project-mode.sh" "$label" 2>/dev/null || echo "no-mistakes off")
+  mode_line=$("$FM_ROOT/bin/fm-project-mode.sh" "$mode_name" 2>/dev/null || echo "no-mistakes off")
   mode=${mode_line%% *}
   if [ "$mode" = "local-only" ]; then
     echo "$label: skipped: local-only project"
