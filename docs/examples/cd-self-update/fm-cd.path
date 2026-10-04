@@ -1,0 +1,9 @@
+[Unit]
+Description=Start the firstmate CD chain when a request file lands
+
+[Path]
+PathChanged=%h/.config/olink/deploy/request.json
+Unit=fm-cd.service
+
+[Install]
+WantedBy=default.target

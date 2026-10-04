@@ -38,7 +38,7 @@
 #
 # The fast-forward mechanics live in bin/fm-ff-lib.sh (base_mode "origin" here);
 # the same library drives local and remote parent-targeted secondmate sync, so
-# there is one ff implementation, not several.
+# these paths share one ff implementation rather than several.
 #
 # It does NOT re-read AGENTS.md or nudge secondmates itself - those are LLM /
 # tmux actions the skill performs. The script's job is the safe git mechanics

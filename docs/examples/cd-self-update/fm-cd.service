@@ -1,0 +1,7 @@
+[Unit]
+Description=Bring this firstmate home to the merged commit and smoke Pi once
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/code/firstmate
+ExecStart=%h/code/firstmate/bin/fm-cd-self-update.sh --reason "olink deploy request" --repo onyx-space/firstmate
