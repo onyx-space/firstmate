@@ -513,6 +513,30 @@
       "audience": "maintainer-verification"
     },
     {
+      "path": "docs/cd-self-update.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "docs/examples/cd-self-update/README.md",
+      "audience": "operator-example"
+    },
+    {
+      "path": "docs/examples/cd-self-update/fm-cd.path",
+      "audience": "operator-example"
+    },
+    {
+      "path": "docs/examples/cd-self-update/fm-cd.service",
+      "audience": "operator-example"
+    },
+    {
+      "path": "docs/examples/cd-self-update/fm-cd.timer",
+      "audience": "operator-example"
+    },
+    {
+      "path": "docs/examples/cd-self-update/com.onyx.fm-cd.plist",
+      "audience": "operator-example"
+    },
+    {
       "path": "skills/stow/SKILL.md",
       "audience": "public-product"
     }

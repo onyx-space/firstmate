@@ -1,0 +1,9 @@
+[Unit]
+Description=REJECTED SHAPE - fixed-interval polling; kept only as the rejected example
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.onyx.fm-cd</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/CHANGE-ME/code/firstmate/bin/fm-cd-self-update.sh</string>
+    <string>--reason</string>
+    <string>olink deploy request</string>
+    <string>--repo</string>
+    <string>onyx-space/firstmate</string>
+  </array>
+  <key>WatchPaths</key>
+  <array>
+    <string>/Users/CHANGE-ME/.config/olink/deploy/request.json</string>
+  </array>
+</dict>
+</plist>
