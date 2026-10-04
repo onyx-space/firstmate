@@ -155,11 +155,9 @@ MODE=
 MODE_SET=0
 POS=()
 want_value=
-# A positional argument is checked before anything else, so a caller who omits one
-# reads which argument is missing and the usage rather than a later complaint about
-# an option, or a shell's unbound variable error naming no argument at all.
-ID=${POS[0]:-}
-[ -n "$ID" ] || { echo "error: <task-id> is required" >&2; usage >&2; exit 2; }
+# -h/--help is answered before anything else, so the header stays readable
+# without a task id.
+case "${1:-}" in -h|--help) usage; exit 0 ;; esac
 
 for a in "$@"; do
   if [ -n "$want_value" ]; then
@@ -188,6 +186,12 @@ for a in "$@"; do
   esac
 done
 [ -z "$want_value" ] || { echo "error: --$want_value requires a value" >&2; exit 1; }
+
+# The positional arguments are checked as soon as the parse has filled the array: a
+# caller who omits one reads which argument is missing and the usage, rather than a
+# later complaint about an option, or a shell error naming no argument at all.
+ID=${POS[0]:-}
+[ -n "$ID" ] || { echo "error: <task-id> is required" >&2; usage >&2; exit 2; }
 
 # Ship delivery mode is an explicit per-task decision (AGENTS.md section 7). A
 # missing or invalid value stops the scaffold rather than silently defaulting.
