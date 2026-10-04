@@ -299,7 +299,17 @@ report_stuck() {
 
 sync_project() {
   PROJ=$1
-  label=$(project_label)
+  # The verdict lines name the directory the run acted on: a bare project label
+  # cannot be checked against anything when the endpoint carries more than one
+  # checkout of the same repository (a source checkout is advanced by the chain's
+  # own push-clone path, never by this script), and a reader measuring the other
+  # checkout then reads this script's verdict as a lie about the one they hold.
+  name=$(project_label)
+  if [ "$name" = "$PROJ" ]; then
+    label="$PROJ"
+  else
+    label="$name ($PROJ)"
+  fi
 
   if [ ! -d "$PROJ" ]; then
     echo "$label: skipped: not a directory"
@@ -324,7 +334,7 @@ sync_project() {
     echo "$label: skipped: not a clone root (git would act on $proj_top)"
     return 0
   fi
-  mode_line=$("$FM_ROOT/bin/fm-project-mode.sh" "$label" 2>/dev/null || echo "no-mistakes off")
+  mode_line=$("$FM_ROOT/bin/fm-project-mode.sh" "$name" 2>/dev/null || echo "no-mistakes off")
   mode=${mode_line%% *}
   if [ "$mode" = "local-only" ]; then
     echo "$label: skipped: local-only project"
