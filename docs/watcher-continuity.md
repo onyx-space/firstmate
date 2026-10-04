@@ -116,6 +116,7 @@ A `not-rung` delivery with `queued: yes` is therefore a delayed bell, never a lo
 A relay producer MUST pass `--source relay` when it queues a notification: a note queued without `--source` is captain-authored by default and is never archived automatically.
 Any surface that counts unconfirmed notes - the fleet board included - counts the notes still present in `state/inbox/`, so that count only falls when a note is archived for real.
 `tests/fm-wake-drain-inbox-ack.test.sh` drives the real pair: a captain-authored note survives its acknowledged row, a note queued through the producer's argv shape with no `--source` does too, a notification note follows it into `handled/`, a relay note is archived rather than forwarded and no `dispatched/` directory is produced, an explicit `--ack` still archives either source, and widening the notification class to every source turns the captain-authored case red.
+
 ## Arm-layer cycle contract
 
 `bin/fm-watch-arm.sh` never returns a clean empty success.
