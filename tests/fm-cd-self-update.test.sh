@@ -74,7 +74,7 @@ grep -q "smoke: .*answered OK" "$tmp/out" || fail "happy path printed no smoke l
 ok "a clean Pi run fast-forwards, reports pull, install and smoke, and exits 0"
 
 # 2. each of the four smoke facts fails the chain on its own.
-while IFS=: read -r label text code; do
+while IFS='|' read -r label text code; do
   home=$(new_home "bad-$label"); fake_pi "$tmp/pi-$label" "$text" "$code"
   rc=$(run_chain "$home" "$tmp/pi-$label")
   [ "$rc" != 0 ] || fail "$label: chain exited 0"
@@ -84,10 +84,10 @@ while IFS=: read -r label text code; do
   git -C "$home" diff --quiet HEAD -- ':!state' 2>/dev/null || fail "$label: the run changed tracked content"
   ok "$label fails the chain with an alarm and a recorded failure"
 done <<'CASES'
-nonzero-exit:OK:3
-carries-error:Error: boom:0
-carries-warning:Warning: slow:0
-missing-ok:all good:0
+nonzero-exit|OK|3
+carries-error|Error: boom|0
+carries-warning|Warning: slow|0
+missing-ok|all good|0
 CASES
 
 # 3. a failing run that has already fast-forwarded returns the checkout to the

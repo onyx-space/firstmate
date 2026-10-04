@@ -19,7 +19,7 @@ This document owns the contract, the doorbell that invokes it, and the two wirin
 
 | stage | what it does | how it fails |
 |---|---|---|
-| pull | fast-forwards the default branch from `origin`, under the discipline `bin/fm-ff-lib.sh` enforces: refuse unless the branch is the default, the tree is clean, and the move is a real fast-forward | an unreadable or diverged remote: alarm, no move |
+| pull | fast-forwards the default branch from `origin`, under the discipline `bin/fm-ff-lib.sh` enforces: refuse unless the branch is the default, the tree is clean, and the move is a real fast-forward | an unreadable remote: alarm, no move; a diverged remote: skipped, no move |
 | install | puts the tracked launch surfaces in place: repairs an executable bit only where git records mode 100755 (the 100644 entries are libraries meant to be sourced), writes the `CLAUDE.md` pointer, relinks `.claude/skills`, and checks both project extensions are readable | a missing surface: alarm |
 | smoke | starts Pi once in this home (`pi -p "reply with OK" --no-session`) and asserts four facts: exit 0, no `Error:`, no `Warning:`, and the reply | any of the four: alarm |
 | rollback | returns the checkout to the pre-run head, only with a clean tree | a dirty tree: alarm and no move |

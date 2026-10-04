@@ -21,6 +21,11 @@ keys=$(python3 -c 'import json,sys;print(",".join(sorted(json.load(open(sys.argv
 [ "$keys" = "asked_by,at,pr,repository" ] || fail "unexpected keys: $keys"
 pr=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["pr"])' "$req")
 [ "$pr" = 45 ] || fail "unexpected pr: $pr"
+at=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["at"])' "$req")
+case "$at" in
+  [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z) ;;
+  *) fail "at is not a portable UTC timestamp: $at" ;;
+esac
 ok "a merged event lands {repository, pr, asked_by, at}"
 
 # 2. it lands atomically: no temporary file is left beside it.
@@ -57,5 +62,30 @@ ok "a non-merge event, both addresses, neither address, and malformed ids are re
 "$WRITER" --event merged --repository onyx-space/firstmate --pr 45 --path "$tmp/dry/request.json" --dry-run > /dev/null 2>&1 || fail "dry-run failed"
 [ ! -e "$tmp/dry/request.json" ] || fail "dry-run wrote a file"
 ok "the dry run writes nothing"
+
+# 6. the default requester reads this endpoint's machine key, with the pre-rename
+#    origmd-machine fallback olink uses until every endpoint carries the new name.
+#    The unrelated FM_MACHINE_FILE (the lanes file, in bin/fm-inbox.sh) must not
+#    leak in as the key.
+scratch="$tmp/machine-home"
+mkdir -p "$scratch/.pi/agent/data"
+printf 'server\n' > "$scratch/.pi/agent/data/origmd-machine"
+printf 'not-a-machine-key\n' > "$scratch/AGENTS.md"
+req3="$tmp/machine/request.json"
+FM_MACHINE_FILE="$scratch/AGENTS.md" HOME="$scratch" "$WRITER" \
+  --event merged --repository onyx-space/firstmate --pr 45 --path "$req3" > "$tmp/out" 2>&1 \
+  || fail "legacy machine-key write failed: $(cat "$tmp/out")"
+asked=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["asked_by"])' "$req3")
+[ "$asked" = "firstmate@server" ] || fail "the legacy origmd-machine key was not used: asked_by=$asked"
+ok "the default requester reads the legacy origmd-machine key, not FM_MACHINE_FILE"
+
+# 6b. when the current name exists it wins over the legacy one.
+printf 'mac-mini\n' > "$scratch/.pi/agent/data/olist-machine"
+req4="$tmp/machine/request-current.json"
+HOME="$scratch" "$WRITER" --event merged --repository onyx-space/firstmate --pr 45 \
+  --path "$req4" > /dev/null 2>&1 || fail "current machine-key write failed"
+asked=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["asked_by"])' "$req4")
+[ "$asked" = "firstmate@mac-mini" ] || fail "the current olist-machine key did not win: asked_by=$asked"
+ok "the current olist-machine key wins over the legacy file"
 
 printf 'ok\n'

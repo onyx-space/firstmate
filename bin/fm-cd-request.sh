@@ -30,10 +30,12 @@ set -euo pipefail
 
 usage() { sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed -n 's/^# \{0,1\}//p' | sed '$d'; }
 
-MACHINE_FILE="${FM_MACHINE_FILE:-$HOME/.pi/agent/data/olist-machine}"
 default_asked_by() {
-  local key=""
-  [ -r "$MACHINE_FILE" ] && key="$(head -n 1 "$MACHINE_FILE" 2>/dev/null | tr -d '[:space:]')"
+  local current="$HOME/.pi/agent/data/olist-machine"
+  local legacy="$HOME/.pi/agent/data/origmd-machine"
+  local file="$current" key=""
+  if [ ! -e "$current" ] && [ -e "$legacy" ]; then file="$legacy"; fi
+  [ -r "$file" ] && key="$(head -n 1 "$file" 2>/dev/null | tr -d '[:space:]')"
   printf 'firstmate@%s' "${key:-unknown}"
 }
 REQUEST_PATH="${FM_CD_REQUEST_PATH:-${XDG_CONFIG_HOME:-$HOME/.config}/olink/deploy/request.json}"
@@ -76,7 +78,7 @@ if [ -n "$COMMIT" ]; then
 fi
 [ -n "$ASKED_BY" ] || ASKED_BY="$(default_asked_by)"
 
-AT="$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)"
+AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 if [ -n "$PR" ]; then
   body="$(printf '{\n  "repository": "%s",\n  "pr": %s,\n  "asked_by": "%s",\n  "at": "%s"\n}\n' "$REPOSITORY" "$PR" "$ASKED_BY" "$AT")"
 else
