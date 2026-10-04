@@ -1,0 +1,37 @@
+### Scenario: the clean gate excludes exactly the chain-owned paths
+    A person's edit to .claude/settings.json (tracked or untracked) must still block the pull;
+    the chain only owns CLAUDE.md, .claude/skills and state/.
+
+--- (a) tracked .claude/settings.json edit ---
+fm-cd: home /tmp/fm-cd-live.nP4roK/tracked-edit at c5acdb3 (reason: live)
+fm-cd: pull: skipped: uncommitted changes in this home
+fm-cd: install: wrote the CLAUDE.md pointer
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: smoke: /tmp/fm-cd-live.nP4roK/pi-ok started clean and answered OK (head c5acdb3)
+fm-cd: done: head c5acdb3, smoke clean
+rc=0
+  PASS  a tracked .claude/settings.json edit still blocks the pull and is preserved
+
+--- (b) untracked .claude/settings.json added by a person ---
+fm-cd: home /tmp/fm-cd-live.nP4roK/untracked-edit at 9cda5c3 (reason: live)
+fm-cd: pull: skipped: uncommitted changes in this home
+fm-cd: install: wrote the CLAUDE.md pointer
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: smoke: /tmp/fm-cd-live.nP4roK/pi-ok started clean and answered OK (head 9cda5c3)
+fm-cd: done: head 9cda5c3, smoke clean
+rc=0
+  PASS  an untracked .claude/settings.json still blocks the pull and is preserved
+
+--- (c) only chain-owned artifacts present ---
+fm-cd: home /tmp/fm-cd-live.nP4roK/chain-artifacts-only at 9cda5c3 (reason: live)
+fm-cd: pull: fast-forwarded 9cda5c3..4f24d8f
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: smoke: /tmp/fm-cd-live.nP4roK/pi-ok started clean and answered OK (head 4f24d8f)
+fm-cd: done: head 4f24d8f, smoke clean
+rc=0
+  PASS  the chain's own artifacts do not block the pull
+
+overall=0 (0 = boundary behaves as the intent states)

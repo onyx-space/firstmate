@@ -1,0 +1,42 @@
+### Scenario: the smoke is hard-bounded and kills the whole process group
+    A fake pi that backgrounds a long sleep inheriting stdout must not outlive FM_CD_SMOKE_TIMEOUT,
+    on the default mechanism and on the forced fallbacks (perl, bash).
+
+fm_timeout_mechanism (default) = timeout
+perl available = yes
+
+--- mechanism=default: rc=1 elapsed=2s ---
+fm-cd: home /tmp/fm-cd-live.VjEXQf/bound-default at 09cdb84 (reason: bound)
+fm-cd: pull: already current at 09cdb84
+fm-cd: install: wrote the CLAUDE.md pointer
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: ALARM smoke: /tmp/fm-cd-live.VjEXQf/pi-hang-default exited 124
+fm-cd: rollback: nothing to undo, still at 09cdb84
+fm-cd: ALARM chain failed; see /tmp/fm-cd-live.VjEXQf/bound-default/state/fm-cd-failures.log
+  no lingering 'sleep 733'
+  PASS  default: bound honored, whole group terminated
+--- mechanism=perl: rc=1 elapsed=2s ---
+fm-cd: home /tmp/fm-cd-live.VjEXQf/bound-perl at 7b49625 (reason: bound)
+fm-cd: pull: already current at 7b49625
+fm-cd: install: wrote the CLAUDE.md pointer
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: ALARM smoke: /tmp/fm-cd-live.VjEXQf/pi-hang-perl exited 124
+fm-cd: rollback: nothing to undo, still at 7b49625
+fm-cd: ALARM chain failed; see /tmp/fm-cd-live.VjEXQf/bound-perl/state/fm-cd-failures.log
+  no lingering 'sleep 733'
+  PASS  perl: bound honored, whole group terminated
+--- mechanism=bash: rc=1 elapsed=2s ---
+fm-cd: home /tmp/fm-cd-live.VjEXQf/bound-bash at 123970e (reason: bound)
+fm-cd: pull: already current at 123970e
+fm-cd: install: wrote the CLAUDE.md pointer
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: ALARM smoke: /tmp/fm-cd-live.VjEXQf/pi-hang-bash exited 124
+fm-cd: rollback: nothing to undo, still at 123970e
+fm-cd: ALARM chain failed; see /tmp/fm-cd-live.VjEXQf/bound-bash/state/fm-cd-failures.log
+  no lingering 'sleep 733'
+  PASS  bash: bound honored, whole group terminated
+
+overall=0 (0 = bounded on every mechanism)

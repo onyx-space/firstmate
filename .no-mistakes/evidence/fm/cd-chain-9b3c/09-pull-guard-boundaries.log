@@ -1,0 +1,33 @@
+### Scenario: the pull guard never forces — diverged, unreachable and off-branch are handled by name
+
+--- (a) diverged remote ---
+fm-cd: home /tmp/fm-cd-live.AGwped/diverged at abb46f4 (reason: live)
+fm-cd: pull: skipped: origin/main is not ahead of HEAD (diverged)
+fm-cd: install: wrote the CLAUDE.md pointer
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: smoke: /tmp/fm-cd-live.AGwped/pi-ok started clean and answered OK (head abb46f4)
+fm-cd: done: head abb46f4, smoke clean
+rc=0
+  PASS  diverged remote: skipped, no move, no force (doc row matches)
+
+--- (b) unreachable origin ---
+fm-cd: home /tmp/fm-cd-live.AGwped/unreachable at d03ab3c (reason: live)
+fm-cd: ALARM pull: fetch from origin failed
+fm-cd: rollback: nothing to undo, still at d03ab3c
+fm-cd: ALARM chain failed; see /tmp/fm-cd-live.AGwped/unreachable/state/fm-cd-failures.log
+rc=1
+  PASS  unreachable origin: alarm and failure record
+
+--- (c) off default branch ---
+fm-cd: home /tmp/fm-cd-live.AGwped/offbranch at d03ab3c (reason: live)
+fm-cd: pull: skipped: on feature, expected main
+fm-cd: install: wrote the CLAUDE.md pointer
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: smoke: /tmp/fm-cd-live.AGwped/pi-ok started clean and answered OK (head d03ab3c)
+fm-cd: done: head d03ab3c, smoke clean
+rc=0
+  PASS  off the default branch: skipped and reported
+
+overall=0

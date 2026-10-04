@@ -1,0 +1,39 @@
+### Scenario: a failing run that already fast-forwarded returns the checkout
+    (the rollback must ignore the chain's own CLAUDE.md / .claude/skills / state artifacts)
+
+home=/tmp/fm-cd-live.Vjd7mA/rollback
+before=f9863a2e8ef716feb3b49defebc538faf329bf7d
+origin/main=dc07c901797cd9f9d8ec116a418cdca428a7a06d (differs: yes)
+chain rc=1
+--- chain output (real fixed script) ---
+fm-cd: home /tmp/fm-cd-live.Vjd7mA/rollback at f9863a2 (reason: live)
+fm-cd: pull: fast-forwarded f9863a2..dc07c90
+fm-cd: install: wrote the CLAUDE.md pointer
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: ALARM smoke: output carries an Error:
+fm-cd: rollback: returned to f9863a2
+fm-cd: ALARM chain failed; see /tmp/fm-cd-live.Vjd7mA/rollback/state/fm-cd-failures.log
+after=f9863a2e8ef716feb3b49defebc538faf329bf7d
+--- assertions ---
+  chain-owned artifacts present at rollback time:
+    present: CLAUDE.md
+    present: .claude/skills
+    present: state/fm-cd-smoke.log
+  PASS  fixed script fast-forwards then rolls back over its own artifacts
+
+--- counterfactual: clean_tree with no exclusions (pre-fix behavior) ---
+chain rc=1
+fm-cd: home /tmp/fm-cd-live.Vjd7mA/rollback-nofix at 2a6ea50 (reason: live)
+fm-cd: pull: fast-forwarded 2a6ea50..a09d768
+fm-cd: install: wrote the CLAUDE.md pointer
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: ALARM smoke: output carries an Error:
+fm-cd: ALARM rollback: refused: this home has uncommitted changes; left at a09d768
+fm-cd: ALARM chain failed; see /tmp/fm-cd-live.Vjd7mA/rollback-nofix/state/fm-cd-failures.log
+before=2a6ea503db45ce7f982215bd734b7520759d795c after=a09d768b7f6acb5c99826eaf691bd4f961834292
+  PASS  the unfixed gate refuses to roll back and leaves the home advanced
+        (so the fixed run's 'rollback: returned to' assertion has teeth)
+
+overall=0 (0 = rollback proven non-vacuous and fixed)

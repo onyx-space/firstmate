@@ -1,0 +1,34 @@
+### Scenario: happy path with the REAL pi binary
+worktree scripts: /home/onyx/.no-mistakes/worktrees/42774a4b8442/01M42ETBPFJW6VWK0M6THG6ZZX
+chain: /home/onyx/.no-mistakes/worktrees/42774a4b8442/01M42ETBPFJW6VWK0M6THG6ZZX/bin/fm-cd-self-update.sh   real pi: /home/onyx/.local/share/pi-node/node-v22.23.1-linux-arm64/bin/pi
+
+home=/tmp/fm-cd-live.4fUyR9/happy
+before=a8ef286db71d9716f5f2a337d9b18acda623ad12
+origin/main(after advance)=2207da84667103e6d010fe3732495de60f94ca2b
+--- running chain (FM_CD_PI=/home/onyx/.local/share/pi-node/node-v22.23.1-linux-arm64/bin/pi FM_CD_SMOKE_TIMEOUT=10) ---
+chain rc=0
+fm-cd: home /tmp/fm-cd-live.4fUyR9/happy at a8ef286 (reason: live)
+fm-cd: pull: fast-forwarded a8ef286..2207da8
+fm-cd: install: wrote the CLAUDE.md pointer
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: smoke: /home/onyx/.local/share/pi-node/node-v22.23.1-linux-arm64/bin/pi started clean and answered OK (head 2207da8)
+fm-cd: done: head 2207da8, smoke clean
+--- assertions ---
+PASS  chain exit 0
+PASS  pull fast-forwarded reported
+PASS  HEAD moved off the pre-run head
+PASS  HEAD == origin/main
+PASS  install stage reported
+PASS  smoke answered OK
+PASS  done line present
+after=2207da84667103e6d010fe3732495de60f94ca2b
+--- state dir contents ---
+总计 4
+drwxr-xr-x. 2 onyx onyx  60 10月 4日 14:15 .
+drwxr-xr-x. 7 onyx onyx 180 10月 4日 14:15 ..
+-rw-r--r--. 1 onyx onyx  46 10月 4日 14:15 fm-cd-smoke.log
+--- tracked tree status (chain-owned artifacts show as untracked) ---
+?? .claude/
+?? CLAUDE.md
+?? state/

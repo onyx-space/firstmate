@@ -1,0 +1,41 @@
+### Scenario: the chain never arms a watcher, claims a fleet lock, or takes a session over
+    and it is one bounded action (idempotent, no resident process, dry-run inert)
+
+--- (a) one bounded run ---
+fm-cd: home /tmp/fm-cd-live.g1O0HL/bounded at 59941e0 (reason: live)
+fm-cd: pull: already current at 59941e0
+fm-cd: install: wrote the CLAUDE.md pointer
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: smoke: /tmp/fm-cd-live.g1O0HL/pi-ok started clean and answered OK (head 59941e0)
+fm-cd: done: head 59941e0, smoke clean
+rc=0
+
+--- (b) replayed event / second caller ---
+fm-cd: home /tmp/fm-cd-live.g1O0HL/bounded at 59941e0 (reason: replay)
+fm-cd: pull: already current at 59941e0
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: smoke: /tmp/fm-cd-live.g1O0HL/pi-ok started clean and answered OK (head 59941e0)
+fm-cd: done: head 59941e0, smoke clean
+rc=0
+
+--- instrumented command log (must be empty) ---
+(empty - no session/watch/loader command was invoked)
+--- state dir (must hold only the chain's own cd records) ---
+.
+..
+fm-cd-smoke.log
+--- lock/journal artifacts? ---
+(none)
+--- resident process after return? ---
+(none)
+
+--- (c) dry-run ---
+fm-cd: home /tmp/fm-cd-live.g1O0HL/dryrun at 87fec7b (reason: live)
+fm-cd: dry-run: would fetch origin main, fast-forward when clean, install tracked launch surfaces, smoke /tmp/fm-cd-live.g1O0HL/pi-ok with a 90s bound, and roll back to 87fec7b on failure
+rc=0
+before=87fec7b69499399e60f174a4fa487f2e4af94842 after=87fec7b69499399e60f174a4fa487f2e4af94842
+  PASS  bounded, idempotent, no watcher/lock/session machinery, dry-run inert
+
+overall=0 (0 = forbidden behaviors absent)

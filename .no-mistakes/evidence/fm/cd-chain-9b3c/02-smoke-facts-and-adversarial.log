@@ -1,0 +1,85 @@
+### Scenario: the smoke's four facts each fail the chain, adversarially
+Real chain script under test: /home/onyx/.no-mistakes/worktrees/42774a4b8442/01M42ETBPFJW6VWK0M6THG6ZZX/bin/fm-cd-self-update.sh
+
+--- case nonzero-exit (must FAIL) ---
+fm-cd: home /tmp/fm-cd-live.nZ7PJ9/nonzero-exit at 707b741 (reason: live)
+fm-cd: pull: already current at 707b741
+fm-cd: install: wrote the CLAUDE.md pointer
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: ALARM smoke: /tmp/fm-cd-live.nZ7PJ9/pi-nonzero-exit exited 3
+fm-cd: rollback: nothing to undo, still at 707b741
+fm-cd: ALARM chain failed; see /tmp/fm-cd-live.nZ7PJ9/nonzero-exit/state/fm-cd-failures.log
+  PASS  nonzero-exit fails the chain and records it
+--- case carries-error (must FAIL) ---
+fm-cd: home /tmp/fm-cd-live.nZ7PJ9/carries-error at 707b741 (reason: live)
+fm-cd: pull: already current at 707b741
+fm-cd: install: wrote the CLAUDE.md pointer
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: ALARM smoke: output carries an Error:
+fm-cd: rollback: nothing to undo, still at 707b741
+fm-cd: ALARM chain failed; see /tmp/fm-cd-live.nZ7PJ9/carries-error/state/fm-cd-failures.log
+  PASS  carries-error fails the chain and records it
+--- case carries-warning (must FAIL) ---
+fm-cd: home /tmp/fm-cd-live.nZ7PJ9/carries-warning at 707b741 (reason: live)
+fm-cd: pull: already current at 707b741
+fm-cd: install: wrote the CLAUDE.md pointer
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: ALARM smoke: output carries a Warning:
+fm-cd: rollback: nothing to undo, still at 707b741
+fm-cd: ALARM chain failed; see /tmp/fm-cd-live.nZ7PJ9/carries-warning/state/fm-cd-failures.log
+  PASS  carries-warning fails the chain and records it
+--- case missing-ok (must FAIL) ---
+fm-cd: home /tmp/fm-cd-live.nZ7PJ9/missing-ok at 707b741 (reason: live)
+fm-cd: pull: already current at 707b741
+fm-cd: install: wrote the CLAUDE.md pointer
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: ALARM smoke: reply did not carry an OK line
+fm-cd: rollback: nothing to undo, still at 707b741
+fm-cd: ALARM chain failed; see /tmp/fm-cd-live.nZ7PJ9/missing-ok/state/fm-cd-failures.log
+  PASS  missing-ok fails the chain and records it
+--- case ok-substring (must FAIL) ---
+fm-cd: home /tmp/fm-cd-live.nZ7PJ9/ok-substring at 707b741 (reason: live)
+fm-cd: pull: already current at 707b741
+fm-cd: install: wrote the CLAUDE.md pointer
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: ALARM smoke: reply did not carry an OK line
+fm-cd: rollback: nothing to undo, still at 707b741
+fm-cd: ALARM chain failed; see /tmp/fm-cd-live.nZ7PJ9/ok-substring/state/fm-cd-failures.log
+  PASS  ok-substring fails the chain and records it
+--- case not-ok (must FAIL) ---
+fm-cd: home /tmp/fm-cd-live.nZ7PJ9/not-ok at 707b741 (reason: live)
+fm-cd: pull: already current at 707b741
+fm-cd: install: wrote the CLAUDE.md pointer
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: ALARM smoke: reply did not carry an OK line
+fm-cd: rollback: nothing to undo, still at 707b741
+fm-cd: ALARM chain failed; see /tmp/fm-cd-live.nZ7PJ9/not-ok/state/fm-cd-failures.log
+  PASS  not-ok fails the chain and records it
+--- case ok-then-error (must FAIL) ---
+fm-cd: home /tmp/fm-cd-live.nZ7PJ9/ok-then-error at 707b741 (reason: live)
+fm-cd: pull: already current at 707b741
+fm-cd: install: wrote the CLAUDE.md pointer
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: ALARM smoke: output carries an Error:
+fm-cd: rollback: nothing to undo, still at 707b741
+fm-cd: ALARM chain failed; see /tmp/fm-cd-live.nZ7PJ9/ok-then-error/state/fm-cd-failures.log
+  PASS  ok-then-error fails the chain and records it
+--- case big-reply (must PASS, ~100KB clean reply) ---
+fm-cd: home /tmp/fm-cd-live.nZ7PJ9/big-reply at cb6b13c (reason: live)
+fm-cd: pull: already current at cb6b13c
+fm-cd: install: wrote the CLAUDE.md pointer
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: smoke: /tmp/fm-cd-live.nZ7PJ9/pi-big-reply started clean and answered OK (head cb6b13c)
+fm-cd: done: head cb6b13c, smoke clean
+  smoke log size: 108940 bytes
+  PASS  a reply larger than the pipe buffer still counts as OK
+
+overall=0 (0 = all smoke-fact cases behaved as intended)

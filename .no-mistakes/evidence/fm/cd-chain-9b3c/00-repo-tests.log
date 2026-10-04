@@ -1,0 +1,25 @@
+$ bash tests/fm-cd-self-update.test.sh
+ok - a clean Pi run fast-forwards, reports pull, install and smoke, and exits 0
+ok - nonzero-exit fails the chain with an alarm and a recorded failure
+ok - carries-error fails the chain with an alarm and a recorded failure
+ok - carries-warning fails the chain with an alarm and a recorded failure
+ok - missing-ok fails the chain with an alarm and a recorded failure
+ok - ok-substring fails the chain with an alarm and a recorded failure
+ok - a failing run that fast-forwarded returns the checkout to its starting head
+ok - install repairs only what git records as executable and leaves the tree clean
+ok - a lost executable bit does not block the pull and is repaired
+ok - a person's tracked-config edit still blocks the pull
+ok - a reply larger than the pipe buffer still counts as OK
+ok
+rc=0
+
+$ bash tests/fm-cd-request.test.sh
+ok - a merged event lands {repository, pr, asked_by, at}
+ok - the request lands by rename and leaves no temporary file
+ok - a commit event carries commit rather than pr
+ok - a non-merge event, both addresses, neither address, and malformed ids are refused by name and write nothing
+ok - the dry run writes nothing
+ok - the default requester reads the legacy origmd-machine key, not FM_MACHINE_FILE
+ok - the current olist-machine key wins over the legacy file
+ok
+rc=0

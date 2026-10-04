@@ -1,0 +1,35 @@
+### Scenario: install puts the tracked launch surfaces in place, and alarms on a missing one
+
+--- (a) fresh home ---
+fm-cd: home /tmp/fm-cd-live.hSOGpc/surfaces at cae065f (reason: live)
+fm-cd: pull: already current at cae065f
+fm-cd: install: wrote the CLAUDE.md pointer
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: smoke: /tmp/fm-cd-live.hSOGpc/pi-ok started clean and answered OK (head cae065f)
+fm-cd: done: head cae065f, smoke clean
+rc=0
+  PASS  CLAUDE.md -> @AGENTS.md and .claude/skills -> ../.agents/skills
+
+--- (b) missing project extension ---
+fm-cd: home /tmp/fm-cd-live.hSOGpc/missing-ext at cae065f (reason: live)
+fm-cd: pull: skipped: uncommitted changes in this home
+fm-cd: install: wrote the CLAUDE.md pointer
+fm-cd: install: relinked .claude/skills
+fm-cd: ALARM install: missing project extension fm-primary-pi-watch.ts
+fm-cd: rollback: nothing to undo, still at cae065f
+fm-cd: ALARM chain failed; see /tmp/fm-cd-live.hSOGpc/missing-ext/state/fm-cd-failures.log
+rc=1
+  PASS  a missing launch extension alarms and fails the run
+
+--- (c) pre-existing CLAUDE.md ---
+fm-cd: home /tmp/fm-cd-live.hSOGpc/keep-claude at cae065f (reason: live)
+fm-cd: pull: already current at cae065f
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: smoke: /tmp/fm-cd-live.hSOGpc/pi-ok started clean and answered OK (head cae065f)
+fm-cd: done: head cae065f, smoke clean
+rc=0
+  PASS  a person's existing CLAUDE.md is left untouched
+
+overall=0

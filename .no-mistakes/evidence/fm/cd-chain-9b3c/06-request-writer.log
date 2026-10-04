@@ -1,0 +1,42 @@
+### Scenario: bin/fm-cd-request.sh writes the fleet request file, merged-only and atomically
+script: /home/onyx/.no-mistakes/worktrees/42774a4b8442/01M42ETBPFJW6VWK0M6THG6ZZX/bin/fm-cd-request.sh
+
+--- (a) merged --pr ---
+fm-cd-request: wrote /tmp/fm-cd-live.0AwsEr/deploy/request.json (repository onyx-space/firstmate, pr 45, asked_by firstmate@server)
+rc=0
+parsed keys: asked_by,at,pr,repository
+parsed values: {"asked_by": "firstmate@server", "at": "2026-10-04T06:15:57Z", "pr": 45, "repository": "onyx-space/firstmate"}
+  PASS  merged --pr lands {repository,pr,asked_by,at} atomically
+
+--- (b) merged --commit ---
+fm-cd-request: wrote /tmp/fm-cd-live.0AwsEr/deploy/commit.json (repository onyx-space/firstmate, commit 645b6a16, asked_by firstmate@server)
+keys=asked_by,at,commit,repository
+  PASS  commit event carries commit instead of pr
+
+--- (c) refusals ---
+  PASS  closed refused by name, nothing written: fm-cd-request: refused: event "closed" is not a merge; a closed-without-merge report must not install anything
+  PASS  both refused by name, nothing written: fm-cd-request: refused: name either --pr or --commit, not both
+  PASS  neither refused by name, nothing written: fm-cd-request: refused: one of --pr or --commit is required
+  PASS  badcommit refused by name, nothing written: fm-cd-request: refused: --commit must be a lowercase hexadecimal id, got "NOT-HEX"
+  PASS  badpr refused by name, nothing written: fm-cd-request: refused: --pr must be a positive whole number, got "4.5"
+  PASS  nonpositive refused by name, nothing written: fm-cd-request: refused: --pr must be positive, got "0"
+
+--- (d) dry-run ---
+fm-cd-request: dry-run: would write /tmp/fm-cd-live.0AwsEr/dry/request.json
+{
+  "repository": "onyx-space/firstmate",
+  "pr": 45,
+  "asked_by": "firstmate@server",
+  "at": "2026-10-04T06:15:57Z"
+}  PASS  dry-run wrote nothing
+
+--- (e) default asked_by ---
+legacy only (FM_MACHINE_FILE set): asked_by=firstmate@server (expect firstmate@server)
+current present:                   asked_by=firstmate@mac-mini (expect firstmate@mac-mini)
+  PASS  default requester reads olist-machine, falls back to origmd-machine, ignores FM_MACHINE_FILE
+
+--- (f) default path under XDG_CONFIG_HOME ---
+fm-cd-request: wrote /tmp/fm-cd-live.0AwsEr/xdg/olink/deploy/request.json (repository onyx-space/firstmate, pr 46, asked_by firstmate@unknown)
+  PASS  default path is $XDG_CONFIG_HOME/olink/deploy/request.json
+
+overall=0 (0 = request writer contract holds)

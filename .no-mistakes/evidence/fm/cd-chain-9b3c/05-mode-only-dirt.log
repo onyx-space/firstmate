@@ -1,0 +1,30 @@
+### Scenario: a lost executable bit is chain-repairable dirt, not a blocker
+    ...but a real content edit to a tracked bin/*.sh still blocks.
+
+git status before run (mode-only):
+ M bin/fm-tool.sh
+--- (a) lost executable bit ---
+fm-cd: home /tmp/fm-cd-live.D3i9SL/mode-dirt at 7143ab1 (reason: live)
+fm-cd: pull: fast-forwarded 7143ab1..29496ac
+fm-cd: install: repaired the executable bit on bin/fm-tool.sh (git records 100755)
+fm-cd: install: wrote the CLAUDE.md pointer
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: smoke: /tmp/fm-cd-live.D3i9SL/pi-ok started clean and answered OK (head 29496ac)
+fm-cd: done: head 29496ac, smoke clean
+rc=0
+  PASS  lost +x does not block the pull and is repaired
+
+--- (b) real content edit to bin/fm-tool.sh ---
+fm-cd: home /tmp/fm-cd-live.D3i9SL/content-edit at 7143ab1 (reason: live)
+fm-cd: pull: skipped: uncommitted changes in this home
+fm-cd: install: repaired the executable bit on bin/fm-tool.sh (git records 100755)
+fm-cd: install: wrote the CLAUDE.md pointer
+fm-cd: install: relinked .claude/skills
+fm-cd: install: tracked launch surfaces in place
+fm-cd: smoke: /tmp/fm-cd-live.D3i9SL/pi-ok started clean and answered OK (head 7143ab1)
+fm-cd: done: head 7143ab1, smoke clean
+rc=0
+  PASS  a real content edit still blocks the pull and is preserved
+
+overall=0

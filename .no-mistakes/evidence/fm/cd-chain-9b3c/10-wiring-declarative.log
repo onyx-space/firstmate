@@ -1,0 +1,39 @@
+### Scenario: the example wiring parses and points at the real entrypoint, flags and request path
+    (declarative validation: systemd units parsed by systemd-analyze; plist parsed by plistlib)
+
+--- systemd-analyze verify ---
+  /etc/systemd/system/syncthing@.service:115: Failed to parse boolean value, ignoring: disconnected
+  /etc/systemd/system/syncthing@.service:123: Unknown key 'PrivatePIDs' in section [Service], ignoring.
+  Configuration file /etc/systemd/system/runsunloginclient.service is marked executable. Please remove executable permission bits. Proceeding anyway.
+  /etc/systemd/system/ons-blind-check.service:3: Invalid URL, ignoring: file:modules/ci/scripts/daily-blind-check.sh
+  /usr/lib/systemd/system/dbus.socket:5: ListenStream= references a path below legacy directory /var/run/, updating /var/run/dbus/system_bus_socket → /run/dbus/system_bus_socket; please update the unit file accordingly.
+  fm-cd.service: Command /home/onyx/code/firstmate/bin/fm-cd-self-update.sh is not executable: No such file or directory
+
+--- plist parse (python plistlib, the real macOS parser format) ---
+  parsed: {
+  "Label": "com.onyx.fm-cd",
+  "ProgramArguments": [
+    "/Users/CHANGE-ME/code/firstmate/bin/fm-cd-self-update.sh",
+    "--reason",
+    "olink deploy request",
+    "--repo",
+    "onyx-space/firstmate"
+  ],
+  "WatchPaths": [
+    "/Users/CHANGE-ME/.config/olink/deploy/request.json"
+  ]
+}
+
+--- coherence assertions ---
+  PASS  plist ProgramArguments[0] is bin/fm-cd-self-update.sh
+  PASS  plist carries --reason and --repo
+  PASS  service ExecStart is bin/fm-cd-self-update.sh
+  PASS  service carries --reason and --repo
+  PASS  systemd PathChanged watches the writer default path
+  PASS  launchd WatchPaths watches the writer default path
+  PASS  timer example is labelled rejected
+  PASS  writer default path is XDG_CONFIG_HOME/olink/deploy/request.json
+  PASS  entrypoint documents --reason/--repo/--dry-run
+  => wiring is coherent with the real scripts
+
+overall=0
