@@ -215,7 +215,45 @@ test_over_long_decision_note_is_capped_with_a_marker() {
   pass "an over-long open decision is cut to its per-item budget with the shared truncation marker"
 }
 
+# The real noise the drain was printing (h, 2026-10-02, retired-repo-cleanup-x1):
+# a keyed decision, a KEYLESS blocked line about the same handoff, the keyed
+# resolution, then the task's own terminal pause. The keyed close never named
+# the keyless record, so every drain re-listed a blocker that had finished.
+test_keyless_blocker_superseded_by_a_terminal_line_stops_being_listed() {
+  local dir state out
+  dir=$(make_case keyless-superseded)
+  state="$dir/state"
+  out="$dir/drain.out"
+
+  cat > "$state/task8.status" <<'EOF'
+needs-decision [key=dsh-search-cleanup-approval]: approve the cleanup
+blocked: dsh-search - w unreachable, remote delete paused
+resolved [key=dsh-search-cleanup-approval]: approved, executed
+paused: dsh-search cleanup complete
+EOF
+
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain failed on a superseded keyless blocker"
+  if grep -F 'OPEN DECISIONS' "$out" >/dev/null; then
+    fail "a finished keyless blocker was still listed: $(cat "$out")"
+  fi
+
+  # A failure is a terminal verb by the same shared predicate.
+  printf 'blocked: the forge never answered\nfailed: the forge never came back\n' > "$state/task10.status"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain failed on a failure-superseded keyless blocker"
+  if grep -F 'task10' "$out" | grep -F 'the forge never answered' >/dev/null; then
+    fail "a keyless blocker superseded by a later failure was still listed: $(cat "$out")"
+  fi
+
+  # Guard: the same keyless blocker with no later terminal line still lists.
+  printf 'blocked: waiting on the forge\n' > "$state/task9.status"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain failed on a still-open keyless blocker"
+  grep -F 'task9' "$out" | grep -F 'blocked: waiting on the forge' >/dev/null \
+    || fail "a keyless blocker with no terminal line disappeared: $(cat "$out")"
+  pass "a keyless blocker is re-listed only while no later terminal line supersedes it"
+}
+
 test_buried_decision_still_surfaces
+test_keyless_blocker_superseded_by_a_terminal_line_stops_being_listed
 test_over_long_decision_note_is_capped_with_a_marker
 test_explicit_resolution_closes_it
 test_later_unrelated_terminal_line_does_not_close_it

@@ -262,6 +262,79 @@ test_incremental_agrees_with_full_fold_across_appends() {
   pass "the incremental fold matches the full fold across appends in both key positions"
 }
 
+# A KEYLESS needs-decision/blocked line carries no key, so no later keyed
+# transition can name it; only a keyless close or the task's own terminal line
+# can retire it. The reported shape below is the real one (h, 2026-10-02,
+# retired-repo-cleanup-x1): a keyed decision, a keyless blocked line about the
+# same handoff, the keyed resolution, then the task's own terminal pause. The
+# keyed close never named the keyless record, so the shared "default" bucket
+# stayed open and the drain re-listed a finished blocker on every wake.
+test_keyless_open_line_is_superseded_by_a_later_terminal_line() {
+  local dir
+  dir=$(case_dir keyless-superseded)
+
+  cat > "$dir/paused.status" <<'EOF'
+needs-decision [key=dsh-search-cleanup-approval]: approve the cleanup
+blocked: dsh-search - w unreachable, remote delete paused
+resolved [key=dsh-search-cleanup-approval]: approved, executed
+paused: dsh-search cleanup complete
+EOF
+  assert_fold "$dir/paused.status" "" "keyless blocked superseded by a later pause"
+
+  # done: is terminal the same way.
+  cat > "$dir/done.status" <<'EOF'
+blocked: waiting on the forge
+done: the forge came back and the work landed
+EOF
+  assert_fold "$dir/done.status" "" "keyless blocked superseded by a later done"
+
+  # failed: is one of status_is_terminal_verb's terminal verbs too, so it
+  # retires the keyless record by the same rule.
+  cat > "$dir/failed.status" <<'EOF'
+blocked: waiting on the forge
+failed: the forge never came back
+EOF
+  assert_fold "$dir/failed.status" "" "keyless blocked superseded by a later failure"
+
+  # A terminal line that names a key still retires only the keyless record; the
+  # named key's decision stays open.
+  cat > "$dir/keyed-terminal.status" <<'EOF'
+blocked: waiting on the forge
+needs-decision [key=api-shape]: pick REST or RPC
+done [key=api-shape]: unrelated later milestone
+EOF
+  assert_fold "$dir/keyed-terminal.status" "$(printf 'api-shape\tneeds-decision\tpick REST or RPC\n')" \
+    "a keyed terminal line retires the keyless record but not its own key"
+
+  # Regression guard, and the whole point of leaving the rule narrow: with NO
+  # later terminal line the keyless record is still open, exactly as before.
+  cat > "$dir/still-open.status" <<'EOF'
+blocked: waiting on the forge
+working: polling the forge
+EOF
+  assert_fold "$dir/still-open.status" "$(printf 'default\tblocked\twaiting on the forge\n')" \
+    "keyless blocked without a later terminal line stays open"
+
+  # A terminal line names no key, so it must never clear a KEYED decision.
+  cat > "$dir/keyed.status" <<'EOF'
+needs-decision [key=api-shape]: pick REST or RPC
+done: unrelated later milestone
+EOF
+  assert_fold "$dir/keyed.status" "$(printf 'api-shape\tneeds-decision\tpick REST or RPC\n')" \
+    "a terminal line never clears a keyed decision"
+
+  # The supersede is not a one-shot: a fresh keyless open after the terminal
+  # line is a new decision and lists again.
+  cat >> "$dir/still-open.status" <<'EOF'
+paused: first wait cleared
+blocked: the forge went down again
+EOF
+  assert_fold "$dir/still-open.status" "$(printf 'default\tblocked\tthe forge went down again\n')" \
+    "a keyless open after a terminal line lists again"
+
+  pass "a later terminal line supersedes a keyless open decision, and only that"
+}
+
 test_stated_key_is_honored_in_both_positions
 test_bare_keyless_line_still_folds_to_default
 test_resolution_closes_across_positions
@@ -275,6 +348,7 @@ test_corr_only_tag_opens_as_default_like_a_bare_line
 test_key_only_before_colon_still_opens_no_regression
 test_blocked_and_resolved_are_tag_order_independent
 test_incremental_agrees_with_full_fold_across_appends
+test_keyless_open_line_is_superseded_by_a_later_terminal_line
 
 # status_key_closing_verb reports HOW the status side currently reads one key,
 # which is what lets a consumer tell a settled key from a key handed to a
