@@ -1,0 +1,29 @@
+Before/after evidence for fm/fm-open-decisions-keeps-superseded-keyless
+Base commit: f42a979be28eedc63348ddbc8c57ed9d8961b7d7
+Head (target): 4d3ee908307568a58877aa5d1f828d6846ac6386
+
+Exact reported status log (h, 2026-10-02, retired-repo-cleanup-x1):
+  needs-decision [key=dsh-search-cleanup-approval]: approve the cleanup
+  blocked: dsh-search - w unreachable, remote delete paused
+  resolved [key=dsh-search-cleanup-approval]: approved, executed
+  paused: dsh-search cleanup complete
+
+=== BASE lib: status_open_decisions (whole-file fold) ===
+default	blocked	dsh-search - w unreachable, remote delete paused[rc=0]
+=== BASE lib: status_span_first_actionable (watcher/daemon path) ===
+blocked: dsh-search - w unreachable, remote delete paused[rc=0]
+
+=== HEAD lib: status_open_decisions (whole-file fold) ===
+[rc=0]
+=== HEAD lib: status_span_first_actionable (watcher/daemon path) ===
+[rc=1]
+
+=== Span-scan persisted-cursor migration (FM_CLASSIFY_SPAN_SCAN_VERSION 2 -> 3) ===
+Log: keyless blocked, later pause, then a routine append.
+A version=2 partial cursor had already folded past the pause under the old
+reading, so its open set still held the keyless default origin as live.
+
+-- BASE lib (version 2, cursor accepted):
+blocked: dsh-search - w unreachable, remote delete paused  [rc=0]
+-- HEAD lib (version 3, cursor rejected and rebuilt):
+  [rc=1]

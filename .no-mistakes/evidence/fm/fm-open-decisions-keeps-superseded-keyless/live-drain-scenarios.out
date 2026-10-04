@@ -1,0 +1,121 @@
+------------------------------------------------------------------------
+Scenario 1: exact reported sequence (keyed decision, keyless blocked,
+keyed resolved, task paused). Before the fix the drain listed the
+keyless blocker on every wake.
+------------------------------------------------------------------------
+
+### reported sequence
+$ cat state/task1.status
+    needs-decision [key=dsh-search-cleanup-approval]: approve the cleanup
+    blocked: dsh-search - w unreachable, remote delete paused
+    resolved [key=dsh-search-cleanup-approval]: approved, executed
+    paused: dsh-search cleanup complete
+$ FM_STATE_OVERRIDE=state bin/fm-wake-drain.sh   (exit=0)
+    (no output)
+OPEN DECISIONS printed? no
+------------------------------------------------------------------------
+Scenario 2 (guard): the same keyless blocker with NO later terminal line
+must still be listed - the rule is a supersede, not a blanket suppression.
+------------------------------------------------------------------------
+
+### keyless blocker, no terminal line
+$ cat state/task1.status
+    blocked: waiting on the forge
+    working: polling the forge
+$ FM_STATE_OVERRIDE=state bin/fm-wake-drain.sh   (exit=0)
+    | OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+    | task1 blocked: waiting on the forge
+    | OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+OPEN DECISIONS printed? YES
+------------------------------------------------------------------------
+Scenario 3 (guard): a later unrelated terminal line must NOT clear a KEYED
+open decision - keyed pairing/closing semantics unchanged.
+------------------------------------------------------------------------
+
+### keyed decision + unrelated done
+$ cat state/task1.status
+    needs-decision [key=api-shape]: pick REST or RPC
+    done: unrelated later milestone
+$ FM_STATE_OVERRIDE=state bin/fm-wake-drain.sh   (exit=0)
+    | STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):
+    | task1 done: unrelated later milestone
+    | OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+    | task1 [key=api-shape] needs-decision: pick REST or RPC
+    | OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+OPEN DECISIONS printed? YES
+------------------------------------------------------------------------
+Scenario 4: keyless needs-decision (not only blocked) superseded by done,
+and by failed - both terminal verbs shared with status_is_terminal_verb.
+------------------------------------------------------------------------
+
+### keyless needs-decision + done
+$ cat state/task1.status
+    needs-decision: choose a release target
+    done: shipped the release
+$ FM_STATE_OVERRIDE=state bin/fm-wake-drain.sh   (exit=0)
+    | STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):
+    | task1 done: shipped the release
+OPEN DECISIONS printed? no
+
+### keyless blocked + failed
+$ cat state/task1.status
+    blocked: waiting on the forge
+    failed: the forge never came back
+$ FM_STATE_OVERRIDE=state bin/fm-wake-drain.sh   (exit=0)
+    | STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):
+    | task1 failed: the forge never came back
+OPEN DECISIONS printed? no
+------------------------------------------------------------------------
+Scenario 5 (adversarial): a fresh keyless decision raised AFTER a terminal
+line is a NEW decision and must list again.
+------------------------------------------------------------------------
+
+### keyless reopen after a pause
+$ cat state/task1.status
+    blocked: first wait
+    paused: first wait cleared
+    blocked: the forge went down again
+$ FM_STATE_OVERRIDE=state bin/fm-wake-drain.sh   (exit=0)
+    | OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+    | task1 blocked: the forge went down again
+    | OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+OPEN DECISIONS printed? YES
+------------------------------------------------------------------------
+Scenario 6: span-scan consistency (the watcher/daemon path). The bounded
+span scan must agree with the whole-file fold on the reported sequence.
+------------------------------------------------------------------------
+
+$ _fm span scan on reported.status (start offset 0)
+    rc=1  actionable_record=''
+    whole-file fold lists=''
+
+$ _fm span scan on keyed.status (start offset 0)
+    rc=0  actionable_record=needs-decision\ \[key=api-shape\]:\ pick\ REST\ or\ RPC\ \;\ done:\ unrelated\ later\ milestone
+    whole-file fold lists=$'api-shape\tneeds-decision\tpick REST or RPC'
+
+Expected: reported -> rc=1 and no fold record; keyed -> rc=0 naming the
+api-shape decision while the keyless default record stays retired.
+------------------------------------------------------------------------
+Scenario 7: persisted span-scan cursor migration. A cursor written under
+the previous scanner version (2) must be discarded and the span rebuilt,
+not trusted with a stale live keyless origin.
+------------------------------------------------------------------------
+$ pre-fix cursor:
+    version=2
+    ident=strong:64770:28864604:2026-10-04 10:14:43.357577999 +0800
+    start=0
+    size=94
+    line=1
+    nd=0
+    ndp=0
+    o	default	blocked	dsh-search - w unreachable, remote delete paused
+    p	default	1
+    e	D	default	1	blocked	blocked: dsh-search - w unreachable, remote delete paused
+$ span scan with that pre-fix cursor present: rc=1 record=''
+$ cursor after the scan (must be gone: the scan completed from a rebuild):
+    (no cursor left)
+Expected: rc=1, no actionable record - the version bump forced a rebuild
+that saw the later pause supersede the keyless blocker.
+------------------------------------------------------------------------
+DONE
+exit=0

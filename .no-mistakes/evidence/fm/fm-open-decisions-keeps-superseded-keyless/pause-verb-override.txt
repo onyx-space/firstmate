@@ -1,0 +1,11 @@
+FM_CLASSIFY_PAUSED_VERB reuse check (the terminal-supersede vocabulary is owner-defined)
+
+Model: bin/fm-classify-lib.sh status_open_decisions
+
+--- FM_CLASSIFY_PAUSED_VERB=waiting, log: blocked / waiting: ---
+[rc=0]
+expected: empty fold - the configured pause verb supersedes the keyless blocker
+
+--- FM_CLASSIFY_PAUSED_VERB=waiting, log: blocked / paused: ---
+default	blocked	waiting on the forge[rc=0]
+expected: default blocked still listed - paused is not the configured pause verb
