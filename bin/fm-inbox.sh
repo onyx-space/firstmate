@@ -30,8 +30,10 @@
 # Every record names its writer in a `source` field: `text` (the default) is the
 # captain writing out of band, `voice` is the captain's own dictation through
 # `say`, and `relay` is a notification one of firstmate's own integrations queued.
-# The source decides WHEN the record leaves state/inbox/ - archived, or dispatched
-# to a lane that serves it - never whether it is presented;
+# The source decides WHEN the record leaves state/inbox/, never whether it is
+# presented: a notification-class note is archived with the wake row it announced,
+# while a wake that arrived from another machine is never re-routed here - its
+# durable record is the wire mailbox its sender addressed;
 # docs/watcher-continuity.md owns that contract. A source value is limited to
 # [A-Za-z0-9._-] so it can never break the record's header, and no record ever
 # carries a credential.
@@ -57,8 +59,6 @@
 #
 # Environment:
 #   FM_HOME              operational home whose state/ and data/ are used.
-#   FM_MACHINE_FILE      machine file whose "Long-lived maintenance lanes" line
-#                        names this endpoint's lanes (default ~/AGENTS.md).
 #
 # PRIVACY: `say` sends your audio and `ask` sends your question to Bedrock.
 # `note`, `status`, `list` and `drain` make no network call at all.
@@ -181,38 +181,6 @@ fm_inbox_source_is_notification() {  # <source>
   esac
   return 1
 }
-
-# ------------------------------------------------------------- lane dispatch
-#
-# A merge wake for a repository this endpoint maintains with a long-lived
-# maintenance lane belongs in that lane's own session: the lane is the reader the
-# wake exists for, and archiving the note as handled leaves it with nothing.
-# Which repository a note is about comes from the note's own leading relay token,
-# never from a repository named in its title or a link.
-# Which lane serves that repository is asked of olink, whose `route` reads the
-# fleet's joined map, <origmd clone>/ref/lanes.json - written by
-# scripts/owners.mjs from the machine file and each lane's own checkout - together
-# with this endpoint's own registration, so a wake here and an `olink send --repo`
-# reach the same lane and a repository another machine maintains is never
-# dispatched from here. Only a verified answer counts. When the map is absent or
-# silent about the repository, the same question falls back to this endpoint's
-# machine file (the injected copy of admin/origmd's inject/machines/<key>.md, whose
-# "Long-lived maintenance lanes" line carries each lane's name and directory) plus
-# the repository each lane's own directory checks out, so a lane checking out a
-# different repository takes the ordinary archive path either way. The dispatch
-# addresses the lane by the name olink resolves, and the endpoint key `--to` needs
-# comes from olink's own answer - or, when olink is silent and the machine file
-# answers, from olink's own config - so the machine key/endpoint pairing is never
-# restated here.
-#
-# Refusal is fail-closed: a lane that serves the repository but cannot be reached
-# - no key for its registered name, no olink on the machine, or a send whose own
-# report does not put the payload in the mailbox - leaves the note and its wake
-# row where they are, retryable, instead of reporting a delivery that did not
-# happen. olink exits 0 even when it reports `mailbox: unreadable`, so its exit
-# status alone is not evidence; only its `mailbox: present` fact is. A repository
-# with no lane takes the pre-existing archive path.
-FM_MACHINE_FILE=${FM_MACHINE_FILE:-$HOME/AGENTS.md}
 
 wake_for() {
   local id=$1 summary=$2 lib="$FM_ROOT/bin/fm-wake-lib.sh"
@@ -460,7 +428,7 @@ cmd_drain() {
       shift
       [ "$#" -gt 0 ] || die "usage: fm-inbox.sh drain --ack-notifications <id>..."
       mkdir -p "$INBOX/handled"
-      local nid rc=0
+      local nid
       for nid in "$@"; do
         case "$nid" in
           ''|*[!A-Za-z0-9._-]*) printf 'skipped %s\n' "$nid"; continue ;;
@@ -474,7 +442,7 @@ cmd_drain() {
           printf 'left %s\n' "$nid"
         fi
       done
-      return "$rc"
+      return 0
       ;;
   esac
   cmd_list
