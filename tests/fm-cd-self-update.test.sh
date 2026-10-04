@@ -125,4 +125,53 @@ FM_CD_PI="$tmp/pi-ok2" FM_CD_SMOKE_TIMEOUT=10 "$home/bin/fm-cd-self-update.sh" >
 git -C "$home" diff --quiet HEAD -- ':!state' 2>/dev/null || fail "the install stage changed tracked content"
 ok "install repairs only what git records as executable and leaves the tree clean"
 
+# 5. a lost executable bit is chain-owned dirt: it must not block the pull, so
+#    the merged commit still installs and the install stage repairs the bit.
+home=$(new_home mode-dirt)
+printf '#!/usr/bin/env bash\ntrue\n' > "$home/bin/fm-tool.sh"
+git -C "$home" add -A
+git -C "$home" update-index --chmod=+x bin/fm-tool.sh
+git -C "$home" commit -qm tool
+git -C "$home" push -q origin main
+chmod -x "$home/bin/fm-tool.sh"
+before=$(git -C "$home" rev-parse HEAD)
+advance_origin mode-dirt
+fake_pi "$tmp/pi-ok3" OK 0
+FM_CD_PI="$tmp/pi-ok3" FM_CD_SMOKE_TIMEOUT=10 "$home/bin/fm-cd-self-update.sh" > "$tmp/out" 2>&1 || fail "mode-dirt run failed: $(cat "$tmp/out")"
+grep -q "pull: fast-forwarded" "$tmp/out" || fail "a lost executable bit blocked the fast-forward: $(cat "$tmp/out")"
+[ "$(git -C "$home" rev-parse HEAD)" != "$before" ] || fail "the home never moved"
+[ "$(git -C "$home" rev-parse HEAD)" = "$(git -C "$home" rev-parse origin/main)" ] || fail "the home did not reach origin/main"
+[ -x "$home/bin/fm-tool.sh" ] || fail "the executable bit was not repaired"
+ok "a lost executable bit does not block the pull and is repaired"
+
+# 6. the clean gate ignores only the chain's own artifacts: a person's edit to
+#    the tracked .claude/settings.json still blocks the pull.
+home=$(new_home user-edit)
+mkdir -p "$home/.claude"
+printf '{"x":1}\n' > "$home/.claude/settings.json"
+git -C "$home" add -A
+git -C "$home" commit -qm settings
+git -C "$home" push -q origin main
+printf '{"x":2}\n' > "$home/.claude/settings.json"
+before=$(git -C "$home" rev-parse HEAD)
+advance_origin user-edit
+fake_pi "$tmp/pi-ok4" OK 0
+FM_CD_PI="$tmp/pi-ok4" FM_CD_SMOKE_TIMEOUT=10 "$home/bin/fm-cd-self-update.sh" > "$tmp/out" 2>&1 || fail "user-edit run failed: $(cat "$tmp/out")"
+grep -q "pull: skipped: uncommitted changes" "$tmp/out" || fail "a person's edit to .claude/settings.json did not block the pull: $(cat "$tmp/out")"
+[ "$(git -C "$home" rev-parse HEAD)" = "$before" ] || fail "the home moved despite the user's uncommitted edit"
+ok "a person's tracked-config edit still blocks the pull"
+
+# 7. a reply much larger than the pipe buffer still counts: the OK line check
+#    must not turn printf's SIGPIPE into a false failure under pipefail.
+home=$(new_home big-reply)
+{
+  printf '#!/usr/bin/env bash\n'
+  printf 'printf "%%s\\n" OK\n'
+  printf 'seq 1 20000\n'
+} > "$tmp/pi-big"
+chmod +x "$tmp/pi-big"
+FM_CD_PI="$tmp/pi-big" FM_CD_SMOKE_TIMEOUT=10 "$home/bin/fm-cd-self-update.sh" > "$tmp/out" 2>&1 || fail "large-reply run failed: $(cat "$tmp/out")"
+grep -q "smoke: .*answered OK" "$tmp/out" || fail "a large clean reply was not accepted: $(cat "$tmp/out")"
+ok "a reply larger than the pipe buffer still counts as OK"
+
 printf 'ok\n'

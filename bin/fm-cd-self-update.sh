@@ -79,9 +79,11 @@ clean_tree() {
   # The install stage may create the CLAUDE.md pointer and the .claude/skills
   # link, and every run writes its own records under state/; those are this
   # chain's own artifacts, so they must not block the gates this function serves.
-  # Everything else counts, including work a person left in the checkout.
-  [ -z "$(git -C "$ROOT" status --porcelain -- . \
-    ':(exclude)CLAUDE.md' ':(exclude).claude' ':(exclude).claude/**' \
+  # Everything else counts, including work a person left in the checkout, such as
+  # an edit to .claude/settings.json; a mode-only difference is the executable
+  # bit this chain repairs, not work.
+  [ -z "$(git -C "$ROOT" -c core.fileMode=false status --porcelain -- . \
+    ':(exclude)CLAUDE.md' ':(exclude).claude/skills' \
     ':(exclude)state' ':(exclude)state/**' 2>/dev/null)" ]
 }
 head_now() { git -C "$ROOT" rev-parse HEAD 2>/dev/null; }
@@ -190,7 +192,7 @@ smoke_stage() {
   if [ "$rc" -ne 0 ]; then alarm "smoke: $PI_BIN exited $rc"; return 1; fi
   case "$out" in *"Error:"*) alarm "smoke: output carries an Error:"; return 1 ;; esac
   case "$out" in *"Warning:"*) alarm "smoke: output carries a Warning:"; return 1 ;; esac
-  if ! printf '%s\n' "$out" | grep -qx 'OK'; then alarm "smoke: reply did not carry an OK line"; return 1; fi
+  if ! grep -qx 'OK' <<<"$out"; then alarm "smoke: reply did not carry an OK line"; return 1; fi
   say "smoke: $PI_BIN started clean and answered OK (head $(git -C "$ROOT" rev-parse --short HEAD))"
   return 0
 }
