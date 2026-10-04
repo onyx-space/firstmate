@@ -1,0 +1,41 @@
+
+========== S1/S2/S3: real-origin forward + directory attribution (target commit) ==========
+clone: /tmp/tmp.GCnxTK8vva/s1/projects/ons
+before HEAD: bf0feca  origin/main: bf0feca
+--- run 1 (behind by 1) ---
+ons (/tmp/tmp.GCnxTK8vva/s1/projects/ons): synced bf0feca..697fdaa
+after HEAD:  697fdaa  origin/main: 697fdaa
+--- run 2 (unchanged; expect already current with same attribution) ---
+ons (/tmp/tmp.GCnxTK8vva/s1/projects/ons): already current
+
+clone: /tmp/tmp.GCnxTK8vva/s2/projects/two
+before HEAD: 905fbf9  origin/main: 905fbf9
+--- run (behind by 2) ---
+two (/tmp/tmp.GCnxTK8vva/s2/projects/two): synced 905fbf9..b7ff5fb
+after HEAD:  b7ff5fb  origin/main: b7ff5fb
+
+========== S4: adversarial - registered local-only project must be skipped, not fetched ==========
+
+--- buggy script, registry: - iota [local-only] - test project (added 2026-06-27)
+before HEAD: ab74457  origin/main: ab74457
+iota (/tmp/tmp.GCnxTK8vva/s4-buggy/projects/iota): synced ab74457..12392cc
+RESULT: clone ADVANCED ab74457 -> 12392cc -> local-only BYPASSED
+
+--- fixed script, registry: - iota [local-only] - test project (added 2026-06-27)
+before HEAD: ffcddde  origin/main: ffcddde
+iota (/tmp/tmp.GCnxTK8vva/s4-fixed/projects/iota): skipped: local-only project
+RESULT: clone HEAD UNCHANGED (ffcddde) -> local-only respected
+
+Registry lookup, called the two ways the scripts call it (FM_HOME=/tmp/tmp.GCnxTK8vva/s4-fixed):
+  fm-project-mode.sh iota            -> local-only off
+  fm-project-mode.sh 'iota (/tmp/tmp.GCnxTK8vva/s4-fixed/projects/iota)' -> no-mistakes off  (path-carrying label, pre-fix lookup input)
+
+========== S5: adversarial - two checkouts of one repo; verdict names the one it acted on ==========
+projects clone : da39d72
+source checkout: 63e2738  (behind origin's main by 1 commit(s))
+--- run fleet-sync on the projects clone only ---
+ons (/tmp/tmp.GCnxTK8vva/s5/projects/ons): already current
+source checkout HEAD after run: 63e2738
+RESULT: source checkout untouched; verdict itself names the projects path
+
+========== done ==========
