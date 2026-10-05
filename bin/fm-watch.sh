@@ -121,6 +121,14 @@
 #                          queued key dedupe repeats; only the appended
 #                          notification is written back into the observed queue,
 #                          and declared external-wait pause rows do not feed it
+#   check: open handoff <source> <id> owes <what>
+#                          an unacknowledged steering-inbox record or an
+#                          unanswered pending-reply record aged past
+#                          FM_OPEN_HANDOFF_OVERDUE_SECS; queued once per record
+#                          and re-rung only after FM_OPEN_HANDOFF_RING_SECS, and
+#                          acknowledging the row never closes the handoff - the
+#                          record behind it does (bin/fm-classify-lib.sh owns
+#                          the reading)
 # For normal supervision, resume the session-start primary-harness protocol
 # after each printed reason. Direct duplicate invocations of this script still
 # no-op through the watcher singleton lock.

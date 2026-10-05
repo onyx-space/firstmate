@@ -3,8 +3,8 @@
 # optionally acknowledge handled records,
 # annotate every unread line for validated signal status keys, surface unread
 # informational status lines, latest captain-facing statuses not covered by a
-# newer branch outcome, OPEN DECISIONS, and captain-call record divergence,
-# then assert liveness.
+# newer branch outcome, OPEN DECISIONS, open handoffs, and captain-call record
+# divergence, then assert liveness.
 #
 # Keep sequence-bound row consumption independent from generation-bound episode
 # retirement; docs/watcher-continuity.md owns the recovery contract.
