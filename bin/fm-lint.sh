@@ -54,6 +54,11 @@
 # FM_LINT_PROGRESS_SECS seconds (default 30; 0 disables), and the per-target mode
 # prints "checked i/N <path>" before each root.
 #
+# A signalled worker reaps its children before returning: the progress ticker is
+# stopped and waited, and ShellCheck is asked to stop, given at most
+# FM_LINT_STOP_GRACE_SECS seconds (default 10) to leave, and then killed, so a
+# caller capturing output never waits on a child that outlived the worker.
+#
 # Usage:
 #   fm-lint.sh                         lint the context-selected file set (see above)
 #   fm-lint.sh --fast [path]...       local lint with extended analysis disabled
