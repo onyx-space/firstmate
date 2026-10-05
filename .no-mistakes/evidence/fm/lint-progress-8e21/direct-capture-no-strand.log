@@ -1,0 +1,34 @@
+# Direct product drive: current bin/fm-lint.sh, explicit flagged file
+# HEAD: 68619704a7544c16ff74bbd1e310131c9c6d858c
+
+## Scenario 1: command-substitution capture, ticker cadence 60s >> lint time
+exit=1 elapsed=0s (must be well under 60; a stranded pipe would hang until cadence/timeout)
+--- captured output ---
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+
+In /tmp/demo-bad.sh line 2:
+echo $1
+     ^-- SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean:
+echo "$1"
+
+For more information:
+  https://www.shellcheck.net/wiki/SC2086 -- Double quote to prevent globbing ...
+
+## Scenario 2: pipe into tee with pipefail, ticker cadence 60s >> lint time
+exit=1 elapsed=0s (must be well under 60)
+--- tee captured output ---
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+
+In /tmp/demo-bad.sh line 2:
+echo $1
+     ^-- SC2086 (info): Double quote to prevent globbing and word splitting.
+
+Did you mean:
+echo "$1"
+
+For more information:
+  https://www.shellcheck.net/wiki/SC2086 -- Double quote to prevent globbing ...

@@ -1,0 +1,10 @@
+# Invariants the intent marks untouched: pinned ShellCheck version and canonical file set
+
+required-version: 0.11.0
+resolved shellcheck: 0.11.0
+
+CI=true --list-files (sorted) vs find canonical set:
+MATCH (405 files)
+
+progress on (SECS=1) diagnostics equal progress off (SECS=0) for a flagged file:
+identical=yes rc_off=1 rc_on=1

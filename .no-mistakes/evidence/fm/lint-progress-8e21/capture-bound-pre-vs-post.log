@@ -1,0 +1,7 @@
+# Command-substitution capture bound: current HEAD vs pre-fix ticker (SECS=60, reader timeout 8s)
+
+## current HEAD
+rc=0 elapsed_ms=84 (must be far below 8000; 124 would mean the reader timed out on a strand)
+
+## pre-fix (bf0f243) ticker
+rc=124 elapsed_ms=8004 (>=8000 with rc=124 means the stranded pipe was caught by the bound)

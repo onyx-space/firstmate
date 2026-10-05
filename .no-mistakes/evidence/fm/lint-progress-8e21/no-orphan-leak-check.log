@@ -1,0 +1,5 @@
+# Adversarial/leak check: after a normal slow run, no fm-lint worker/ticker survives
+lint exit=0
+no surviving fm-lint.sh processes
+
+# git status of worktree (must be clean; no transient artifacts)

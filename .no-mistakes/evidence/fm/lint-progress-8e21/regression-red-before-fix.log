@@ -1,0 +1,14 @@
+# New lint-progress tests: green on HEAD, red on the pre-fix code (regression reproduction)
+
+## HEAD (68619704) both new tests
+ok - progress reporting never changes the verdict and never strands a capturing caller
+ok - the stop path reaps a TERM-ignoring ShellCheck child inside its bound
+exit=0
+
+## Pre-cc4655d ticker (stream not detached) vs current progress test -- EXPECT RED
+not ok - a piped run did not return with the verdict (1 vs 124)
+exit=1
+
+## Pre-1c5ca89 worker stop (no bounded reap) vs current stop test -- EXPECT RED
+not ok - a capture was stranded after the worker was signalled
+exit=1

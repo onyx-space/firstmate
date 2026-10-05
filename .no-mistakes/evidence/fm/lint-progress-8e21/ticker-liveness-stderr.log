@@ -1,0 +1,10 @@
+# Ticker liveness during a slow (stubbed) ShellCheck, FM_LINT_PROGRESS_SECS=1
+# stderr and stdout captured separately to show the progress line is stderr-only
+
+exit=0
+--- stdout ---
+--- stderr ---
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-lint.sh: ShellCheck still running over 1 target(s), 1s elapsed
+fm-lint.sh: ShellCheck still running over 1 target(s), 2s elapsed
