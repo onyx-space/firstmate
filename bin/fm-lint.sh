@@ -49,6 +49,11 @@
 # Optional quiet telemetry writes one bounded TSV snapshot of content and source
 # graph identity, wall/CPU/RSS, shard load, and competing ShellCheck processes.
 #
+# Optional progress diagnostics prove a long invocation is still alive: while
+# ShellCheck runs, a bounded ticker writes a liveness line to stderr every
+# FM_LINT_PROGRESS_SECS seconds (default 30; 0 disables), and the per-target mode
+# prints "checked i/N <path>" before each root.
+#
 # Usage:
 #   fm-lint.sh                         lint the context-selected file set (see above)
 #   fm-lint.sh --fast [path]...       local lint with extended analysis disabled
