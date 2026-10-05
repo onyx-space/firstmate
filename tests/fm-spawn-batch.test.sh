@@ -154,7 +154,7 @@ test_a_missing_project_dir_is_named_rather_than_left_to_the_shell() {
 
 test_a_bare_name_that_is_not_a_directory_is_refused_by_name() {
   local out rc
-  out=$(cd "$TMP_ROOT" && run_spawn some-task definitely-not-here --scout); rc=$?
+  out=$(cd "$TMP_ROOT" && run_spawn some-task definitely-not-here codex --scout); rc=$?
   [ "$rc" -ne 0 ] || fail "fm-spawn.sh accepted a project dir that does not exist"
   assert_contains "$out" "<project-dir>" "the argument is named"
   assert_contains "$out" "existing directory" "the path expectation is stated"
