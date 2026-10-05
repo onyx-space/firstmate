@@ -1,0 +1,64 @@
+scratch=/tmp/fm-handoff-manual.EB4cDJ
+
+===== A: overdue steering record, no status snapshot, empty queue, DEFAULT threshold (1800) =====
+exit=0
+--- stdout ---
+OPEN HANDOFFS: 1 overdue
+  inbox t1/001.msg: a steering instruction is unacknowledged, overdue 2h0m
+--- stderr ---
+
+===== B: fresh record below DEFAULT threshold prints nothing =====
+exit=0
+--- stdout ---
+
+===== C: pending-reply mix (resolved + unresolved + dotfile sidecar) + overdue inbox =====
+exit=0
+--- stdout ---
+OPEN HANDOFFS: 2 overdue
+  pending-reply bbbbbbbbbbbbbbbb: a secondmate reply is owed, overdue 2h0m
+  inbox t1/002.msg: a steering instruction is unacknowledged, overdue 2h0m
+
+===== D: fire-and-forget steer is not an open handoff =====
+exit=0
+--- stdout ---
+
+===== E: two overdue steers + one handled => count 2, one row per record =====
+exit=0
+--- stdout ---
+OPEN HANDOFFS: 2 overdue
+  inbox t1/001.msg: a steering instruction is unacknowledged, overdue 3h0m
+  inbox t1/002.msg: a steering instruction is unacknowledged, overdue 2h0m
+
+===== F: section prints once with a status snapshot present (review regression) =====
+exit=0
+--- stdout ---
+OPEN HANDOFFS: 1 overdue
+  inbox t1/001.msg: a steering instruction is unacknowledged, overdue 2h0m
+OPEN HANDOFFS count=1
+
+===== G: wake tick with REAL wake library, one row per open handoff, re-ring only after interval =====
+--- tick 1 (real fm_wake_append) ---
+tick1 exit=0
+--- queue after tick 1 ---
+1791160438	1	check	open-handoff:inbox:t1/001.msg	check: open handoff inbox t1/001.msg owes a steering instruction is unacknowledged (overdue 7200s; acknowledging this row does not close the handoff - the record behind it does)
+1791160438	2	check	open-handoff:pending-reply:cccccccccccccccc	check: open handoff pending-reply cccccccccccccccc owes a secondmate reply is owed (overdue 7200s; acknowledging this row does not close the handoff - the record behind it does)
+--- tick 2 within ring interval ---
+tick2 exit=0
+rows after tick2: 2
+
+===== G2: age the ring markers past the interval, tick again (expect re-ring) =====
+tick3 exit=0
+--- queue after tick 3 ---
+1791160438	1	check	open-handoff:inbox:t1/001.msg	check: open handoff inbox t1/001.msg owes a steering instruction is unacknowledged (overdue 7200s; acknowledging this row does not close the handoff - the record behind it does)
+1791160438	2	check	open-handoff:pending-reply:cccccccccccccccc	check: open handoff pending-reply cccccccccccccccc owes a secondmate reply is owed (overdue 7200s; acknowledging this row does not close the handoff - the record behind it does)
+1791160438	3	check	open-handoff:inbox:t1/001.msg	check: open handoff inbox t1/001.msg owes a steering instruction is unacknowledged (overdue 7200s; acknowledging this row does not close the handoff - the record behind it does)
+1791160438	4	check	open-handoff:pending-reply:cccccccccccccccc	check: open handoff pending-reply cccccccccccccccc owes a secondmate reply is owed (overdue 7200s; acknowledging this row does not close the handoff - the record behind it does)
+
+===== H: forbidden wire leg — olink/channel must not be invoked by the drain =====
+exit=0
+olink log: <none>
+--- stdout ---
+OPEN HANDOFFS: 1 overdue
+  inbox t1/001.msg: a steering instruction is unacknowledged, overdue 2h0m
+
+scratch kept at /tmp/fm-handoff-manual.EB4cDJ
