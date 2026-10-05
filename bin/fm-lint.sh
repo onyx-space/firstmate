@@ -85,8 +85,27 @@ cd "$ROOT" || exit 1
 FM_LINT_WORKER_SHELLCHECK_PID=
 # shellcheck disable=SC2329 # Registered by the private worker's signal traps.
 fm_lint_worker_stop() {
+  # Every exit path reaps both children, signal paths included: the ticker holds
+  # the caller's pipes, so a worker signalled mid-run must not leave it behind for
+  # a reader that waits for EOF - a command substitution, or a pipe into tee.
+  command -v fm_lint_progress_stop >/dev/null 2>&1 && fm_lint_progress_stop
   [ -n "$FM_LINT_WORKER_SHELLCHECK_PID" ] || return 0
+  # Two stages with a bound between them: a runner's TERM does not reliably stop
+  # every ShellCheck child (measured: six survived a group TERM), and a worker left
+  # waiting on one keeps the caller's pipe open, so the stop escalates to KILL
+  # inside a bounded window instead of waiting forever.
+  local waited=0
   kill "$FM_LINT_WORKER_SHELLCHECK_PID" 2>/dev/null || true
+  while [ "$waited" -lt "${FM_LINT_STOP_GRACE_SECS:-10}" ]; do
+    if ! kill -0 "$FM_LINT_WORKER_SHELLCHECK_PID" 2>/dev/null; then
+      break
+    fi
+    command sleep 1
+    waited=$((waited + 1))
+  done
+  if kill -0 "$FM_LINT_WORKER_SHELLCHECK_PID" 2>/dev/null; then
+    kill -KILL "$FM_LINT_WORKER_SHELLCHECK_PID" 2>/dev/null || true
+  fi
   wait "$FM_LINT_WORKER_SHELLCHECK_PID" 2>/dev/null || true
   FM_LINT_WORKER_SHELLCHECK_PID=
 }
