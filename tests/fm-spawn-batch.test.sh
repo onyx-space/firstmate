@@ -143,8 +143,38 @@ test_scout_batch_refuses_delivery_flags() {
   pass "scout batch refuses ship delivery flags instead of ignoring them"
 }
 
+test_a_missing_project_dir_is_named_rather_than_left_to_the_shell() {
+  local out rc
+  out=$(run_spawn some-task --scout); rc=$?
+  [ "$rc" -ne 0 ] || fail "fm-spawn.sh accepted a missing <project-dir>"
+  assert_contains "$out" "<project-dir>" "the missing project dir is named"
+  assert_not_contains "$out" "unbound variable" "no shell unbound-variable error is shown"
+  pass "a missing <project-dir> is named rather than left to the shell"
+}
+
+test_a_bare_name_that_is_not_a_directory_is_refused_by_name() {
+  local out rc
+  out=$(cd "$TMP_ROOT" && run_spawn some-task definitely-not-here codex --scout); rc=$?
+  [ "$rc" -ne 0 ] || fail "fm-spawn.sh accepted a project dir that does not exist"
+  assert_contains "$out" "<project-dir>" "the argument is named"
+  assert_contains "$out" "existing directory" "the path expectation is stated"
+  assert_not_contains "$out" "cd: " "the refusal does not read as a bare cd failure"
+  assert_absent "$TMP_ROOT/definitely-not-here" "the refusal created no directory at the bare name"
+  pass "a bare name is refused by name, without a cd failure and without side effects"
+}
+
+test_the_usage_states_that_project_dir_is_a_directory() {
+  local out
+  out=$(run_spawn --help) || true
+  assert_contains "$out" "existing directory" "the usage describes <project-dir> as a directory"
+  pass "the usage describes <project-dir> as an existing directory"
+}
+
 test_batch_dispatches_every_pair
 test_batch_mode_boundaries
 test_batch_requires_the_shared_delivery_contract
 test_scout_batch_refuses_delivery_flags
 test_projects_path_scoping
+test_a_missing_project_dir_is_named_rather_than_left_to_the_shell
+test_a_bare_name_that_is_not_a_directory_is_refused_by_name
+test_the_usage_states_that_project_dir_is_a_directory
