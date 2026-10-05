@@ -280,6 +280,77 @@ test_no_open_handoff_prints_nothing() {
   pass "an empty open-handoff reading prints no section"
 }
 
+test_only_an_unresolved_pending_reply_is_an_open_handoff() {
+  local state out
+  state="$TMP_ROOT/handoff-pending"
+  mkdir -p "$state/pending-replies"
+  printf 'schema=fm-pending-reply.v1\nphase=resolved\n' > "$state/pending-replies/aaaaaaaaaaaaaaaa"
+  printf 'schema=fm-pending-reply.v1\nphase=awaiting_report\n' > "$state/pending-replies/bbbbbbbbbbbbbbbb"
+  touch -d '2 hours ago' "$state/pending-replies/aaaaaaaaaaaaaaaa" "$state/pending-replies/bbbbbbbbbbbbbbbb"
+  out="$TMP_ROOT/handoff-pending.out"
+  FM_STATE_OVERRIDE="$state" FM_OPEN_HANDOFF_OVERDUE_SECS=60 "$DRAIN" > "$out" 2>&1 \
+    || fail "drain failed over pending-reply records"
+  grep -F 'pending-reply bbbbbbbbbbbbbbbb' "$out" >/dev/null \
+    || fail "an unresolved pending reply did not surface as an open handoff"
+  grep -F 'aaaaaaaaaaaaaaaa' "$out" >/dev/null \
+    && fail "a resolved pending-reply record surfaced as an open handoff"
+  pass "only an unresolved pending-reply record surfaces as an open handoff"
+}
+
+test_a_fire_and_forget_steer_is_not_an_open_handoff() {
+  local state out
+  state="$TMP_ROOT/handoff-ff"
+  mkdir -p "$state/t1.inbox"
+  {
+    printf 'schema=fm-task-inbox.v1\n'
+    printf 'delivery=fire-and-forget\n'
+    printf -- '--\n'
+    printf 'a notification, not an instruction to act on\n'
+  } > "$state/t1.inbox/001.msg"
+  touch -d '2 hours ago' "$state/t1.inbox/001.msg"
+  out="$TMP_ROOT/handoff-ff.out"
+  FM_STATE_OVERRIDE="$state" FM_OPEN_HANDOFF_OVERDUE_SECS=60 "$DRAIN" > "$out" 2>&1 \
+    || fail "drain failed over a fire-and-forget record"
+  grep -F 'OPEN HANDOFFS' "$out" >/dev/null \
+    && fail "a fire-and-forget record surfaced as an open handoff"
+  pass "a fire-and-forget steer is excluded from open handoffs"
+}
+
+test_each_unacknowledged_steer_is_its_own_open_handoff() {
+  local state out rows
+  state="$TMP_ROOT/handoff-each"
+  mkdir -p "$state/t1.inbox"
+  printf 'first\n' > "$state/t1.inbox/001.msg"
+  printf 'second\n' > "$state/t1.inbox/002.msg"
+  touch -d '3 hours ago' "$state/t1.inbox/001.msg"
+  touch -d '2 hours ago' "$state/t1.inbox/002.msg"
+  out="$TMP_ROOT/handoff-each.out"
+  FM_STATE_OVERRIDE="$state" FM_OPEN_HANDOFF_OVERDUE_SECS=60 "$DRAIN" > "$out" 2>&1 \
+    || fail "drain failed over two unacknowledged steers"
+  grep -F 'inbox t1/001.msg' "$out" >/dev/null \
+    || fail "the first unacknowledged steer is not named as its own handoff"
+  grep -F 'inbox t1/002.msg' "$out" >/dev/null \
+    || fail "the second unacknowledged steer is not named as its own handoff"
+  rows=$(grep -c '^  inbox t1/' "$out")
+  [ "$rows" = 2 ] || fail "expected one row per unacknowledged steer, got $rows"
+  pass "each unacknowledged steer is its own open handoff"
+}
+
+test_the_open_handoff_section_prints_once_per_drain() {
+  local state out count
+  state="$TMP_ROOT/handoff-once"
+  mkdir -p "$state/t1.inbox"
+  printf 'steer\n' > "$state/t1.inbox/001.msg"
+  touch -d '2 hours ago' "$state/t1.inbox/001.msg"
+  printf 'working: continuing\n' > "$state/t1.status"
+  out="$TMP_ROOT/handoff-once.out"
+  FM_STATE_OVERRIDE="$state" FM_OPEN_HANDOFF_OVERDUE_SECS=60 "$DRAIN" > "$out" 2>&1 \
+    || fail "drain failed over an overdue handoff"
+  count=$(grep -c 'OPEN HANDOFFS' "$out")
+  [ "$count" = 1 ] || fail "the open-handoff section printed $count times in one drain"
+  pass "the open-handoff section prints exactly once per drain"
+}
+
 test_an_overdue_handoff_becomes_a_wake_of_its_own_once_per_interval() {
   local state queue rows
   state="$TMP_ROOT/handoff-wake"
@@ -338,5 +409,9 @@ test_buried_decision_surfaces_on_the_empty_queue_fast_path
 test_status_symlink_is_not_followed
 test_an_unacknowledged_steering_record_surfaces_as_an_open_handoff
 test_no_open_handoff_prints_nothing
+test_only_an_unresolved_pending_reply_is_an_open_handoff
+test_a_fire_and_forget_steer_is_not_an_open_handoff
+test_each_unacknowledged_steer_is_its_own_open_handoff
+test_the_open_handoff_section_prints_once_per_drain
 test_an_overdue_handoff_becomes_a_wake_of_its_own_once_per_interval
 test_an_open_handoff_below_the_threshold_prints_nothing

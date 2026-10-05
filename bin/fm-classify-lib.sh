@@ -2542,27 +2542,39 @@ fm_open_handoff_mtime() {  # <file> -> epoch seconds, 0 when it cannot be read
   stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || printf '0'
 }
 
+fm_open_handoff_record_field() {  # <record> <key> -> value, empty when absent
+  grep "^${2}=" "$1" 2>/dev/null | tail -1 | cut -d= -f2- || true
+}
+
+# A fire-and-forget steer is a one-way notification, never acknowledged, so it
+# can never close as a handoff and is excluded exactly as the steering-inbox
+# ladder excludes it (bin/fm-task-inbox-lib.sh).
+fm_open_handoff_inbox_is_fire_and_forget() {  # <record>
+  awk '$0 == "--" { exit } $0 == "delivery=fire-and-forget" { found=1 } END { exit(found ? 0 : 1) }' "$1"
+}
+
 fm_open_handoff_rows() {  # <state> <now-epoch> -> "<age>\t<source>\t<id>\t<what>"
-  local state=$1 now=$2 dir msg oldest t age id
+  local state=$1 now=$2 dir msg t age id
   for dir in "$state"/*.inbox; do
     [ -d "$dir" ] || continue
     id=$(basename "$dir")
     id=${id%.inbox}
-    oldest=
+    # One row per unacknowledged record, not per inbox: the sequence holds
+    # several steers and each is its own open handoff with its own age.
     for msg in "$dir"/*.msg; do
       [ -f "$msg" ] || continue
+      fm_open_handoff_inbox_is_fire_and_forget "$msg" && continue
       t=$(fm_open_handoff_mtime "$msg")
-      if [ -z "$oldest" ] || [ "$t" -lt "$oldest" ]; then
-        oldest=$t
-      fi
+      age=$(( now - t ))
+      [ "$age" -ge 0 ] || age=0
+      printf '%s\t%s\t%s\t%s\n' "$age" inbox "$id/${msg##*/}" "a steering instruction is unacknowledged"
     done
-    [ -n "$oldest" ] || continue
-    age=$(( now - oldest ))
-    [ "$age" -ge 0 ] || age=0
-    printf '%s\t%s\t%s\t%s\n' "$age" inbox "$id" "a steering instruction is unacknowledged"
   done
   for dir in "$state"/pending-replies/*; do
     [ -f "$dir" ] || continue
+    # A resolved record has its reply and stays on disk; only an un-resolved
+    # record is a handoff this home still owes.
+    [ "$(fm_open_handoff_record_field "$dir" phase)" != resolved ] || continue
     t=$(fm_open_handoff_mtime "$dir")
     age=$(( now - t ))
     [ "$age" -ge 0 ] || age=0
