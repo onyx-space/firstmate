@@ -109,11 +109,16 @@ SH
 watch_bg() {  # <state> <fakebin> <out> [extra env assignments...]
   local state=$1 fakebin=$2 out=$3
   shift 3
+  # These watcher cases age their records to 2020 to clear the inbox ladder
+  # grace, which would also make them overdue open handoffs. The open-handoff
+  # wake leg has its own suite; keep this fixture's reading quiet so it isolates
+  # the ladder it exists to pin.
   PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" \
     FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
     FM_FAKE_CREW_STATE='state: working · source: run-step · validating (running)' \
     FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
     FM_TASK_INBOX_GRACE_SECS=1 \
+    FM_OPEN_HANDOFF_OVERDUE_SECS=99999999999 \
     env "$@" "$WATCH" > "$out" 2>/dev/null &
 }
 
