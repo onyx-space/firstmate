@@ -1362,6 +1362,54 @@ SH
   pass "seeded dispatcher, adapter, production-owner, and test-local diagnostics preserve parity"
 }
 
+test_progress_reporting_never_changes_the_verdict() {
+  local dir bad good rc_on rc_off cap
+  dir=$(mktemp -d)
+  bad="$dir/bad.sh"
+  good="$dir/good.sh"
+  # A deliberately flagged file (SC2086) and a clean one, so both directions of
+  # the verdict are exercised: the ticker must not turn a finding into a pass, nor
+  # a pass into a finding, and it must not swallow the exit code on its way out.
+  printf '#!/usr/bin/env bash\necho $1\n' > "$bad"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$1"\n' > "$good"
+
+  rc_off=0
+  FM_LINT_PROGRESS_SECS=0 timeout 120 "$LINT" "$bad" >/dev/null 2>&1 || rc_off=$?
+  rc_on=0
+  FM_LINT_PROGRESS_SECS=1 timeout 120 "$LINT" "$bad" >/dev/null 2>&1 || rc_on=$?
+  # 124 is the outer bound firing, which is a red rather than a wait.
+  [ "$rc_off" -ne 124 ] || fail "lint hung over a flagged file with progress off"
+  [ "$rc_on" -ne 124 ] || fail "lint hung over a flagged file with progress on"
+  [ "$rc_off" -ne 0 ] || fail "lint passed a flagged file with progress off"
+  [ "$rc_on" -eq "$rc_off" ] || fail "progress reporting changed the verdict on a flagged file ($rc_off vs $rc_on)"
+
+  # One clean-file run is enough to prove the other direction (a pass stays a
+  # pass); the pair above owns the flagged direction, and each invocation is
+  # bounded so a hang is a red instead of a wait.
+  FM_LINT_PROGRESS_SECS=1 timeout 120 "$LINT" "$good" >/dev/null 2>&1 \
+    || fail "lint failed a clean file with progress on"
+
+  # The ticker must not outlive the worker in any caller's pipe, so the two
+  # capture shapes a caller actually uses both have to return with the verdict:
+  # a command substitution, and a pipe whose reader (tee) waits for EOF. The
+  # bound is what turns a stranded pipe into a red rather than a wait.
+  local started rc_tee elapsed
+  started=$(date +%s)
+  rc_tee=0
+  ( cd "$ROOT" && set -o pipefail && FM_LINT_PROGRESS_SECS=1 timeout 60 "$LINT" "$bad" 2>&1 | tee "$dir/tee.out" >/dev/null ) \
+    || rc_tee=$?
+  elapsed=$(( $(date +%s) - started ))
+  [ "$rc_tee" -eq "$rc_off" ] || fail "a piped run changed the verdict ($rc_off vs $rc_tee)"
+  [ "$elapsed" -lt 45 ] || fail "a piped run did not return with the worker (${elapsed}s) - the ticker outlived it"
+  rc_on=0
+  started=$(date +%s)
+  cap=$(FM_LINT_PROGRESS_SECS=1 timeout 60 "$LINT" "$bad" 2>&1) || rc_on=$?
+  elapsed=$(( $(date +%s) - started ))
+  [ "$rc_on" -eq "$rc_off" ] || fail "a command substitution changed the verdict ($rc_off vs $rc_on)"
+  [ "$elapsed" -lt 45 ] || fail "a command substitution did not return with the worker (${elapsed}s)"
+  pass "progress reporting never changes the verdict, and its bound turns a hang into a red"
+}
+
 test_help_reports_the_complete_interface
 test_list_files_reports_the_shell_inventory
 test_fast_mode_disables_extended_analysis
@@ -1400,3 +1448,4 @@ test_explicit_path_keeps_external_sources
 test_fast_mode_on_a_local_branch_keeps_source_following
 test_changed_mode_hides_cross_file_codes_that_ci_still_sees
 test_local_exclusion_list_covers_every_no_external_sources_code
+test_progress_reporting_never_changes_the_verdict

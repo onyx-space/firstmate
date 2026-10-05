@@ -102,7 +102,11 @@ fm_lint_progress_start() {  # <targets>
   (
     local now
     while :; do
-      sleep "$FM_LINT_PROGRESS_SECS"
+      # The wait's own streams are detached, so nothing but this subshell holds
+      # the caller's pipes: a caller that captures output (a command
+      # substitution, a pipe into tee) must see EOF as soon as the worker
+      # returns, and a grandchild holding a pipe open would strand it there.
+      sleep "$FM_LINT_PROGRESS_SECS" >/dev/null 2>&1
       now=$(date +%s)
       printf 'fm-lint.sh: ShellCheck still running over %s target(s), %ss elapsed\n' \
         "$targets" "$(( now - started ))" >&2
