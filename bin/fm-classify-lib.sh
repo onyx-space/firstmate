@@ -2528,9 +2528,13 @@ stale_is_terminal() {  # <window> <state>
 # empty reading means nothing is open, and the caller prints nothing then.
 #
 # A record's own expectation wins when it carries one. None of the shipped
-# formats carries a deadline, so every shipped row is aged from its own
-# modification time (the only timestamp those formats hold): the age is the
-# elapsed time, and whether that is overdue is the caller's threshold.
+# formats carries a deadline, so every shipped row is aged from its arrival
+# time: a pending-reply record carries stable epochs (delivered_epoch once
+# delivery is confirmed, else created_epoch) and is aged from that field because
+# routine state rewrites reset its mtime; an inbox record carries no epoch, so
+# it is aged from its modification time, which only the worker's acknowledgement
+# changes. The age is the elapsed time, and whether that is overdue is the
+# caller's threshold.
 # deferred: prefer a per-record deadline field if one is ever added to either
 # format, so a long-running expectation is not judged by an arrival time.
 # FM_OPEN_HANDOFF_OVERDUE_SECS is the default threshold in SECONDS (1800, half
@@ -2548,7 +2552,9 @@ fm_open_handoff_record_field() {  # <record> <key> -> value, empty when absent
 
 # A fire-and-forget steer is a one-way notification, never acknowledged, so it
 # can never close as a handoff and is excluded exactly as the steering-inbox
-# ladder excludes it (bin/fm-task-inbox-lib.sh).
+# ladder excludes it. fm-task-inbox-lib.sh owns the record format, but this
+# library stays standalone (fm-wake-drain.sh loads it without that library), so
+# the rule is mirrored here on purpose; keep the two in step.
 fm_open_handoff_inbox_is_fire_and_forget() {  # <record>
   awk '$0 == "--" { exit } $0 == "delivery=fire-and-forget" { found=1 } END { exit(found ? 0 : 1) }' "$1"
 }
@@ -2575,7 +2581,9 @@ fm_open_handoff_rows() {  # <state> <now-epoch> -> "<age>\t<source>\t<id>\t<what
     # A resolved record has its reply and stays on disk; only an un-resolved
     # record is a handoff this home still owes.
     [ "$(fm_open_handoff_record_field "$dir" phase)" != resolved ] || continue
-    t=$(fm_open_handoff_mtime "$dir")
+    t=$(fm_open_handoff_record_field "$dir" delivered_epoch)
+    [ -n "$t" ] || t=$(fm_open_handoff_record_field "$dir" created_epoch)
+    case "$t" in ''|*[!0-9]*) t=$(fm_open_handoff_mtime "$dir") ;; esac
     age=$(( now - t ))
     [ "$age" -ge 0 ] || age=0
     printf '%s\t%s\t%s\t%s\n' "$age" pending-reply "$(basename "$dir")" "a secondmate reply is owed"
