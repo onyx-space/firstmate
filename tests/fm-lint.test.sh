@@ -1363,18 +1363,28 @@ SH
 }
 
 test_progress_reporting_never_changes_the_verdict() {
-  local dir bad good rc_on rc_off cap
-  dir=$(mktemp -d)
-  bad="$dir/bad.sh"
-  good="$dir/good.sh"
+  if ! pinned_ready; then
+    pass "SKIP (ShellCheck $REQUIRED not resolved): progress reporting verdict parity"
+    return
+  fi
+  local tmp bad good rc_off rc_on out_off cap rc_pipe rc_cap started
+  tmp=$(fm_test_tmproot fm-lint-progress)
+  bad="$tmp/bad.sh"
+  good="$tmp/good.sh"
   # A deliberately flagged file (SC2086) and a clean one, so both directions of
   # the verdict are exercised: the ticker must not turn a finding into a pass, nor
   # a pass into a finding, and it must not swallow the exit code on its way out.
-  printf '#!/usr/bin/env bash\necho $1\n' > "$bad"
-  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$1"\n' > "$good"
+  cat > "$bad" <<'SH'
+#!/usr/bin/env bash
+echo $1
+SH
+  cat > "$good" <<'SH'
+#!/usr/bin/env bash
+printf "%s\n" "$1"
+SH
 
   rc_off=0
-  FM_LINT_PROGRESS_SECS=0 timeout 120 "$LINT" "$bad" >/dev/null 2>&1 || rc_off=$?
+  out_off=$(FM_LINT_PROGRESS_SECS=0 timeout 120 "$LINT" "$bad" 2>&1) || rc_off=$?
   rc_on=0
   FM_LINT_PROGRESS_SECS=1 timeout 120 "$LINT" "$bad" >/dev/null 2>&1 || rc_on=$?
   # 124 is the outer bound firing, which is a red rather than a wait.
@@ -1389,25 +1399,112 @@ test_progress_reporting_never_changes_the_verdict() {
   FM_LINT_PROGRESS_SECS=1 timeout 120 "$LINT" "$good" >/dev/null 2>&1 \
     || fail "lint failed a clean file with progress on"
 
-  # The ticker must not outlive the worker in any caller's pipe, so the two
-  # capture shapes a caller actually uses both have to return with the verdict:
-  # a command substitution, and a pipe whose reader (tee) waits for EOF. The
-  # bound is what turns a stranded pipe into a red rather than a wait.
-  local started rc_tee elapsed
+  # The ticker's wait child holds the caller's pipe until its sleep expires, so
+  # a cadence far larger than the lint itself exposes a strand. The two capture
+  # shapes a caller actually uses - a command substitution, and a pipe whose
+  # reader (tee) waits for EOF - each have to return with the worker. The bound
+  # wraps the reader as well as the lint process, so a stranded pipe is a red
+  # instead of a wait.
   started=$(date +%s)
-  rc_tee=0
-  ( cd "$ROOT" && set -o pipefail && FM_LINT_PROGRESS_SECS=1 timeout 60 "$LINT" "$bad" 2>&1 | tee "$dir/tee.out" >/dev/null ) \
-    || rc_tee=$?
-  elapsed=$(( $(date +%s) - started ))
-  [ "$rc_tee" -eq "$rc_off" ] || fail "a piped run changed the verdict ($rc_off vs $rc_tee)"
-  [ "$elapsed" -lt 45 ] || fail "a piped run did not return with the worker (${elapsed}s) - the ticker outlived it"
-  rc_on=0
+  rc_pipe=0
+  ( set -o pipefail
+    FM_LINT_PROGRESS_SECS=60 timeout 20 "$LINT" "$bad" 2>&1 | timeout 20 tee "$tmp/tee.out" >/dev/null
+  ) || rc_pipe=$?
+  [ "$rc_pipe" -eq "$rc_off" ] || fail "a piped run did not return with the verdict ($rc_off vs $rc_pipe)"
+  [ $(( $(date +%s) - started )) -lt 20 ] || fail "a piped run did not return with the worker - the ticker outlived it"
+
   started=$(date +%s)
-  cap=$(FM_LINT_PROGRESS_SECS=1 timeout 60 "$LINT" "$bad" 2>&1) || rc_on=$?
-  elapsed=$(( $(date +%s) - started ))
-  [ "$rc_on" -eq "$rc_off" ] || fail "a command substitution changed the verdict ($rc_off vs $rc_on)"
-  [ "$elapsed" -lt 45 ] || fail "a command substitution did not return with the worker (${elapsed}s)"
-  pass "progress reporting never changes the verdict, and its bound turns a hang into a red"
+  rc_cap=0
+  cap=$(set -o pipefail; FM_LINT_PROGRESS_SECS=60 "$LINT" "$bad" 2>&1 | timeout 20 cat) || rc_cap=$?
+  [ "$rc_cap" -eq "$rc_off" ] || fail "a command substitution did not return with the verdict ($rc_off vs $rc_cap)"
+  [ $(( $(date +%s) - started )) -lt 20 ] || fail "a command substitution did not return with the worker - the ticker outlived it"
+  [ "$cap" = "$out_off" ] || fail "a captured run changed the diagnostics"
+
+  pass "progress reporting never changes the verdict and never strands a capturing caller"
+}
+
+test_signal_stop_bounds_a_term_ignoring_shellcheck() {
+  if ! pinned_ready; then
+    pass "SKIP (ShellCheck $REQUIRED not resolved): stop path bounds a TERM-ignoring child"
+    return
+  fi
+  local tmp fakebin fixture fifo pidfile lint reader sc_pid worker_pid reader_rc i survivor sc_alive
+  tmp=$(fm_test_tmproot fm-lint-stop-path)
+  fakebin=$(fm_fakebin "$tmp")
+  fixture="$tmp/good.sh"
+  cat > "$fixture" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "${1:-ok}"
+SH
+  # A ShellCheck child that ignores TERM models the measured failure: six
+  # children survived a group TERM, and a worker that waits on one never
+  # returns, so the stop path must escalate to KILL inside its bound.
+  cat > "$fakebin/shellcheck" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = "--version" ]; then
+  printf 'ShellCheck - shell script analysis tool\nversion: 0.11.0\n'
+  exit 0
+fi
+printf '%s %s\n' "$$" "$PPID" > "$FM_TEST_SHELLCHECK_PID"
+trap '' HUP INT TERM
+while :; do
+  sleep 1
+done
+SH
+  chmod +x "$fakebin/shellcheck"
+
+  fifo="$tmp/out.fifo"
+  pidfile="$tmp/shellcheck.pid"
+  mkfifo "$fifo"
+  : > "$pidfile"
+
+  # The reader is bounded, so a stop path that never returns is a red instead
+  # of a wait. The child's parent is the worker a bounded stop has to finish;
+  # signalling that worker isolates the stop bound from the parent's own group
+  # kill, which would otherwise hide a worker stuck on an unstoppable child.
+  timeout 20 cat "$fifo" > /dev/null &
+  reader=$!
+  PATH="$fakebin:$PATH" FM_LINT_JOBS=1 FM_LINT_PROGRESS_SECS=60 \
+    FM_LINT_STOP_GRACE_SECS=1 FM_TEST_SHELLCHECK_PID="$pidfile" \
+    "$LINT" "$fixture" > "$fifo" 2>&1 &
+  lint=$!
+
+  i=0
+  while [ "$i" -lt 500 ] && [ ! -s "$pidfile" ]; do
+    kill -0 "$lint" 2>/dev/null || break
+    sleep 0.01
+    i=$((i + 1))
+  done
+  if [ ! -s "$pidfile" ]; then
+    kill -TERM "$lint" 2>/dev/null || true
+    kill -KILL "$reader" 2>/dev/null || true
+    fail "the stop-path fixture never reached ShellCheck"
+  fi
+  read -r sc_pid worker_pid < "$pidfile"
+
+  kill -TERM "$worker_pid" 2>/dev/null || fail "the stop-path worker could not be interrupted"
+  reader_rc=0
+  wait "$reader" 2>/dev/null || reader_rc=$?
+  survivor=0
+  i=0
+  while [ "$i" -lt 500 ] && kill -0 "$worker_pid" 2>/dev/null; do
+    sleep 0.01
+    i=$((i + 1))
+  done
+  kill -0 "$worker_pid" 2>/dev/null && survivor=1
+  [ "$survivor" -eq 0 ] || kill -KILL -- "-$worker_pid" 2>/dev/null || true
+  sc_alive=0
+  if kill -0 "$sc_pid" 2>/dev/null; then
+    sc_alive=1
+    kill -KILL "$sc_pid" 2>/dev/null || true
+  fi
+  kill -TERM "$lint" 2>/dev/null || true
+  wait "$lint" 2>/dev/null || true
+
+  [ "$reader_rc" -ne 124 ] || fail "a capture was stranded after the worker was signalled"
+  [ "$survivor" -eq 0 ] || fail "the signalled worker did not return inside its stop bound"
+  [ "$sc_alive" -eq 0 ] || fail "the stop path left its TERM-ignoring ShellCheck child running"
+  pass "the stop path reaps a TERM-ignoring ShellCheck child inside its bound"
 }
 
 test_help_reports_the_complete_interface
@@ -1449,3 +1546,4 @@ test_fast_mode_on_a_local_branch_keeps_source_following
 test_changed_mode_hides_cross_file_codes_that_ci_still_sees
 test_local_exclusion_list_covers_every_no_external_sources_code
 test_progress_reporting_never_changes_the_verdict
+test_signal_stop_bounds_a_term_ignoring_shellcheck
