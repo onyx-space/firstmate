@@ -3,6 +3,7 @@
 # secondmate in its isolated firstmate home.
 # Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
 #        fm-spawn.sh <task-id> <project-dir> --scout [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
+#        <project-dir> is an existing directory: a path, or projects/<name> as this home resolves it.
 #        fm-spawn.sh <task-id> [<firstmate-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
 #   spawn and refused on --scout and --secondmate spawns. Firstmate resolves both
@@ -1469,8 +1470,9 @@ elif [ "$KIND" = secondmate ]; then
       ;;
   esac
 else
-  PROJ=${POS[1]}
+  PROJ=${POS[1]:-}
   ARG3=${POS[2]:-}
+  [ -n "$PROJ" ] || { echo "error: <project-dir> is required" >&2; usage >&2; exit 2; }
 fi
 [ -z "$HARNESS_ARG" ] || ARG3=$HARNESS_ARG
 
@@ -2402,7 +2404,16 @@ if [ "$KIND" = secondmate ]; then
     BRIEF="$DATA/$ID/brief.md"
   fi
 else
-  PROJ_ABS="$(cd "$(resolve_project_dir_arg "$PROJ")" && pwd)"
+  # The project argument is a directory, not a bare name: a name that resolves to
+  # nothing must say so, rather than reach `cd` and return Git's or the shell's own
+  # "No such file or directory", which reads like a broken script instead of a
+  # wrong argument.
+  resolved_project=$(resolve_project_dir_arg "$PROJ")
+  [ -d "$resolved_project" ] || {
+    echo "error: <project-dir> must be an existing directory, or a projects/<name> form this home resolves; got '$PROJ'" >&2
+    exit 2
+  }
+  PROJ_ABS="$(cd "$resolved_project" && pwd)"
   WT=""
   BRIEF="$DATA/$ID/brief.md"
 fi
