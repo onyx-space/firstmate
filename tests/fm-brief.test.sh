@@ -1240,7 +1240,7 @@ test_a_missing_task_id_is_named_rather_than_left_to_the_shell() {
   out=$(FM_HOME="$TMP_ROOT/pos-home" "$ROOT/bin/fm-brief.sh" 2>&1) && rc=0 || rc=$?
   [ "$rc" -ne 0 ] || fail "fm-brief.sh accepted no arguments"
   assert_contains "$out" "<task-id>" "the missing task id is named"
-  assert_absent "$out" "unbound variable" "no shell unbound-variable error is shown"
+  assert_not_contains "$out" "unbound variable" "no shell unbound-variable error is shown"
   assert_contains "$out" "Usage:" "the usage is printed"
   pass "a missing <task-id> is named and the usage is printed"
 }
@@ -1250,7 +1250,7 @@ test_a_missing_repo_name_is_named_rather_than_left_to_the_shell() {
   out=$(FM_HOME="$TMP_ROOT/pos-home" "$ROOT/bin/fm-brief.sh" some-task --scout 2>&1) && rc=0 || rc=$?
   [ "$rc" -ne 0 ] || fail "fm-brief.sh accepted a missing <repo-name>"
   assert_contains "$out" "<repo-name>" "the missing repo name is named"
-  assert_absent "$out" "unbound variable" "no shell unbound-variable error is shown"
+  assert_not_contains "$out" "unbound variable" "no shell unbound-variable error is shown"
   pass "a missing <repo-name> is named rather than left to the shell"
 }
 
@@ -1283,3 +1283,5 @@ test_tool_call_timeout_discipline_section
 test_artifact_placement_contract
 test_scout_and_secondmate_scaffold
 test_scout_lavish_line_follows_presentation_floor
+test_a_missing_task_id_is_named_rather_than_left_to_the_shell
+test_a_missing_repo_name_is_named_rather_than_left_to_the_shell

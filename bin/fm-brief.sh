@@ -155,10 +155,6 @@ MODE=
 MODE_SET=0
 POS=()
 want_value=
-# -h/--help is answered before anything else, so the header stays readable
-# without a task id.
-case "${1:-}" in -h|--help) usage; exit 0 ;; esac
-
 for a in "$@"; do
   if [ -n "$want_value" ]; then
     case "$a" in
@@ -192,6 +188,11 @@ done
 # later complaint about an option, or a shell error naming no argument at all.
 ID=${POS[0]:-}
 [ -n "$ID" ] || { echo "error: <task-id> is required" >&2; usage >&2; exit 2; }
+REPO=
+if [ "$KIND" != secondmate ]; then
+  REPO=${POS[1]:-}
+  [ -n "$REPO" ] || { echo "error: <repo-name> is required for a crewmate ship or scout brief" >&2; usage >&2; exit 2; }
+fi
 
 # Ship delivery mode is an explicit per-task decision (AGENTS.md section 7). A
 # missing or invalid value stops the scaffold rather than silently defaulting.
@@ -211,9 +212,6 @@ elif [ "$MODE_SET" -eq 1 ]; then
   echo "error: --mode applies only to ship briefs; a scout delivers a report and a secondmate charter is not a delivery contract" >&2
   exit 1
 fi
-# A positional argument is checked where it is taken, so a caller who omits one
-# reads which argument is missing and the usage rather than a shell's unbound
-# variable error naming no argument at all.
 
 if [ "$KIND" = secondmate ] && [ "$HERDR_LAB" -eq 1 ]; then
   echo "error: --herdr-lab applies only to crewmate ship or scout briefs" >&2
@@ -371,9 +369,6 @@ else
 fi
 exit 0
 fi
-
-REPO=${POS[1]:-}
-[ -n "$REPO" ] || { echo "error: <repo-name> is required for a crewmate ship or scout brief" >&2; usage >&2; exit 2; }
 
 if [ "$HERDR_LAB" -eq 1 ]; then
 HERDR_LAB_HELPER=$(shell_quote "$FM_ROOT/bin/fm-herdr-lab.sh")
