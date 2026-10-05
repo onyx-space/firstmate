@@ -618,11 +618,6 @@ EOF
 
 print_status_sections() {
   local snapshot=${1:-} fully_presented=${2:-} acknowledged prepared
-  # The open-handoff reading prints before the snapshot guard: a promise this
-  # endpoint holds is overdue whether or not any status file or queued row exists,
-  # and it consumes nothing, so it stays outside the presentation lock the
-  # snapshot sections take. A section that consumes nothing cannot strand a row.
-  print_open_handoffs_section "$STATE" || true
   if [ -z "$snapshot" ]; then snapshot=$(status_presentation_snapshot "$STATE") || return 1; fi
   [ -n "$snapshot" ] || return 0
   acknowledged=$(status_acknowledge_presented_snapshot "$STATE" "$snapshot" "$fully_presented") || return 1
@@ -684,8 +679,8 @@ print_status_presentation() {  # [<deduped-raw-rows>]
   fi
   # The open-handoff reading is printed on every drain that reaches this point,
   # including one with no status file and an empty queue: a promise this endpoint
-  # holds is overdue on its own evidence, and printing it consumes nothing, so it
-  # stays outside the presentation lock the snapshot sections take.
+  # holds is overdue on its own evidence, and the reading consumes nothing, so it
+  # is not part of the snapshot sections' presentation receipt.
   if [ "$rc" -eq 0 ]; then print_open_handoffs_section "$STATE" || true; fi
   if [ "$rc" -eq 0 ] && [ -n "$snapshot" ]; then print_status_sections "$snapshot" "$fully_presented" || rc=1; fi
   fm_lock_release "$lock"
