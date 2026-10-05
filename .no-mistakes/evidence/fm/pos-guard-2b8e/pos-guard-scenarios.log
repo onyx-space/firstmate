@@ -1,0 +1,644 @@
+########## TARGET (branch fm/pos-guard-2b8e @ dfda11b) ##########
+  --- output ---
+error: <task-id> is required
+Scaffold a crewmate brief or persistent secondmate charter at
+data/<task-id>/brief.md under the active firstmate home.
+For ordinary tasks, the standard Setup/Rules/Definition-of-done contract is
+filled in. Every ship and scout brief also carries the fixed `# CE workflow
+boundary` section (shipping authority, banned and allowed CE skills, review
+ownership, decision routing, knowledge placement), which this script owns;
+AGENTS.md's delivery-path section only points at it.
+Ship briefs also carry the fixed `# PR description` section, rendered from
+bin/fm-dod-lib.sh's fm_pr_description_block rather than owned here, like the
+Definition of done: it points the worker at the separately installed
+`pr-description` skill, which owns that contract, and carries the pre-PR
+self-check that makes the discipline visible without loading the skill; it is
+omitted for `local-only`, which opens no PR.
+Ship and scout `# Task` sections have two subsections Firstmate
+fills before dispatch: `{TASK}` under `## Captain's intent` (the captain's
+own ask plus the context needed to read it, including the substance of any
+report, decision, or PR the ask refers to) and `{FIRSTMATE_SPEC}`
+under `## Firstmate spec` (build instructions, which are never the captain's
+intent). bin/fm-dod-lib.sh owns the no-mistakes `--intent` contract those
+subsections feed; bin/fm-spawn.sh refuses leftover placeholders. Secondmate
+charters still use a single `{TASK}` charter fill. Firstmate may adjust other
+sections when the task genuinely deviates (e.g. working an existing external
+PR instead of shipping a new one).
+Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--herdr-lab]
+       fm-brief.sh <task-id> <repo-name> --scout [--herdr-lab]
+       fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
+  --scout writes the scout contract instead: the deliverable is a report at
+  data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
+  It offers the Lavish review loop only when `fm-bootstrap.sh lavish-compatible`
+  confirms the supported lavish-axi floor; otherwise it asks for a text report.
+  --secondmate writes a persistent secondmate charter. The project list
+  is cloned into the secondmate home, while the natural-language scope
+  tells the main firstmate when to route work there; routine churn stays in its own home;
+  captain-relevant escalations and marked from-firstmate replies append to this
+  home's status file.
+  --no-projects writes a project-less charter for a domain whose subject is the
+  firstmate repo itself (its home is a firstmate worktree, its crews take pooled
+  worktrees of the same repo). It is mutually exclusive with a project list, and
+  omitting both still fails loudly so an accidental omission is never silent.
+  Set FM_SECONDMATE_CHARTER='<charter>' to fill the charter text.
+  Set FM_SECONDMATE_SCOPE='<scope>' to write a routing scope distinct from the charter text.
+  --herdr-lab is mandatory when the task will issue Herdr lifecycle commands.
+  It adds the hard isolation contract backed by bin/fm-herdr-lab.sh.
+  The flag must be explicit because {TASK} and {FIRSTMATE_SPEC} are filled
+  after scaffolding and the caller-supplied repo string cannot reliably
+  identify this repo. Briefs made without it carry a loud declaration so an
+  omitted contract cannot be silent.
+For ship tasks, --mode is REQUIRED and shapes the definition of done. Firstmate
+resolves it per task at intake (AGENTS.md section 7); data/projects.md holds the
+captain's standing posture as context, and this script never reads it:
+  no-mistakes  implement -> /no-mistakes pipeline -> PR -> configured merge authority
+  direct-PR    implement -> push + open PR via gh-axi (no pipeline) -> configured merge authority
+  local-only   implement on branch, stop and report "ready in branch" (no push/PR);
+               the configured merge authority approves, firstmate merges to local main
+no-mistakes-prod-only is a registry policy, not a task mode; resolve it to one of
+the three concrete modes at intake before calling this script.
+The generated ship brief records the chosen mode as a fixed machine-readable
+"Delivery contract: mode=<mode>" line. bin/fm-spawn.sh reads that line and refuses
+to launch a ship task whose explicit --mode disagrees, so an adjusted brief and the
+recorded task metadata cannot drift apart.
+Ship briefs begin with a worktree-isolation assertion before the branch step.
+--mode is refused on scout and secondmate scaffolds: a scout's deliverable is a
+report rather than a merge, and a charter is not a delivery contract.
+There is no --yolo flag here. The worker never owns merge decisions, so yolo is
+a spawn-time and firstmate-side input only (AGENTS.md section 7).
+Every scaffold's status protocol distinguishes the configured
+declared-external-wait verb (FM_CLASSIFY_PAUSED_VERB, default "paused") from
+"blocked:": pause for a known external wait expected to clear on its own,
+blocked when firstmate must act.
+Every scaffold also carries the steering-inbox receive-and-ack section:
+process state/<id>.inbox/*.msg in order and acknowledge each by moving it to
+handled/ (record, doorbell, and ladder owned by bin/fm-task-inbox-lib.sh).
+Every ship and scout scaffold also carries the artifact-placement contract (this
+file is its single owner), split by role because a scout has no delivery path: a
+ship task's durable home is its branch once that lands, a scout's is its
+report and the shared task data directory (never a tracked path inside the
+scratch worktree that dies with the slot), experiment artifacts keep a status
+marker until something depends on them, production artifacts go through the
+delivery path (a scout recommends that in its report instead), and build output
+is ignored rather than delivered. Rule 2 of each scaffold is the one place
+granting the paths a worker may write outside its worktree - the brief-named
+data directory, inbox, status file, and any --herdr-lab session state - so the
+placement section itself grants no permission. It sits here because the brief is
+the only surface every worker actually reads; AGENTS.md section 7 states only the
+firstmate-side gate (verify the artifact paths a report names are durable homes
+with ls).
+Every scaffold also carries the fixed `# Tool call timeouts` section, which owns
+the captain's standing command-timeout discipline (30 seconds by default, 60
+seconds generally, 120 seconds at most, never 300 or 600, slower work to a
+background job). The brief is the only surface every worker actually reads, and
+a persistent secondmate runs the same firstmate scripts, so this section goes
+into ship, scout, and secondmate scaffolds alike.
+Ship tasks include a project-memory section so durable project-intrinsic
+learnings can be committed to AGENTS.md through the project's delivery path;
+it carries the AGENTS.md authoring bar (widely useful knowledge only, pointers
+over copied detail) and defers self-governance recognition and insertion to
+fm-ensure-agents-md.sh's contract.
+Scaffolds carry no role scope: fm-spawn.sh supplies fm_brief_worker_role from
+fm-dod-lib.sh to every ship/scout launch brief, so this file never becomes a
+second owner of a contract that must stay current across relaunches.
+Refuses to overwrite an existing brief.
+  --- end ---
+PASS  S1 no-arg fm-brief: names <task-id>, prints usage, exit 2, no shell unbound error
+  --- output ---
+error: <repo-name> is required for a crewmate ship or scout brief
+Scaffold a crewmate brief or persistent secondmate charter at
+data/<task-id>/brief.md under the active firstmate home.
+For ordinary tasks, the standard Setup/Rules/Definition-of-done contract is
+filled in. Every ship and scout brief also carries the fixed `# CE workflow
+boundary` section (shipping authority, banned and allowed CE skills, review
+ownership, decision routing, knowledge placement), which this script owns;
+AGENTS.md's delivery-path section only points at it.
+Ship briefs also carry the fixed `# PR description` section, rendered from
+bin/fm-dod-lib.sh's fm_pr_description_block rather than owned here, like the
+Definition of done: it points the worker at the separately installed
+`pr-description` skill, which owns that contract, and carries the pre-PR
+self-check that makes the discipline visible without loading the skill; it is
+omitted for `local-only`, which opens no PR.
+Ship and scout `# Task` sections have two subsections Firstmate
+fills before dispatch: `{TASK}` under `## Captain's intent` (the captain's
+own ask plus the context needed to read it, including the substance of any
+report, decision, or PR the ask refers to) and `{FIRSTMATE_SPEC}`
+under `## Firstmate spec` (build instructions, which are never the captain's
+intent). bin/fm-dod-lib.sh owns the no-mistakes `--intent` contract those
+subsections feed; bin/fm-spawn.sh refuses leftover placeholders. Secondmate
+charters still use a single `{TASK}` charter fill. Firstmate may adjust other
+sections when the task genuinely deviates (e.g. working an existing external
+PR instead of shipping a new one).
+Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--herdr-lab]
+       fm-brief.sh <task-id> <repo-name> --scout [--herdr-lab]
+       fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
+  --scout writes the scout contract instead: the deliverable is a report at
+  data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
+  It offers the Lavish review loop only when `fm-bootstrap.sh lavish-compatible`
+  confirms the supported lavish-axi floor; otherwise it asks for a text report.
+  --secondmate writes a persistent secondmate charter. The project list
+  is cloned into the secondmate home, while the natural-language scope
+  tells the main firstmate when to route work there; routine churn stays in its own home;
+  captain-relevant escalations and marked from-firstmate replies append to this
+  home's status file.
+  --no-projects writes a project-less charter for a domain whose subject is the
+  firstmate repo itself (its home is a firstmate worktree, its crews take pooled
+  worktrees of the same repo). It is mutually exclusive with a project list, and
+  omitting both still fails loudly so an accidental omission is never silent.
+  Set FM_SECONDMATE_CHARTER='<charter>' to fill the charter text.
+  Set FM_SECONDMATE_SCOPE='<scope>' to write a routing scope distinct from the charter text.
+  --herdr-lab is mandatory when the task will issue Herdr lifecycle commands.
+  It adds the hard isolation contract backed by bin/fm-herdr-lab.sh.
+  The flag must be explicit because {TASK} and {FIRSTMATE_SPEC} are filled
+  after scaffolding and the caller-supplied repo string cannot reliably
+  identify this repo. Briefs made without it carry a loud declaration so an
+  omitted contract cannot be silent.
+For ship tasks, --mode is REQUIRED and shapes the definition of done. Firstmate
+resolves it per task at intake (AGENTS.md section 7); data/projects.md holds the
+captain's standing posture as context, and this script never reads it:
+  no-mistakes  implement -> /no-mistakes pipeline -> PR -> configured merge authority
+  direct-PR    implement -> push + open PR via gh-axi (no pipeline) -> configured merge authority
+  local-only   implement on branch, stop and report "ready in branch" (no push/PR);
+               the configured merge authority approves, firstmate merges to local main
+no-mistakes-prod-only is a registry policy, not a task mode; resolve it to one of
+the three concrete modes at intake before calling this script.
+The generated ship brief records the chosen mode as a fixed machine-readable
+"Delivery contract: mode=<mode>" line. bin/fm-spawn.sh reads that line and refuses
+to launch a ship task whose explicit --mode disagrees, so an adjusted brief and the
+recorded task metadata cannot drift apart.
+Ship briefs begin with a worktree-isolation assertion before the branch step.
+--mode is refused on scout and secondmate scaffolds: a scout's deliverable is a
+report rather than a merge, and a charter is not a delivery contract.
+There is no --yolo flag here. The worker never owns merge decisions, so yolo is
+a spawn-time and firstmate-side input only (AGENTS.md section 7).
+Every scaffold's status protocol distinguishes the configured
+declared-external-wait verb (FM_CLASSIFY_PAUSED_VERB, default "paused") from
+"blocked:": pause for a known external wait expected to clear on its own,
+blocked when firstmate must act.
+Every scaffold also carries the steering-inbox receive-and-ack section:
+process state/<id>.inbox/*.msg in order and acknowledge each by moving it to
+handled/ (record, doorbell, and ladder owned by bin/fm-task-inbox-lib.sh).
+Every ship and scout scaffold also carries the artifact-placement contract (this
+file is its single owner), split by role because a scout has no delivery path: a
+ship task's durable home is its branch once that lands, a scout's is its
+report and the shared task data directory (never a tracked path inside the
+scratch worktree that dies with the slot), experiment artifacts keep a status
+marker until something depends on them, production artifacts go through the
+delivery path (a scout recommends that in its report instead), and build output
+is ignored rather than delivered. Rule 2 of each scaffold is the one place
+granting the paths a worker may write outside its worktree - the brief-named
+data directory, inbox, status file, and any --herdr-lab session state - so the
+placement section itself grants no permission. It sits here because the brief is
+the only surface every worker actually reads; AGENTS.md section 7 states only the
+firstmate-side gate (verify the artifact paths a report names are durable homes
+with ls).
+Every scaffold also carries the fixed `# Tool call timeouts` section, which owns
+the captain's standing command-timeout discipline (30 seconds by default, 60
+seconds generally, 120 seconds at most, never 300 or 600, slower work to a
+background job). The brief is the only surface every worker actually reads, and
+a persistent secondmate runs the same firstmate scripts, so this section goes
+into ship, scout, and secondmate scaffolds alike.
+Ship tasks include a project-memory section so durable project-intrinsic
+learnings can be committed to AGENTS.md through the project's delivery path;
+it carries the AGENTS.md authoring bar (widely useful knowledge only, pointers
+over copied detail) and defers self-governance recognition and insertion to
+fm-ensure-agents-md.sh's contract.
+Scaffolds carry no role scope: fm-spawn.sh supplies fm_brief_worker_role from
+fm-dod-lib.sh to every ship/scout launch brief, so this file never becomes a
+second owner of a contract that must stay current across relaunches.
+Refuses to overwrite an existing brief.
+  --- end ---
+PASS  S2 missing <repo-name>: named, usage, exit 2, no shell unbound error
+PASS  S2 refuses before any filesystem write (no data/some-task created)
+  --- output ---
+Scaffold a crewmate brief or persistent secondmate charter at
+data/<task-id>/brief.md under the active firstmate home.
+For ordinary tasks, the standard Setup/Rules/Definition-of-done contract is
+  --- end ---
+PASS  S3 --help answers first: exit 0 and renders usage
+  --- output ---
+error: --secondmate requires at least one project, or --no-projects for a project-less home
+  --- end ---
+PASS  S4 guard scoped: --secondmate does not demand <repo-name> (rc=1)
+  --- output ---
+error: <project-dir> is required
+Spawn a direct report: a crewmate in a treehouse or Orca worktree, or a
+secondmate in its isolated firstmate home.
+Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
+       fm-spawn.sh <task-id> <project-dir> --scout [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
+       <project-dir> is an existing directory: a path, or projects/<name> as this home resolves it.
+       fm-spawn.sh <task-id> [<firstmate-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
+  --mode and --yolo are this task's delivery contract, REQUIRED for every ship
+  spawn and refused on --scout and --secondmate spawns. Firstmate resolves both
+  per task at intake (AGENTS.md section 7); data/projects.md holds the captain's
+  standing posture as context, not as this task's answer, so a spawn never looks
+  the mode up. A ship spawn additionally reads the brief's recorded
+  "Delivery contract: mode=<mode>" line and REFUSES a mismatch, so the worker's
+  instructions and the recorded task delivery cannot drift apart; a brief
+  scaffolded before that line existed warns once and launches on the flag. A
+  ship or scout spawn also refuses leftover `{TASK}` / `{FIRSTMATE_SPEC}`
+  placeholders, an empty Task, or an incomplete pair of Task subsections.
+  Every ship or scout spawn renders `launch-brief.md`; for a no-mistakes ship
+  it also carries the current `--intent` contract and the extracted captain
+  intent. A legacy mixed Task is accepted there only under bin/fm-dod-lib.sh's
+  provenance-marking rules; unmarked legacy Tasks stop for migration rather
+  than becoming intent. That library owns the parsing and intent rules. When
+  the explicit mode carries less rigor than the project's standing posture, a
+  loud one-line deviation notice is printed and the spawn continues.
+  no-mistakes-prod-only is a registry policy rather than a task mode and is
+  refused as a flag value.
+  Ship/scout launches always supply fm-dod-lib.sh's current worker role scope
+  using the same private launch-brief overlay. This never rewrites a project's
+  instruction files or a secondmate's charter.
+       fm-spawn.sh <task-id> --relaunch [--harness <name>] [--model <name>] [--effort <level>]
+  --relaunch launches a replacement agent for an EXISTING task into that
+  task's own recorded endpoint and worktree instead of allocating either,
+  except when the recorded endpoint is structurally gone (reads `missing`):
+  there is no agent left to stop, so the endpoint is rebuilt through the same
+  per-backend creation path a fresh spawn uses, in the task's recorded
+  worktree rather than the project. It is the launch half of the control
+  plane (bin/fm-control.sh relaunch), which owns the checkpoint, the
+  progress note, stopping the previous agent, and the transaction; call
+  fm-control rather than this flag directly unless you are deliberately
+  re-launching an already-stopped task. Every identity axis -
+  backend, kind, project or home, worktree, endpoint - comes from the task's
+  validated state/<id>.meta, so --backend, --scout, --secondmate, a project
+  positional, and batch pairs are all refused alongside it; only harness,
+  model, and effort may change, which is what makes a harness switch one
+  ordinary relaunch. It refuses unless the recorded endpoint is positively
+  agent-free or structurally gone on a backend with a recovery-grade
+  agent-state classifier (tmux or herdr), and clears the previous harness's
+  per-task wiring before arming the new incarnation. The replacement still
+  never starts outside the copy holding the work: a Herdr shell that has
+  drifted out of the recorded worktree is told once to return, and only a
+  shell that will not go refuses.
+  --harness <name> is the explicit per-spawn harness/profile adapter. The old
+  positional harness arg still works for back-compat.
+  --model <name> and --effort <low|medium|high|xhigh|max|ultra> are concrete profile
+  axes chosen by firstmate at intake. They are only threaded into harnesses whose
+  installed CLIs were verified to support that axis; unsupported axes are omitted
+  from that harness's launch rather than guessed. Ultra is the explicit
+  exception: bin/fm-harness.sh validate-native-effort owns its model scope;
+  supported Pi launches receive --codex-effort ultra, never --thinking ultra.
+  --backend <name> is the explicit runtime session-provider backend for this
+  exact task only (docs/configuration.md "Runtime backend" owns when that flag
+  is authorized). Without it, the script resolves FM_BACKEND, then
+  config/backend, then runtime auto-detection from the runtime firstmate's
+  environment: $TMUX, HERDR_ENV=1, or cmux runtime signals (via
+  bin/fm-backend.sh's fm_backend_detect, with cmux fallback details in
+  docs/cmux-backend.md),
+  then tmux.
+  Spawn-capable backends are the reference tmux adapter and experimental
+  herdr, zellij, orca, and cmux. Orca owns both the task worktree and
+  terminal, so ship/scout Orca spawns do not run treehouse get; cmux is a
+  session provider only, exactly like herdr/zellij, so it does. An
+  auto-detected herdr or cmux spawn prints a loud stderr notice;
+  auto-detected tmux stays silent; zellij and orca are never auto-detected.
+  codex-app is not a known backend yet; docs/codex-app-backend.md owns that
+  blocked backend contract. Default tmux spawns do not write backend= to meta;
+  absent backend= means tmux. cmux does not support --secondmate spawns yet.
+  A backend spawn refusal (missing dependency, version gate, unauthenticated
+  socket, or unsupported secondmate mode) is terminal for that selected backend;
+  callers must surface it instead of silently retrying another backend.
+  A herdr crewmate or scout is placed in the exact workspace of the firstmate
+  or secondmate process launching it, resolved from that process's own herdr
+  pane rather than from a workspace label (herdr enforces no label uniqueness,
+  so a label cannot tell two "firstmate" workspaces apart). A claimed parent
+  identity that is unreadable, contradictory, stale, or from another herdr
+  session stops the spawn before any worker endpoint exists. A launcher
+  outside herdr has no workspace to inherit and uses this home's own labeled
+  workspace, which must then match exactly one. --secondmate is the deliberate
+  exception: it stands up that secondmate home's own workspace.
+  Herdr additionally uses a presentation-only layout by default when the
+  selected client and running server meet the Herdr 0.8.0 floor. The local
+  config/herdr-presentation-spaces file can say off to disable it or on to
+  opt in below that floor; an empty file remains the historical opt-in form.
+  A clean fresh task first writes state/<id>.herdr-presentation atomically,
+  then creates a disposable
+  workspace containing only the ordinary task pane. A successful clean create
+  upgrades its attempt journal with exact home, session, workspace, tab, pane,
+  parent, and label bindings. On a same-identity restart, that complete binding
+  plus authoritative metadata may replace one exact agent-free husk in place.
+  The journal, visible token, and labels alone are never endpoint or ownership
+  authority, and every ambiguous recovery stays on the flat fallback after
+  duplicate-agent risk is independently absent. Treehouse allocation and task
+  metadata are unchanged.
+  A clean projected create or exact resume makes one bounded attempt to hold
+  the one session-scoped presentation-order lock (keyed by named session plus
+  canonical socket, outside any home's state/) through launch handoff. Lock
+  contention warns and falls back to the ordinary flat layout before any
+  projection mutation. The exact response-derived new workspace is inserted
+  immediately after its owning parent (firstmate or 2ndmate-<id>) contiguous
+  child block. Ordering never authorizes lifecycle cleanup, and any
+  unavailable, ambiguous, or failed move warns while the spawn continues.
+  Every projected create, prune, and move captures and verifies the named
+  session's exact active workspace and tab. A detected focus change restores
+  only that exact tab id; an ambiguous pre-operation snapshot refuses the
+  focus-sensitive presentation mutation.
+  Every single-task invocation holds one task-id-scoped lock across backend
+  creation through metadata publication, so concurrent same-id spawns serialize
+  even when they select different backends. A fresh spawn first takes the
+  per-home task-set lock and refuses rather than waits when forced teardown owns
+  it; relaunch is exempt because the existing task's control lock covers it.
+  A fresh Treehouse-backed spawn also takes the project-identity lock in the local
+  root Firstmate home's state directory before slot allocation and holds it through
+  task metadata publication. Teardown holds that same lock while proving and
+  returning a slot, so allocation cannot reuse a slot before its owner record
+  is published. Under that same lock it writes the slot's owner claim, which is
+  what lets teardown leave a slot reassigned since untouched; bin/fm-wake-lib.sh
+  owns the claim and bin/fm-teardown.sh owns what it protects. A slot that
+  cannot be claimed refuses the spawn rather than launching a worker whose slot
+  could later be released out from under its successor. A spawn that aborts
+  while it still holds the allocation lock drops its own claim; an abort after
+  metadata publication has released that lock leaves the claim in place, and
+  the next spawn's claim replaces it.
+  The local root is whatever bin/fm-wake-lib.sh's
+  fm_firstmate_root_home resolves, so a home seeded from another machine anchors
+  that lock itself rather than failing to resolve one;
+  contention refuses rather than waits.
+  With no harness arg, a crewmate/scout spawn resolves the CREW harness only when
+  config/crew-dispatch.json is absent. When that file exists, crewmate/scout
+  spawns require an explicit harness so firstmate cannot silently skip dispatch
+  profile consultation. A --secondmate spawn is exempt and resolves the SECONDMATE
+  harness (config/secondmate-harness -> config/crew-harness -> own), so the
+  secondmate-vs-crewmate split is DURABLE across every respawn (recovery,
+  /updatefirstmate, restart). A bare adapter name (claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|gemini|muse|rovo|omp|agy)
+  overrides it for this spawn (either kind). A non-flag string containing
+  whitespace is treated as a RAW launch command - the escape hatch for verifying
+  new adapters. For pi and pi-signed, fm-spawn resolves the selected executable
+  name from PATH once, probes that concrete path with --help, and launches the
+  same path. It adds --tui-mode regular only when that help advertises the flag;
+  a failed or inconclusive probe omits it so older Pi versions remain launchable.
+  A missing selected executable refuses before endpoint creation, and pi-signed
+  never falls back to pi.
+  For omp (Oh My Pi), fm-spawn resolves the `omp` executable from PATH once and
+  refuses when it is absent. Every omp launch clears the foreign harness
+  markers (omp publishes none of its own), sets the Firstmate-owned
+  FM_OMP_HARNESS=omp detection marker, suppresses the first-run provider
+  wizard with OMP_SKIP_SETUP=1, forces --auto-approve, pins the working
+  directory with --cwd, and passes the tracked worker posture overlay
+  .omp/fm-worker-overlay.yml through --config. That overlay pins composer
+  shape, plan mode off, prewalk off, and the non-interactive usage-reserve
+  policy for the one session only (--auto-approve alone owns approval); the
+  captain's own ~/.omp/agent/config.yml (model roles, providers, theme) is
+  never written.
+  A model written as <provider>/<id> is validated against `omp models --json`
+  only when that provider appears in the listing; a provider absent from the
+  listing (an extension-registered provider such as claude-bridge, which omp
+  never lists) passes through unvalidated with a stderr notice, and a bare
+  fuzzy pattern is left to omp's own matcher. A crewmate or scout loads its
+  per-task busy-state extension with -e from state/ (outside the worktree, so
+  auto-discovery cannot load it a second time); a secondmate passes no -e at
+  all and relies on omp auto-discovering the home's tracked .omp/extensions/
+  (verified, omp 18.1.11: a file named both ways loads twice, and discovery is
+  cwd-only with no trust dialog).
+  config/secondmate-harness may also carry an optional model and effort as extra
+  whitespace-separated tokens ("<harness> [<model>] [<effort>]"). For a
+  --secondmate spawn, those tokens apply only when this spawn also resolves its
+  harness from config/secondmate-harness. An explicit per-spawn --harness,
+  positional harness arg, or raw launch command starts with clean model/effort
+  defaults unless the caller also passes explicit --model/--effort flags. When
+  the file governs the spawn, its model/effort tokens are re-resolved on every
+  respawn exactly like the harness axis, and explicit --model/--effort flags
+  still win over the file's tokens.
+  A --secondmate spawn also propagates the primary's declared inherited local
+  material, so the secondmate's OWN crewmates inherit primary config and the
+  secondmate receives the primary's read-only shared captain-preference file
+  (fm-config-inherit-lib.sh). A successful launch clears pending inherited
+  config reread generations because the new agent reads the converged files.
+  --scout records kind=scout in the task's meta (report deliverable, scratch worktree;
+  see AGENTS.md task lifecycle); --secondmate records kind=secondmate and launches in a
+  provisioned firstmate home; the default is kind=ship.
+  Before a secondmate launch, the home is fast-forwarded to the primary's
+  default-branch commit when safe: directly for a local home, or through the
+  configured host for a remote home. Skipped syncs warn and launch unchanged.
+  Ship/scout spawns refuse to launch unless the resolved task path is a real
+  git worktree root distinct from both the spawning project and its repository's
+  primary checkout, including when the spawning project is a linked worktree.
+  On the backends that discover that path by reading the task pane's own cwd,
+  the same isolation test screens every read: a pane still showing the project
+  or the repository primary while `treehouse get` prepares the slot is waited
+  out as a transient rather than adopted and then refused, so a home that is
+  itself a linked worktree of the project repository still launches. A pane
+  that never reaches an isolated worktree refuses at the end of that wait,
+  naming the last path seen and why it was rejected.
+  That placement is proven only at launch. Every ship or scout pane therefore
+  also receives `export FM_TASK_ID=<task-id>` before the launch command, on
+  the same channel as GOTMPDIR, and bin/fm-test-run.sh refuses to execute the
+  behavior suite from the repository primary checkout while that marker is
+  set (its header owns the refusal). A secondmate runs in its own home and is
+  not marked.
+  Only after this isolation check, every fresh ship or scout requires a clean
+  task worktree. When an origin configuration is detected, spawn fetches it,
+  resolves the current remote default branch, and resets to its tip. When none
+  is detected, spawn skips that remote freshness check and launches from the
+  clean worktree's current HEAD. Relaunch reuses the recorded worktree without
+  fetching or resetting its base. An unreachable detected origin, unresolved
+  default branch, or non-clean worktree refuses a fresh spawn rather than
+  risking a PR based on stale history or discarding local work.
+  A slot whose only deviation is a stale submodule gitlink is refused by that
+  same clean check, but is reported as a stale checkout naming each submodule
+  and both pins; nothing is converged or removed, and no remedy is suggested.
+  That report is only reached when each submodule's checked-out commit is
+  already contained in one of its remotes, so a submodule carrying an unpushed
+  commit keeps the conservative uncommitted-work refusal instead. That
+  containment test reads local refs only and never fetches, so this gate stays
+  usable offline; a stale remote-tracking ref can therefore make an unpushed
+  commit look contained, which is exactly why no remedy command is printed.
+Batch dispatch: pass one or more `id=repo` pairs instead of a single <id> <project>, e.g.
+    fm-spawn.sh fix-a-k3=projects/foo add-b-q7=projects/bar [--scout]
+  Each pair re-execs this script in single-task mode, so the single path stays the only
+  source of truth; shared --scout/--harness/--model/--effort/--backend/--mode/--yolo
+  applies to every pair. A ship batch therefore carries one delivery contract, and each
+  pair still checks it against its own brief; a batch spanning modes is two invocations.
+  If config/crew-dispatch.json exists, shared --harness is required for crewmate
+  and scout batches. The loop lives here, in bash, so callers never hand-write a
+  multi-task shell loop (the tool shell is zsh, which does not word-split unquoted
+  $vars and silently breaks ad-hoc `for ... in $pairs` loops).
+Launch environment (config/launch-env-allowlist):
+  Absent means unchanged ambient inheritance. A present readable regular file
+  opts every launch (ship, scout, secondmate, raw command, and relaunch) into
+  /usr/bin/env -i followed by /bin/sh -c of the existing launch command.
+  Each line is one POSIX environment name, never a value or shell expression;
+  blank lines and lines beginning with # are ignored. Invalid input refuses
+  before launch, as do path inspection errors such as inaccessible config
+  directories. An empty file retains only the operational floor below.
+  Names are read once per spawn; values are expanded in the destination pane,
+  not copied from the invoking process or written into the launch text.
+  Unset names stay unset and empty values stay empty.
+  The fixed operational floor is HOME PATH USER LOGNAME SHELL TERM COLORTERM
+  LANG LC_ALL LC_CTYPE TMPDIR TMP TEMP GOTMPDIR, plus backend identity/routing:
+  TMUX TMUX_PANE HERDR_ENV HERDR_SESSION HERDR_SOCKET_PATH HERDR_PANE_ID
+  CMUX_WORKSPACE_ID CMUX_SURFACE_ID CMUX_TAB_ID CMUX_PANEL_ID CMUX_SOCKET_PATH
+  ZELLIJ ZELLIJ_SESSION_NAME ZELLIJ_PANE_ID FM_ZELLIJ_SESSION, plus the task
+  marker FM_TASK_ID that ship and scout panes receive above.
+  An enabled task trace also retains TRACEPARENT. Explicit Firstmate launch
+  assignments still apply inside the filtered environment. Raw commands must
+  be POSIX sh compatible under this opt-in; the absent-file path is unchanged.
+  This is an exec environment boundary, not a sandbox for the pane's startup
+  shell, credential files, same-user processes, or later shell initialization.
+  See docs/configuration.md for provider/Git setup and supported limits.
+Claude permission mode (config/claude-permission-mode):
+  One token selecting the permission flag every claude launch (ship, scout,
+  secondmate, and relaunch) carries. Absent or `bypass` keeps today's
+  `--dangerously-skip-permissions`; `auto` launches with `--permission-mode
+  auto` instead, Claude Code's classifier-reviewed mode, for a captain who
+  refuses to run workers in bypass mode. Every other part of the claude launch
+  is unchanged. The token is the file's whitespace-trimmed content; any other
+  value, or an unreadable file, refuses the spawn before any endpoint,
+  worktree, or record exists and names the accepted values. The file is read
+  on every spawn and relaunch, so a change reaches the next launch without a
+  restart, and it is inherited into secondmate homes (bin/fm-config-inherit-lib.sh).
+  Launch templates live in launch_template() below; placeholders replaced before launch:
+    __BRIEF__    absolute path to data/<task-id>/brief.md
+    __CLAUDEPERMFLAG__ the claude permission flag selected by config/claude-permission-mode
+    __PIBIN__    quoted concrete Pi-family executable path resolved from PATH
+    __PITUIMODE__ optional --tui-mode regular when that executable advertises it
+    __PIAPPROVE__ optional --approve when that executable advertises it
+    __TURNEND__  absolute path to state/<task-id>.turn-ended (for harnesses whose
+                 turn-end signal rides the launch command, e.g. codex -c notify=[...])
+    __PIEXT__    absolute path to state/<task-id>.pi-ext.ts (pi turn-end extension,
+                 written by this script; outside the worktree to avoid pi's trust gate)
+    __PITURNEND__ absolute path to .pi/extensions/fm-primary-turnend-guard.ts in a pi secondmate home
+    __PIWATCH__   absolute path to .pi/extensions/fm-primary-pi-watch.ts in a pi secondmate home
+    __OMPBIN__   quoted concrete omp executable path resolved from PATH
+    __OMPEXT__   absolute path to state/<task-id>.omp-ext.ts (omp busy-state and
+                 turn-end extension, written by this script; outside the worktree so
+                 omp's cwd-only auto-discovery cannot load it a second time)
+    __OMPWORKERCFG__ absolute path to the tracked .omp/fm-worker-overlay.yml posture overlay
+    __OPINPUT__   absolute path to the canonical operational-input encoder
+    __WORKTREE__  absolute path to the task worktree
+    __CURSORBIN__ resolved, cursor-verified executable for a cursor launch
+    __GEMINISETTINGS__ firstmate-owned per-task gemini settings file (busy-state hooks)
+    __ROVOBIN__   resolved, rovo-verified executable for a rovo launch
+    __AGYBIN__    resolved, agy-verified executable for an agy launch
+Verified per-harness turn-end hooks are installed automatically where enabled; some live outside the worktree.
+Kimi uses one surgically installed Firstmate region in $HOME/.kimi-code/config.toml,
+a firstmate-owned global hook and registry, and a gitignored per-task pointer.
+grok uses a firstmate-owned global hook under ${GROK_HOME:-$HOME/.grok}/hooks
+plus a gitignored .fm-grok-turnend worktree pointer and a state token.
+muse installs no hook at all - its plugin engine is off in the default build - so
+it writes state/<id>.muse-session to bind the pane to muse's own session event
+log; muse, gemini, and agy are crewmate/scout only and are refused for --secondmate.
+rovo installs no hook either - its eventHooks fire at tool granularity only,
+never turn-end - so it carries no busy-source wiring at all and no turn-end
+hook. A positional brief is dead-on-arrival (rovo loads, never works, and drops
+to an idle shell), so rovo launches BARE and receives an absolute brief pointer
+only after a TUI readiness gate, then a delivery-confirmation gate - the same
+launch-then-send shape as kimi. Its busy state is a screen-scrape fallback like
+grok. rovo is crewmate/scout only and is refused for --secondmate, like muse.
+agy installs no hook either - it exposes no hook surface at all - so it
+carries no busy-source wiring and no turn-end hook. Its brief rides the launch
+command, but a fresh worktree would park it on a folder-trust dialog, so the
+spawn pre-registers the worktree in agy's own trust store through
+bin/fm-agy-trust.sh (the claude shape, but non-fatal) and then waits for a
+busy turn - answering the dialog first if it renders anyway - before
+reporting success (the rovo/kimi launch-then-confirm shape). Its busy state
+is a screen-scrape fallback like grok and rovo, and it is crewmate/scout only.
+cursor installs no per-task hook either: it writes state/<id>.cursor-session to
+bind the pane to cursor's own conversation transcript (projects root, the exact
+workspace path cursor records in .workspace-trusted, and the conversations that
+already existed for that workspace). It is launched through the verified binary
+resolver because `cursor` is not the CLI name. A cursor SECONDMATE instead runs
+the tracked project-scope .cursor/hooks.json in its own home, whose stop-hook
+park owns that home's supervision (docs/supervision-protocols/cursor.md).
+claude is the one harness whose pre-launch setup can REFUSE the spawn: before
+any per-task state exists, and before its worktree .claude/settings.local.json
+hooks are written, every claude launch pre-registers the directory the pane
+starts in - the task worktree, or the secondmate home for a --secondmate spawn -
+in the launching user's own Claude trust store through bin/fm-claude-trust.sh,
+because Claude's interactive workspace-trust dialog gates a folder it has never
+seen and firstmate cannot answer it. That helper's header owns the structural
+scope test for both shapes and every refusal; a failed registration stops this
+spawn rather than launching a worker that would wedge on the dialog.
+Pi needs the same gate pre-answered, and needs no store write to do it: every
+pi and pi-signed launch whose resolved executable advertises --approve carries
+it, the vendor's own per-run grant. A worker parked on Pi's project-trust
+selector emits no agent event at all, so the pane reads alive while producing
+nothing. --approve authorizes project-local resources for that one run in that
+one worktree and leaves the captain's ~/.pi/agent/trust.json untouched, so
+there is no store to lock, back up, or merge - strictly narrower authority than
+a registered path, and no concurrent-write hazard against Pi's own locked
+writes. The gate and the flag shipped together in 0.79.0, but an older Pi has
+neither and rejects --approve as an unknown option before its TUI starts, so
+the launch probes the resolved executable for the flag exactly like the
+--tui-mode probe below and omits it when it is not advertised.
+Every claude launch also carries the attribution-off policy in its per-launch
+--settings JSON, so a spawned worker never writes a Co-Authored-By trailer,
+Claude-Session link, or generated-with line into a commit or PR body;
+launch_template() below owns the reason it cannot come from the captain's own
+settings.
+Publishing the record and moving this home's backlog item to In flight are one
+step, not two: bin/fm-backlog-transition-lib.sh owns that invariant, and this
+script performs the transition under the task's own meta lock before it reports
+success. A ship or scout dispatch therefore REFUSES up front, before any
+endpoint, worktree, or record exists, unless the home's backlog has an
+unheld, unblocked Queued or In flight item for the id; a transition that fails
+after publication removes the record it just wrote rather than leaving a
+worker the backlog does not own. A relaunch re-reads the row instead of
+re-running the transition, so an eligible In-flight item is left untouched.
+The transition is
+skipped entirely for --secondmate spawns (persistent agents are not work
+items), on a config/backlog-backend=manual home, and in a markdown home that
+keeps no data/backlog.md. A configured non-markdown adapter remains
+active without a markdown file; any active automatic backend without
+compatible tasks-axi refuses before creating lifecycle state.
+On success prints: spawned <id> harness=<name> kind=<ship|scout|secondmate> [mode=<mode> yolo=<on|off>] window=<backend-target> worktree=<path>
+A ship task records the explicit mode/yolo it was passed; a secondmate spawn records
+mode=secondmate, yolo=off, home=, and projects=; a scout records neither, and both the
+success line and state/<id>.meta omit them.
+Every fresh spawn or relaunch records a new spawn_gen= incarnation token so durable
+consumers can distinguish a replacement worker that reuses the same task id.
+When the home session's frozen trace-context decision is enabled (see
+docs/configuration.md and bin/fm-trace-context-lib.sh), the meta also records
+one W3C traceparent= carrier, the same value injected into the pane as
+TRACEPARENT; the default-off path writes neither, leaving the generated meta
+and launch environment unchanged.
+  --traceparent <carrier> delivers a carrier that a REMOTE parent already
+  resolved and will record, instead of resolving one from this home's frozen
+  decision. It is accepted only for --secondmate spawns, only as a strictly
+  validated W3C traceparent, and exists because a remote secondmate's task
+  identity is owned by the parent home that holds its task metadata, while the
+  pane export happens on the remote host (bin/fm-remote-secondmate-control.sh).
+  Local spawns never pass it and resolve their own carrier exactly as before.
+  --- end ---
+PASS  S5 missing <project-dir>: named, usage, exit 2, no shell unbound error
+  --- output ---
+error: <project-dir> must be an existing directory, or a projects/<name> form this home resolves; got 'definitely-not-here'
+  --- end ---
+PASS  S6 bare non-directory refused by name with the path expectation; no bare cd failure
+PASS  S6 refusal created no directory at the bare name
+  --- output ---
+Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
+       fm-spawn.sh <task-id> <project-dir> --scout [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
+       <project-dir> is an existing directory: a path, or projects/<name> as this home resolves it.
+  --- end ---
+PASS  S7 usage states <project-dir> is an existing directory
+  --- output ---
+error: <project-dir> must be an existing directory, or a projects/<name> form this home resolves; got '/tmp/fm-pos-oyKXux/existing-file'
+  --- end ---
+PASS  S8 ADVERSARIAL existing-file (not a dir) refused by the same guard
+  --- output ---
+error: <project-dir> must be an existing directory, or a projects/<name> form this home resolves; got 'projects/nope'
+  --- end ---
+PASS  S9 ADVERSARIAL unresolved projects/nope refused by the guard
+  --- output ---
+error: could not resolve the shared Treehouse project lock for /tmp/fm-pos-oyKXux/existing-dir
+  --- end ---
+PASS  S10 POSITIVE existing directory passes the new guard (reaches later checks; rc=1)
+
+########## BASE @ a1ca438 (regression contrast) ##########
+  --- output ---
+error: ship briefs require --mode <no-mistakes|direct-PR|local-only>; resolve it at intake from the captain's instruction and the project's registered posture in data/projects.md
+  --- end ---
+PASS  R1 base no-arg brief does not name <task-id> (misleading/None)
+  --- output ---
+/tmp/fm-pos-oyKXux/base/bin/fm-brief.sh: 行 363: POS[1]: 未绑定的变量
+  --- end ---
+PASS  R2 base missing <repo-name> fails with an unbound-variable shell error naming POS[1], no argument name (rc=1)
+  --- output ---
+/tmp/fm-pos-oyKXux/base/bin/fm-spawn.sh: 第 2405 行：cd: definitely-not-here: No such file or directory
+  --- end ---
+PASS  R3 base spawn bare non-directory reaches a bare cd failure
+
+TOTAL: pass=15 fail=0
