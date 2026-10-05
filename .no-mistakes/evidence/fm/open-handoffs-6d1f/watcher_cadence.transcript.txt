@@ -1,0 +1,19 @@
+=== cycle 1: queue ===
+1791192130	1	check	open-handoff:inbox:t1/001.msg	check: open handoff inbox t1/001.msg owes a steering instruction is unacknowledged (overdue 213355330s; acknowledging this row does not close the handoff - the record behind it does)
+=== cycle 1: open-handoff ring markers ===
+-rw-r--r--. 1 onyx onyx 0 10月 5日 17:22 /tmp/fm-handoff-live/scratch-watch/state/.open-handoff-3744424017
+=== cycle 2: queue ===
+1791192130	1	check	open-handoff:inbox:t1/001.msg	check: open handoff inbox t1/001.msg owes a steering instruction is unacknowledged (overdue 213355330s; acknowledging this row does not close the handoff - the record behind it does)
+rows for open-handoff:inbox:t1/001.msg = 1
+=== cycle 1 stdout ===
+check: rearm-resurface
+=== cycle 2 stdout ===
+check: rearm-resurface
+aging ring marker /tmp/fm-handoff-live/scratch-watch/state/.open-handoff-3744424017 past FM_OPEN_HANDOFF_RING_SECS
+rows before aging marker + re-run: 1
+rows after  aging marker + re-run: 2
+=== queue ===
+1791192130	1	check	open-handoff:inbox:t1/001.msg	check: open handoff inbox t1/001.msg owes a steering instruction is unacknowledged (overdue 213355330s; acknowledging this row does not close the handoff - the record behind it does)
+1791192144	2	check	open-handoff:inbox:t1/001.msg	check: open handoff inbox t1/001.msg owes a steering instruction is unacknowledged (overdue 213355344s; acknowledging this row does not close the handoff - the record behind it does)
+=== pending-reply wake queue ===
+1791192153	1	check	open-handoff:pending-reply:bbbbbbbbbbbbbbbb	check: open handoff pending-reply bbbbbbbbbbbbbbbb owes a secondmate reply is owed (overdue 7201s; acknowledging this row does not close the handoff - the record behind it does)

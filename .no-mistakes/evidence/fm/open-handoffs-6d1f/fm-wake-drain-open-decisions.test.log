@@ -1,0 +1,20 @@
+ok - a needs-decision buried under later routine/other-key lines still reports as open
+ok - a keyless blocker is re-listed only while no later terminal line supersedes it
+ok - an over-long open decision is cut to its per-item budget with the shared truncation marker
+ok - an explicit resolved [key=X] closes the keyed decision
+ok - a later unrelated terminal line never clears an open decision
+ok - a reserved decision key can only be opened or closed by its owning library
+ok - no open decisions across the fleet prints nothing
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 2323020.1791192562.yLqMk1
+ok - the open-decision section is fleet-wide, not scoped to this drain's own queued records
+ok - a buried open decision surfaces even when the wake queue itself is empty
+ok - the fleet-wide decision scan does not follow status symlinks
+ok - an unacknowledged steering record surfaces as an open handoff
+ok - an empty open-handoff reading prints no section
+ok - only an unresolved pending-reply record surfaces as an open handoff
+ok - a pending-reply rewrite does not reset its age
+ok - a fire-and-forget steer is excluded from open handoffs
+ok - each unacknowledged steer is its own open handoff
+ok - the open-handoff section prints exactly once per drain
+ok - an overdue handoff wakes once, says an ack does not close it, and re-rings only after its interval
+ok - an open handoff below the threshold prints nothing

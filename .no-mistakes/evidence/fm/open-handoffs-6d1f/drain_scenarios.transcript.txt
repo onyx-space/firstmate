@@ -1,0 +1,48 @@
+### SCENARIO: A_unacknowledged_steer_surfaces (exit 0)
+$ FM_STATE_OVERRIDE=/tmp/fm-handoff-live/drain-scratch/a FM_OPEN_HANDOFF_OVERDUE_SECS=60 /home/onyx/.no-mistakes/worktrees/42774a4b8442/01M45KHEVT259YBH28HC7H6Q4C/bin/fm-wake-drain.sh
+OPEN HANDOFFS: 1 overdue
+  inbox t1/001.msg: a steering instruction is unacknowledged, overdue 2h0m
+
+### SCENARIO: B_nothing_open_is_silent (exit 0)
+$ FM_STATE_OVERRIDE=/tmp/fm-handoff-live/drain-scratch/b FM_OPEN_HANDOFF_OVERDUE_SECS=60 /home/onyx/.no-mistakes/worktrees/42774a4b8442/01M45KHEVT259YBH28HC7H6Q4C/bin/fm-wake-drain.sh
+
+### SCENARIO: C_resolved_pending_reply_excluded (exit 0)
+$ FM_STATE_OVERRIDE=/tmp/fm-handoff-live/drain-scratch/c FM_OPEN_HANDOFF_OVERDUE_SECS=60 /home/onyx/.no-mistakes/worktrees/42774a4b8442/01M45KHEVT259YBH28HC7H6Q4C/bin/fm-wake-drain.sh
+OPEN HANDOFFS: 1 overdue
+  pending-reply bbbbbbbbbbbbbbbb: a secondmate reply is owed, overdue 2h0m
+
+### SCENARIO: D_pending_reply_rewrite_does_not_reset_age (exit 0)
+$ FM_STATE_OVERRIDE=/tmp/fm-handoff-live/drain-scratch/d FM_OPEN_HANDOFF_OVERDUE_SECS=60 /home/onyx/.no-mistakes/worktrees/42774a4b8442/01M45KHEVT259YBH28HC7H6Q4C/bin/fm-wake-drain.sh
+
+### SCENARIO: D2_recent_stable_epoch_is_not_overdue (exit 0)
+$ FM_STATE_OVERRIDE=/tmp/fm-handoff-live/drain-scratch/d2 FM_OPEN_HANDOFF_OVERDUE_SECS=60 /home/onyx/.no-mistakes/worktrees/42774a4b8442/01M45KHEVT259YBH28HC7H6Q4C/bin/fm-wake-drain.sh
+
+### SCENARIO: E_fire_and_forget_excluded (exit 0)
+$ FM_STATE_OVERRIDE=/tmp/fm-handoff-live/drain-scratch/e FM_OPEN_HANDOFF_OVERDUE_SECS=60 /home/onyx/.no-mistakes/worktrees/42774a4b8442/01M45KHEVT259YBH28HC7H6Q4C/bin/fm-wake-drain.sh
+
+### SCENARIO: F_each_steer_its_own_row (exit 0)
+$ FM_STATE_OVERRIDE=/tmp/fm-handoff-live/drain-scratch/f FM_OPEN_HANDOFF_OVERDUE_SECS=60 /home/onyx/.no-mistakes/worktrees/42774a4b8442/01M45KHEVT259YBH28HC7H6Q4C/bin/fm-wake-drain.sh
+OPEN HANDOFFS: 2 overdue
+  inbox t1/001.msg: a steering instruction is unacknowledged, overdue 3h0m
+  inbox t1/002.msg: a steering instruction is unacknowledged, overdue 2h0m
+
+### SCENARIO: G_section_prints_once
+OPEN HANDOFFS line count: 1
+
+### SCENARIO: H_below_threshold_is_silent (exit 0)
+$ FM_STATE_OVERRIDE=/tmp/fm-handoff-live/drain-scratch/h FM_OPEN_HANDOFF_OVERDUE_SECS=60 /home/onyx/.no-mistakes/worktrees/42774a4b8442/01M45KHEVT259YBH28HC7H6Q4C/bin/fm-wake-drain.sh
+
+mtime(cccc)=1791192124  delivered_epoch=1791184924  now=1791192124
+### SCENARIO: D_pending_reply_rewrite_does_not_reset_age (exit 0)
+$ FM_STATE_OVERRIDE=/tmp/fm-handoff-live/drain-scratch/d FM_OPEN_HANDOFF_OVERDUE_SECS=60 /home/onyx/.no-mistakes/worktrees/42774a4b8442/01M45KHEVT259YBH28HC7H6Q4C/bin/fm-wake-drain.sh
+OPEN HANDOFFS: 2 overdue
+  pending-reply dddddddddddddddd: a secondmate reply is owed, overdue 2h0m
+  pending-reply cccccccccccccccc: a secondmate reply is owed, overdue 2h0m
+
+### SCENARIO: C2_pending_reply_sidecar_ignored (exit 0)
+$ FM_STATE_OVERRIDE=/tmp/fm-handoff-live/drain-scratch/r FM_OPEN_HANDOFF_OVERDUE_SECS=60 /home/onyx/.no-mistakes/worktrees/42774a4b8442/01M45KHEVT259YBH28HC7H6Q4C/bin/fm-wake-drain.sh
+(empty output above means the sidecars were not reported)
+### SCENARIO: M_surfaces_without_status_or_queue (exit 0)
+$ FM_STATE_OVERRIDE=/tmp/fm-handoff-live/drain-scratch/m FM_OPEN_HANDOFF_OVERDUE_SECS=60 /home/onyx/.no-mistakes/worktrees/42774a4b8442/01M45KHEVT259YBH28HC7H6Q4C/bin/fm-wake-drain.sh
+OPEN HANDOFFS: 1 overdue
+  inbox t1/001.msg: a steering instruction is unacknowledged, overdue 2h0m

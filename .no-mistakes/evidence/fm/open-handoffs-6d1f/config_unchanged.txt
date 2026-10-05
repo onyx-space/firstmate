@@ -1,0 +1,19 @@
+# Changed files base..target
+ AGENTS.md                                  |   3 +-
+ bin/fm-classify-lib.sh                     | 114 ++++++++++++++++++
+ bin/fm-wake-drain.sh                       |  31 ++++-
+ bin/fm-watch.sh                            |  16 +++
+ docs/architecture.md                       |   1 +
+ docs/configuration.md                      |   3 +
+ docs/scripts.md                            |   4 +-
+ docs/watcher-continuity.md                 |  12 ++
+ tests/fm-task-inbox.test.sh                |   5 +
+ tests/fm-wake-drain-open-decisions.test.sh | 184 +++++++++++++++++++++++++++++
+ 10 files changed, 368 insertions(+), 5 deletions(-)
+
+# Lint/config surfaces touched by this head (must be empty):
+(end)
+
+# fm-lint.sh shellcheck pin at target:
+79:FM_LINT_PROGRESS_SECS=${FM_LINT_PROGRESS_SECS:-30}
+81:REQUIRED_SHELLCHECK=0.11.0
