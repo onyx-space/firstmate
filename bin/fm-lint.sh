@@ -60,6 +60,14 @@
 #   fm-lint.sh --help                  print this usage
 set -u
 
+# Progress cadence, in seconds, for the long ShellCheck invocation.
+# A CI runner reclaims a job it sees producing nothing: this job printed its two
+# header lines and then said nothing for eleven minutes twice (exit 143, SIGTERM)
+# while sibling jobs that kept writing survived, so the run now proves it is alive
+# rather than being silent until it finishes. Diagnostics only: the file set, the
+# ShellCheck version and every flag are untouched.
+FM_LINT_PROGRESS_SECS=${FM_LINT_PROGRESS_SECS:-30}
+
 REQUIRED_SHELLCHECK=0.11.0
 # Cross-file codes that need --external-sources. Local changed-file mode
 # cannot judge them, so they stay CI-only.
@@ -76,6 +84,33 @@ fm_lint_worker_stop() {
   kill "$FM_LINT_WORKER_SHELLCHECK_PID" 2>/dev/null || true
   wait "$FM_LINT_WORKER_SHELLCHECK_PID" 2>/dev/null || true
   FM_LINT_WORKER_SHELLCHECK_PID=
+}
+
+# fm_lint_progress_start <targets> / fm_lint_progress_stop
+# One bounded ticker around the long invocation: it reports that the run is alive
+# and what it is chewing on, and it is stopped before the worker returns so a
+# finished job leaves nothing behind.
+fm_lint_progress_start() {  # <targets>
+  local targets=$1 started
+  [ "${FM_LINT_PROGRESS_SECS:-30}" -gt 0 ] 2>/dev/null || return 0
+  started=$(date +%s)
+  (
+    local now
+    while :; do
+      sleep "$FM_LINT_PROGRESS_SECS"
+      now=$(date +%s)
+      printf 'fm-lint.sh: ShellCheck still running over %s target(s), %ss elapsed\n' \
+        "$targets" "$(( now - started ))" >&2
+    done
+  ) &
+  FM_LINT_PROGRESS_PID=$!
+}
+
+fm_lint_progress_stop() {
+  [ -n "${FM_LINT_PROGRESS_PID:-}" ] || return 0
+  kill "$FM_LINT_PROGRESS_PID" 2>/dev/null || true
+  wait "$FM_LINT_PROGRESS_PID" 2>/dev/null || true
+  FM_LINT_PROGRESS_PID=
 }
 
 fm_lint_worker() {  # <manifest> <output-dir> <shard-index>
@@ -106,11 +141,16 @@ fm_lint_worker() {  # <manifest> <output-dir> <shard-index>
     if [ "${FM_LINT_INTERNAL_FOLLOW_SOURCES:-1}" -eq 1 ]; then
       "$FM_LINT_SHELLCHECK" "${shellcheck_args[@]}" -- "${roots[@]}" >> "$output.out" 2>&1 &
       FM_LINT_WORKER_SHELLCHECK_PID=$!
+      fm_lint_progress_start "${#roots[@]}"
       wait "$FM_LINT_WORKER_SHELLCHECK_PID" || rc=$?
+      fm_lint_progress_stop
       FM_LINT_WORKER_SHELLCHECK_PID=
     else
+      local index=0
       for path in "${roots[@]}"; do
         invocation_rc=0
+        index=$((index + 1))
+        printf 'fm-lint.sh: checked %s/%s %s\n' "$index" "${#roots[@]}" "$path" >&2
         "$FM_LINT_SHELLCHECK" "${shellcheck_args[@]}" -- "$path" >> "$output.out" 2>&1 &
         FM_LINT_WORKER_SHELLCHECK_PID=$!
         wait "$FM_LINT_WORKER_SHELLCHECK_PID" || invocation_rc=$?
