@@ -1,0 +1,4 @@
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-lint.sh: ShellCheck still running over 3 target(s), 30s elapsed
+fm-lint.sh: ShellCheck still running over 3 target(s), 60s elapsed
