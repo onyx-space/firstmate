@@ -487,6 +487,28 @@ EOF
 # fm-classify-lib.sh's "incremental (cursor-backed) open-decisions fold").
 # Bounded and silent: prints nothing when no decision is open, which is the
 # common case.
+print_open_handoffs_section() {  # <state>
+  # The bounded reading of what is promised and not yet delivered, printed only
+  # when something is overdue: every row names the record it came from, so a
+  # reader can check the promise rather than trust a count. The reading itself is
+  # fm-classify-lib.sh's fm_open_handoff_rows; nothing here is a second fold.
+  local state=$1 now rows shown count
+  now=$(date +%s)
+  rows=$(fm_open_handoff_rows "$state" "$now" 2>/dev/null) || return 0
+  [ -n "$rows" ] || return 0
+  rows=$(printf '%s\n' "$rows" | awk -F'\t' -v thr="${FM_OPEN_HANDOFF_OVERDUE_SECS:-1800}" '$1 + 0 >= thr + 0' | sort -rn -k1,1)
+  [ -n "$rows" ] || return 0
+  count=$(printf '%s\n' "$rows" | awk 'END { print NR }')
+  shown=${FM_OPEN_HANDOFF_MAX_ROWS:-10}
+  printf 'OPEN HANDOFFS: %s overdue\n' "$count"
+  printf '%s\n' "$rows" | head -n "$shown" | while IFS=$'\t' read -r age source id what; do
+    printf '  %s %s: %s, overdue %s\n' "$source" "$id" "$what" "$(fm_open_handoff_human_age "$age")"
+  done
+  if [ "$count" -gt "$shown" ]; then
+    printf '  (%s more not shown)\n' "$(( count - shown ))"
+  fi
+}
+
 print_open_decisions_section() {
   local snapshot=${1:-} open task key verb note line item_bytes=220 global_bytes=4000
   local output='' used=0 shown=0 omitted=0 bytes
@@ -596,6 +618,11 @@ EOF
 
 print_status_sections() {
   local snapshot=${1:-} fully_presented=${2:-} acknowledged prepared
+  # The open-handoff reading prints before the snapshot guard: a promise this
+  # endpoint holds is overdue whether or not any status file or queued row exists,
+  # and it consumes nothing, so it stays outside the presentation lock the
+  # snapshot sections take. A section that consumes nothing cannot strand a row.
+  print_open_handoffs_section "$STATE" || true
   if [ -z "$snapshot" ]; then snapshot=$(status_presentation_snapshot "$STATE") || return 1; fi
   [ -n "$snapshot" ] || return 0
   acknowledged=$(status_acknowledge_presented_snapshot "$STATE" "$snapshot" "$fully_presented") || return 1
@@ -655,6 +682,11 @@ print_status_presentation() {  # [<deduped-raw-rows>]
       fully_presented=$(printf '%s\n' "$annotation_manifest" | awk -F '\t' '$2 == "direct" { sub(/\.status$/, "", $1); print $1 }') || rc=1
     fi
   fi
+  # The open-handoff reading is printed on every drain that reaches this point,
+  # including one with no status file and an empty queue: a promise this endpoint
+  # holds is overdue on its own evidence, and printing it consumes nothing, so it
+  # stays outside the presentation lock the snapshot sections take.
+  if [ "$rc" -eq 0 ]; then print_open_handoffs_section "$STATE" || true; fi
   if [ "$rc" -eq 0 ] && [ -n "$snapshot" ]; then print_status_sections "$snapshot" "$fully_presented" || rc=1; fi
   fm_lock_release "$lock"
   return "$rc"

@@ -2518,3 +2518,97 @@ stale_is_terminal() {  # <window> <state>
   last=$(last_status_line "$state/$(window_to_task "$win" "$state").status")
   [ -n "$last" ] && status_is_captain_relevant "$last"
 }
+
+# --- open handoffs -----------------------------------------------------------
+# A bounded reading of what is promised and not yet delivered, derived from two
+# records this endpoint already keeps: a task's steering inbox, where an
+# unacknowledged instruction is an open handoff, and the parent-owned
+# pending-reply records, where a record without a reply is a secondmate report
+# this home still owes. Nothing here is a new store and no row is invented: an
+# empty reading means nothing is open, and the caller prints nothing then.
+#
+# A record's own expectation wins when it carries one. None of the shipped
+# formats carries a deadline, so every shipped row is aged from its own
+# modification time (the only timestamp those formats hold): the age is the
+# elapsed time, and whether that is overdue is the caller's threshold.
+# deferred: prefer a per-record deadline field if one is ever added to either
+# format, so a long-running expectation is not judged by an arrival time.
+# FM_OPEN_HANDOFF_OVERDUE_SECS is the default threshold in SECONDS (1800, half
+# an hour): a handoff whose record has aged past it is overdue, and a record
+# that carries its own expectation wins over this default.
+FM_OPEN_HANDOFF_OVERDUE_SECS=${FM_OPEN_HANDOFF_OVERDUE_SECS:-1800}
+
+fm_open_handoff_mtime() {  # <file> -> epoch seconds, 0 when it cannot be read
+  stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || printf '0'
+}
+
+fm_open_handoff_rows() {  # <state> <now-epoch> -> "<age>\t<source>\t<id>\t<what>"
+  local state=$1 now=$2 dir msg oldest t age id
+  for dir in "$state"/*.inbox; do
+    [ -d "$dir" ] || continue
+    id=$(basename "$dir")
+    id=${id%.inbox}
+    oldest=
+    for msg in "$dir"/*.msg; do
+      [ -f "$msg" ] || continue
+      t=$(fm_open_handoff_mtime "$msg")
+      if [ -z "$oldest" ] || [ "$t" -lt "$oldest" ]; then
+        oldest=$t
+      fi
+    done
+    [ -n "$oldest" ] || continue
+    age=$(( now - oldest ))
+    [ "$age" -ge 0 ] || age=0
+    printf '%s\t%s\t%s\t%s\n' "$age" inbox "$id" "a steering instruction is unacknowledged"
+  done
+  for dir in "$state"/pending-replies/*; do
+    [ -f "$dir" ] || continue
+    t=$(fm_open_handoff_mtime "$dir")
+    age=$(( now - t ))
+    [ "$age" -ge 0 ] || age=0
+    printf '%s\t%s\t%s\t%s\n' "$age" pending-reply "$(basename "$dir")" "a secondmate reply is owed"
+  done
+}
+
+fm_open_handoff_human_age() {  # <seconds>
+  local secs=$1
+  if [ "$secs" -ge 3600 ]; then
+    printf '%sh%sm' "$(( secs / 3600 ))" "$(( (secs % 3600) / 60 ))"
+  elif [ "$secs" -ge 60 ]; then
+    printf '%sm' "$(( secs / 60 ))"
+  else
+    printf '%ss' "$secs"
+  fi
+}
+
+# The tick that turns an overdue handoff into a wake of its own, so a promise is
+# surfaced rather than only printed when a drain happens to run. One row per open
+# handoff, re-rung on its own interval through a per-item marker, and
+# acknowledging that row never closes the handoff: the record behind it does.
+FM_OPEN_HANDOFF_RING_SECS=${FM_OPEN_HANDOFF_RING_SECS:-1800}
+
+fm_open_handoff_tick() {  # <state>
+  local state=$1 now rows age source id what key marker last rc=0
+  now=$(date +%s)
+  rows=$(fm_open_handoff_rows "$state" "$now" 2>/dev/null) || return 0
+  [ -n "$rows" ] || return 0
+  while IFS=$'\t' read -r age source id what; do
+    [ -n "$age" ] || continue
+    [ "$age" -ge "${FM_OPEN_HANDOFF_OVERDUE_SECS:-1800}" ] || continue
+    key="open-handoff:$source:$id"
+    marker="$state/.open-handoff-$(printf '%s' "$source-$id" | cksum | awk '{ print $1 }')"
+    last=$(fm_open_handoff_mtime "$marker")
+    if [ "$(( now - last ))" -lt "${FM_OPEN_HANDOFF_RING_SECS:-1800}" ]; then
+      continue
+    fi
+    if ! fm_wake_append check "$key" \
+        "check: open handoff $source $id owes $what (overdue ${age}s; acknowledging this row does not close the handoff - the record behind it does)"; then
+      rc=1
+      continue
+    fi
+    : > "$marker"
+  done <<EOF_ROWS
+$rows
+EOF_ROWS
+  return "$rc"
+}

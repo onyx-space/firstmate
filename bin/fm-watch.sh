@@ -2187,6 +2187,14 @@ while :; do
     exit 1
   }
 
+  # Open handoffs: a promise this endpoint holds whose counterpart owes a
+  # delivery, surfaced on the same bounded cadence rather than only when a drain
+  # happens to run.
+  fm_open_handoff_tick "$STATE" || {
+    echo "watcher: open-handoff observation failed" >&2
+    exit 1
+  }
+
   # Process-to-event liveness repair. This never discovers a result by polling:
   # each registered source has its own child blocking on that source, and this
   # only republishes results already captured durably and restarts a source
