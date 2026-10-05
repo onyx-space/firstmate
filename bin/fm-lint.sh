@@ -49,6 +49,16 @@
 # Optional quiet telemetry writes one bounded TSV snapshot of content and source
 # graph identity, wall/CPU/RSS, shard load, and competing ShellCheck processes.
 #
+# Optional progress diagnostics prove a long invocation is still alive: while
+# ShellCheck runs, a bounded ticker writes a liveness line to stderr every
+# FM_LINT_PROGRESS_SECS seconds (default 30; 0 disables), and the per-target mode
+# prints "checked i/N <path>" before each root.
+#
+# A signalled worker reaps its children before returning: the progress ticker is
+# stopped and waited, and ShellCheck is asked to stop, given at most
+# FM_LINT_STOP_GRACE_SECS seconds (default 10) to leave, and then killed, so a
+# caller capturing output never waits on a child that outlived the worker.
+#
 # Usage:
 #   fm-lint.sh                         lint the context-selected file set (see above)
 #   fm-lint.sh --fast [path]...       local lint with extended analysis disabled
@@ -59,6 +69,14 @@
 #   fm-lint.sh --list-files            print the file set that would be linted
 #   fm-lint.sh --help                  print this usage
 set -u
+
+# Progress cadence, in seconds, for the long ShellCheck invocation.
+# A CI runner reclaims a job it sees producing nothing: this job printed its two
+# header lines and then said nothing for eleven minutes twice (exit 143, SIGTERM)
+# while sibling jobs that kept writing survived, so the run now proves it is alive
+# rather than being silent until it finishes. Diagnostics only: the file set, the
+# ShellCheck version and every flag are untouched.
+FM_LINT_PROGRESS_SECS=${FM_LINT_PROGRESS_SECS:-30}
 
 REQUIRED_SHELLCHECK=0.11.0
 # Cross-file codes that need --external-sources. Local changed-file mode
@@ -72,10 +90,60 @@ cd "$ROOT" || exit 1
 FM_LINT_WORKER_SHELLCHECK_PID=
 # shellcheck disable=SC2329 # Registered by the private worker's signal traps.
 fm_lint_worker_stop() {
+  # Every exit path reaps both children, signal paths included: the ticker holds
+  # the caller's pipes, so a worker signalled mid-run must not leave it behind for
+  # a reader that waits for EOF - a command substitution, or a pipe into tee.
+  command -v fm_lint_progress_stop >/dev/null 2>&1 && fm_lint_progress_stop
   [ -n "$FM_LINT_WORKER_SHELLCHECK_PID" ] || return 0
+  # Two stages with a bound between them: a runner's TERM does not reliably stop
+  # every ShellCheck child (measured: six survived a group TERM), and a worker left
+  # waiting on one keeps the caller's pipe open, so the stop escalates to KILL
+  # inside a bounded window instead of waiting forever.
+  local waited=0
   kill "$FM_LINT_WORKER_SHELLCHECK_PID" 2>/dev/null || true
+  while [ "$waited" -lt "${FM_LINT_STOP_GRACE_SECS:-10}" ]; do
+    if ! kill -0 "$FM_LINT_WORKER_SHELLCHECK_PID" 2>/dev/null; then
+      break
+    fi
+    command sleep 1
+    waited=$((waited + 1))
+  done
+  if kill -0 "$FM_LINT_WORKER_SHELLCHECK_PID" 2>/dev/null; then
+    kill -KILL "$FM_LINT_WORKER_SHELLCHECK_PID" 2>/dev/null || true
+  fi
   wait "$FM_LINT_WORKER_SHELLCHECK_PID" 2>/dev/null || true
   FM_LINT_WORKER_SHELLCHECK_PID=
+}
+
+# fm_lint_progress_start <targets> / fm_lint_progress_stop
+# One bounded ticker around the long invocation: it reports that the run is alive
+# and what it is chewing on, and it is stopped before the worker returns so a
+# finished job leaves nothing behind.
+fm_lint_progress_start() {  # <targets>
+  local targets=$1 started
+  [ "${FM_LINT_PROGRESS_SECS:-30}" -gt 0 ] 2>/dev/null || return 0
+  started=$(date +%s)
+  (
+    local now
+    while :; do
+      # The wait's own streams are detached, so nothing but this subshell holds
+      # the caller's pipes: a caller that captures output (a command
+      # substitution, a pipe into tee) must see EOF as soon as the worker
+      # returns, and a grandchild holding a pipe open would strand it there.
+      sleep "$FM_LINT_PROGRESS_SECS" >/dev/null 2>&1
+      now=$(date +%s)
+      printf 'fm-lint.sh: ShellCheck still running over %s target(s), %ss elapsed\n' \
+        "$targets" "$(( now - started ))" >&2
+    done
+  ) &
+  FM_LINT_PROGRESS_PID=$!
+}
+
+fm_lint_progress_stop() {
+  [ -n "${FM_LINT_PROGRESS_PID:-}" ] || return 0
+  kill "$FM_LINT_PROGRESS_PID" 2>/dev/null || true
+  wait "$FM_LINT_PROGRESS_PID" 2>/dev/null || true
+  FM_LINT_PROGRESS_PID=
 }
 
 fm_lint_worker() {  # <manifest> <output-dir> <shard-index>
@@ -106,11 +174,16 @@ fm_lint_worker() {  # <manifest> <output-dir> <shard-index>
     if [ "${FM_LINT_INTERNAL_FOLLOW_SOURCES:-1}" -eq 1 ]; then
       "$FM_LINT_SHELLCHECK" "${shellcheck_args[@]}" -- "${roots[@]}" >> "$output.out" 2>&1 &
       FM_LINT_WORKER_SHELLCHECK_PID=$!
+      fm_lint_progress_start "${#roots[@]}"
       wait "$FM_LINT_WORKER_SHELLCHECK_PID" || rc=$?
+      fm_lint_progress_stop
       FM_LINT_WORKER_SHELLCHECK_PID=
     else
+      local index=0
       for path in "${roots[@]}"; do
         invocation_rc=0
+        index=$((index + 1))
+        printf 'fm-lint.sh: checked %s/%s %s\n' "$index" "${#roots[@]}" "$path" >&2
         "$FM_LINT_SHELLCHECK" "${shellcheck_args[@]}" -- "$path" >> "$output.out" 2>&1 &
         FM_LINT_WORKER_SHELLCHECK_PID=$!
         wait "$FM_LINT_WORKER_SHELLCHECK_PID" || invocation_rc=$?
