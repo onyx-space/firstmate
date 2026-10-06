@@ -252,6 +252,181 @@ EOF
   pass "a keyless blocker is re-listed only while no later terminal line supersedes it"
 }
 
+test_an_unacknowledged_steering_record_surfaces_as_an_open_handoff() {
+  local state="$TMP_ROOT/handoff-open" out
+  mkdir -p "$state/t1.inbox" "$state/t1.inbox/handled"
+  printf 'steer\n' > "$state/t1.inbox/001.msg"
+  printf 'handled\n' > "$state/t1.inbox/handled/000.msg"
+  fm_touch_epoch "$(( $(date +%s) - 7200 ))" "$state/t1.inbox/001.msg"
+  # The drain presents from a status snapshot, so one exists here; the open
+  # handoff itself is derived from the inbox record, not from the status line.
+  printf 'working: continuing\n' > "$state/t1.status"
+  out="$TMP_ROOT/handoff-open.out"
+  FM_STATE_OVERRIDE="$state" FM_OPEN_HANDOFF_OVERDUE_SECS=60 "$DRAIN" > "$out" 2>&1     || fail "drain failed over an open handoff"
+  grep -F "OPEN HANDOFFS" "$out" >/dev/null || fail "the open handoff section is not printed"
+  grep -F "inbox t1" "$out" >/dev/null || fail "the row does not name the task whose record is unacknowledged"
+  grep -F "000" "$out" >/dev/null && fail "an acknowledged record is reported as open"
+  pass "an unacknowledged steering record surfaces as an open handoff"
+}
+
+test_no_open_handoff_prints_nothing() {
+  local state="$TMP_ROOT/handoff-none" out
+  mkdir -p "$state/t1.inbox/handled"
+  printf 'handled\n' > "$state/t1.inbox/handled/000.msg"
+  out="$TMP_ROOT/handoff-none.out"
+  FM_STATE_OVERRIDE="$state" FM_OPEN_HANDOFF_OVERDUE_SECS=60 "$DRAIN" > "$out" 2>&1     || fail "drain failed over a state with nothing open"
+  grep -F "OPEN HANDOFFS" "$out" >/dev/null && fail "an empty reading printed a section"
+  :
+  pass "an empty open-handoff reading prints no section"
+}
+
+test_only_an_unresolved_pending_reply_is_an_open_handoff() {
+  local state out
+  state="$TMP_ROOT/handoff-pending"
+  mkdir -p "$state/pending-replies"
+  printf 'schema=fm-pending-reply.v1\nphase=resolved\n' > "$state/pending-replies/aaaaaaaaaaaaaaaa"
+  printf 'schema=fm-pending-reply.v1\nphase=awaiting_report\n' > "$state/pending-replies/bbbbbbbbbbbbbbbb"
+  fm_touch_epoch "$(( $(date +%s) - 7200 ))" "$state/pending-replies/aaaaaaaaaaaaaaaa" "$state/pending-replies/bbbbbbbbbbbbbbbb"
+  out="$TMP_ROOT/handoff-pending.out"
+  FM_STATE_OVERRIDE="$state" FM_OPEN_HANDOFF_OVERDUE_SECS=60 "$DRAIN" > "$out" 2>&1 \
+    || fail "drain failed over pending-reply records"
+  grep -F 'pending-reply bbbbbbbbbbbbbbbb' "$out" >/dev/null \
+    || fail "an unresolved pending reply did not surface as an open handoff"
+  grep -F 'aaaaaaaaaaaaaaaa' "$out" >/dev/null \
+    && fail "a resolved pending-reply record surfaced as an open handoff"
+  pass "only an unresolved pending-reply record surfaces as an open handoff"
+}
+
+test_a_pending_reply_rewrite_does_not_reset_its_age() {
+  local state out
+  state="$TMP_ROOT/handoff-pending-rewrite"
+  mkdir -p "$state/pending-replies"
+  # Delivery confirmed two hours ago; the record mtime is fresh because a routine
+  # status rewrite replaced the whole record. The age must come from the stable
+  # field, not from that rewrite.
+  {
+    printf 'schema=fm-pending-reply.v1\n'
+    printf 'phase=awaiting_report\n'
+    printf 'created_epoch=%s\n' "$(( $(date +%s) - 10800 ))"
+    printf 'delivered_epoch=%s\n' "$(( $(date +%s) - 7200 ))"
+  } > "$state/pending-replies/cccccccccccccccc"
+  # Not yet confirmed delivered: the stable fallback is created_epoch.
+  {
+    printf 'schema=fm-pending-reply.v1\n'
+    printf 'phase=awaiting_report\n'
+    printf 'created_epoch=%s\n' "$(( $(date +%s) - 7200 ))"
+    printf 'delivered_epoch=\n'
+  } > "$state/pending-replies/dddddddddddddddd"
+  out="$TMP_ROOT/handoff-pending-rewrite.out"
+  FM_STATE_OVERRIDE="$state" FM_OPEN_HANDOFF_OVERDUE_SECS=60 "$DRAIN" > "$out" 2>&1 \
+    || fail "drain failed over a rewritten pending-reply record"
+  grep -F 'pending-reply cccccccccccccccc' "$out" >/dev/null \
+    || fail "a confirmed delivery was aged by the record mtime, not delivered_epoch"
+  grep -F 'pending-reply dddddddddddddddd' "$out" >/dev/null \
+    || fail "an undelivered record was aged by the record mtime, not created_epoch"
+  pass "a pending-reply rewrite does not reset its age"
+}
+
+test_a_fire_and_forget_steer_is_not_an_open_handoff() {
+  local state out
+  state="$TMP_ROOT/handoff-ff"
+  mkdir -p "$state/t1.inbox"
+  {
+    printf 'schema=fm-task-inbox.v1\n'
+    printf 'delivery=fire-and-forget\n'
+    printf -- '--\n'
+    printf 'a notification, not an instruction to act on\n'
+  } > "$state/t1.inbox/001.msg"
+  fm_touch_epoch "$(( $(date +%s) - 7200 ))" "$state/t1.inbox/001.msg"
+  out="$TMP_ROOT/handoff-ff.out"
+  FM_STATE_OVERRIDE="$state" FM_OPEN_HANDOFF_OVERDUE_SECS=60 "$DRAIN" > "$out" 2>&1 \
+    || fail "drain failed over a fire-and-forget record"
+  grep -F 'OPEN HANDOFFS' "$out" >/dev/null \
+    && fail "a fire-and-forget record surfaced as an open handoff"
+  pass "a fire-and-forget steer is excluded from open handoffs"
+}
+
+test_each_unacknowledged_steer_is_its_own_open_handoff() {
+  local state out rows
+  state="$TMP_ROOT/handoff-each"
+  mkdir -p "$state/t1.inbox"
+  printf 'first\n' > "$state/t1.inbox/001.msg"
+  printf 'second\n' > "$state/t1.inbox/002.msg"
+  fm_touch_epoch "$(( $(date +%s) - 10800 ))" "$state/t1.inbox/001.msg"
+  fm_touch_epoch "$(( $(date +%s) - 7200 ))" "$state/t1.inbox/002.msg"
+  out="$TMP_ROOT/handoff-each.out"
+  FM_STATE_OVERRIDE="$state" FM_OPEN_HANDOFF_OVERDUE_SECS=60 "$DRAIN" > "$out" 2>&1 \
+    || fail "drain failed over two unacknowledged steers"
+  grep -F 'inbox t1/001.msg' "$out" >/dev/null \
+    || fail "the first unacknowledged steer is not named as its own handoff"
+  grep -F 'inbox t1/002.msg' "$out" >/dev/null \
+    || fail "the second unacknowledged steer is not named as its own handoff"
+  rows=$(grep -c '^  inbox t1/' "$out")
+  [ "$rows" = 2 ] || fail "expected one row per unacknowledged steer, got $rows"
+  pass "each unacknowledged steer is its own open handoff"
+}
+
+test_the_open_handoff_section_prints_once_per_drain() {
+  local state out count
+  state="$TMP_ROOT/handoff-once"
+  mkdir -p "$state/t1.inbox"
+  printf 'steer\n' > "$state/t1.inbox/001.msg"
+  fm_touch_epoch "$(( $(date +%s) - 7200 ))" "$state/t1.inbox/001.msg"
+  printf 'working: continuing\n' > "$state/t1.status"
+  out="$TMP_ROOT/handoff-once.out"
+  FM_STATE_OVERRIDE="$state" FM_OPEN_HANDOFF_OVERDUE_SECS=60 "$DRAIN" > "$out" 2>&1 \
+    || fail "drain failed over an overdue handoff"
+  count=$(grep -c 'OPEN HANDOFFS' "$out")
+  [ "$count" = 1 ] || fail "the open-handoff section printed $count times in one drain"
+  pass "the open-handoff section prints exactly once per drain"
+}
+
+test_an_overdue_handoff_becomes_a_wake_of_its_own_once_per_interval() {
+  local state queue rows
+  state="$TMP_ROOT/handoff-wake"
+  mkdir -p "$state/t1.inbox"
+  printf 'steer\n' > "$state/t1.inbox/001.msg"
+  fm_touch_epoch "$(( $(date +%s) - 7200 ))" "$state/t1.inbox/001.msg"
+  queue="$state/.wake-queue"
+
+  # The tick is driven directly: the queue append is stubbed so this case measures
+  # the tick's own rule (one row per open handoff, re-rung only after its
+  # interval) rather than the wake library's own behaviour, which its own suite
+  # covers.
+  tick() {
+    (
+      # shellcheck source=bin/fm-classify-lib.sh
+      . "$ROOT/bin/fm-classify-lib.sh"
+      fm_wake_append() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$queue"; }
+      STATE="$state" FM_OPEN_HANDOFF_OVERDUE_SECS=60 FM_OPEN_HANDOFF_RING_SECS=3600 \
+        fm_open_handoff_tick "$state"
+    ) || fail "the tick failed"
+  }
+
+  tick
+  rows=$(grep -c 'open-handoff:inbox:t1' "$queue" 2>/dev/null || printf '0')
+  [ "$rows" = 1 ] || fail "the tick produced $rows wake rows for one open handoff"
+  grep -F 'does not close the handoff' "$queue" >/dev/null \
+    || fail "the wake row does not say that acknowledging it leaves the handoff open"
+  tick
+  rows=$(grep -c 'open-handoff:inbox:t1' "$queue" 2>/dev/null || printf '0')
+  [ "$rows" = 1 ] || fail "the second tick re-rung inside its interval ($rows rows)"
+  pass "an overdue handoff wakes once, says an ack does not close it, and re-rings only after its interval"
+}
+
+test_an_open_handoff_below_the_threshold_prints_nothing() {
+  local state="$TMP_ROOT/handoff-fresh" out
+  mkdir -p "$state/t1.inbox"
+  printf 'steer\n' > "$state/t1.inbox/001.msg"
+  printf 'working: continuing\n' > "$state/t1.status"
+  out="$TMP_ROOT/handoff-fresh.out"
+  FM_STATE_OVERRIDE="$state" FM_OPEN_HANDOFF_OVERDUE_SECS=86400 "$DRAIN" > "$out" 2>&1 \
+    || fail "drain failed over a fresh handoff"
+  grep -F "OPEN HANDOFFS" "$out" >/dev/null && fail "a handoff below the threshold was reported"
+  :
+  pass "an open handoff below the threshold prints nothing"
+}
+
 test_buried_decision_still_surfaces
 test_keyless_blocker_superseded_by_a_terminal_line_stops_being_listed
 test_over_long_decision_note_is_capped_with_a_marker
@@ -262,3 +437,12 @@ test_no_open_decisions_prints_nothing
 test_open_decision_surfaces_even_with_an_unrelated_queued_wake
 test_buried_decision_surfaces_on_the_empty_queue_fast_path
 test_status_symlink_is_not_followed
+test_an_unacknowledged_steering_record_surfaces_as_an_open_handoff
+test_no_open_handoff_prints_nothing
+test_only_an_unresolved_pending_reply_is_an_open_handoff
+test_a_pending_reply_rewrite_does_not_reset_its_age
+test_a_fire_and_forget_steer_is_not_an_open_handoff
+test_each_unacknowledged_steer_is_its_own_open_handoff
+test_the_open_handoff_section_prints_once_per_drain
+test_an_overdue_handoff_becomes_a_wake_of_its_own_once_per_interval
+test_an_open_handoff_below_the_threshold_prints_nothing

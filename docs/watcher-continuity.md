@@ -97,6 +97,18 @@ Because branch claims contain no check-kind rows, a branch acknowledgement skips
 The same suite pins the counted-equals-presentable invariant against `bin/fm-guard.sh` and `bin/fm-wake-drain.sh` together: a branch-held row raises the held advisory rather than the ordinary queued-wake warning for main, and is presented with its acknowledgement command - with the ordinary warning restored - as soon as the grant clears, and structurally unusable rows are retired by main alone while every remaining row stays presentable and acknowledgeable.
 `tests/fm-pi-branch-extension.test.sh` pins extension-side classification, claim publication and release, and the pre-drain recheck.
 
+## Open handoffs on the drain
+
+A drain also prints a bounded `OPEN HANDOFFS` reading: what this endpoint has promised and not yet delivered, derived from two records it already keeps - each task steering inbox record that no `handled/` move acknowledged, and each parent-owned pending-reply record with no reply - so nothing here is a second store and no row is invented.
+A steering record and a pending-reply record each surface as their own row: an inbox holding several unacknowledged steers reports each one, aged from its own record. A `delivery=fire-and-forget` steer is a one-way notification that is never acknowledged, so it is not a handoff and is excluded, exactly as the steering-inbox ladder excludes it.
+The reading is silent when nothing is open and silent when every open record is younger than `FM_OPEN_HANDOFF_OVERDUE_SECS` (1800 seconds by default, documented in `bin/fm-classify-lib.sh`'s header), and each printed row names the source record so a reader can check the promise rather than trust a count.
+A pending-reply record carries stable epochs (`delivered_epoch` once delivery is confirmed, else `created_epoch`) and is aged from that field rather than its modification time, because routine state rewrites reset that mtime, while an inbox record carries no epoch and is aged from its modification time, which only the worker's acknowledgement changes; neither shipped format carries a deadline, so a record that carries one wins over this default the day such a field exists.
+An overdue handoff also becomes a wake of its own through the same bounded cadence the rest of the watcher uses (`fm_open_handoff_tick`), one row per open handoff, re-rung only after `FM_OPEN_HANDOFF_RING_SECS`, and the row says in its own text that acknowledging it does not close the handoff: the record behind it does.
+`tests/fm-wake-drain-open-decisions.test.sh` pins the three states above and the tick's one-row-per-handoff re-ring rule.
+
+The wire leg is deliberately not part of this reading: a drain runs every cycle, and calling a channel command from it would put that command's cost and uncertainty on the hot path.
+A delivery this endpoint sent and nobody answered is readable where the channel keeps it (`olink pending`, `olink unattended`, `olink check`), so a further reading of that kind belongs to the channel's own surface rather than to this one.
+
 ## Note archival on acknowledgement
 
 A `check` row for an inbox note carries that note's id, and `bin/fm-inbox.sh` records who wrote the note in its `source` field: `text` is the captain's own out-of-band capture, `voice` is the captain's dictation, and `relay` is a notification one of firstmate's own integrations queued.
