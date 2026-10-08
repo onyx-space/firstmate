@@ -44,8 +44,11 @@
 #   - Bounded wedge latency: a stale pane without a declared wait is escalated
 #     only after it has been idle for STALE_ESCALATE_SECS
 #     (configurable), rechecked once. A wedged crewmate is therefore detected
-#     within STALE_ESCALATE_SECS + a tick, never lost. A declared wait - either a
-#     paused: external wait or a verified captain-held transfer, per
+#     within STALE_ESCALATE_SECS + a tick, never lost. A lane whose delivery is
+#     already on record - its newest line reads done:, or its metadata carries
+#     the recorded pr= - is absorbed and its stale marker cleared instead of
+#     escalated, even when the newest line still reads working:. A declared wait -
+#     either a paused: external wait or a verified captain-held transfer, per
 #     fm-classify-lib.sh's combined predicate - instead gets its own longer
 #     PAUSE_RESURFACE_SECS recheck, never a wedge escalation, whether its pane
 #     reads idle or busy; only a status append that stops declaring the wait
@@ -410,7 +413,8 @@ classify_signal() {  # <reason-after-colon> <state>
 
 # classify_stale decides the WAKE itself (one-shot per distinct hash). On a
 # first sight of a non-terminal stale it returns "self" and the caller records a
-# timestamp marker; persistence is escalated by housekeeping's recheck, not here.
+# timestamp marker unless the delivery is already recorded, in which case it
+# clears the marker; persistence is escalated by housekeeping's recheck, not here.
 classify_stale() {  # <window> <state> [<span-record> <span-status>]
   local win=$1 state=$2 record=${3-} rc=${4-} task last event rest
   task=$(window_to_task "$win" "$state")
@@ -462,7 +466,8 @@ classify_stale() {  # <window> <state> [<span-record> <span-status>]
     return
   fi
   # Non-terminal (or no status): defer to the persistence recheck. The caller
-  # records/refreshes the stale marker so housekeeping can age it.
+  # records/refreshes the stale marker so housekeeping can age it, unless the
+  # delivery is already recorded, which clears it instead.
   printf 'self|transient stale (%s): %s' "$win" "${last:-no status}"
 }
 

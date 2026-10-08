@@ -21,7 +21,7 @@
 #   signal: <file>...      status/turn-end signals, surfaced when a listed status
 #                          span has a captain-relevant event OR a no-verb signal lacks
 #                          positive execution evidence, unless afk is active
-#   stale: <window>        a provably-working stale is ALWAYS absorbed (with a wedge
+#   stale: <window>        a provably-working stale is absorbed (with a wedge
 #                          timer) regardless of what the status log says - an active
 #                          run-step or busy pane outranks even a captain-relevant log
 #                          line, since the crew's own log gets no new entry once
@@ -29,8 +29,11 @@
 #                          external-wait pause or verified captain-held transfer is
 #                          absorbed instead with its own long re-surface cadence,
 #                          never as a wedge, and that recheck reason names which
-#                          human the wait is on. Only when neither absorb class
-#                          applies does the log's last line decide:
+#                          human the wait is on. A lane whose delivery is already on
+#                          record - its newest line reads done:, or its metadata
+#                          carries the recorded pr= - is absorbed with no wedge timer
+#                          even when that line still reads working:. Only when no
+#                          absorb class applies does the log's last line decide:
 #                          terminal (captain-relevant) or non-terminal (no verb),
 #                          both surfaced at once. A provably-working stale past the
 #                          wedge threshold also surfaces, with an "escalation N"
