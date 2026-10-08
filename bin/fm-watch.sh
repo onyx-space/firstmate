@@ -2616,7 +2616,16 @@ EOF
           #     (it may be done via an interactive menu that wrote no done: status,
           #     waiting on a decision, or wedged) instead of leaving the finish to
           #     wait out the timer.
-          if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
+          # A lane whose delivery is already on record is finished work however its
+          # newest line reads - the run opened a PR and its metadata says so. Absorb
+          # it and clear the timer's bookkeeping, so the wedge ladder never fires on
+          # an artifact that already exists.
+          if task_delivery_recorded "$STATE" "$(window_to_task "$w" "$STATE")"; then
+            clear_pause_tracking "$key"
+            printf '%s' "$h" > "$sf"
+            rm -f "$ssf" "$ewf"
+            triage_log "absorbed non-terminal stale (delivery already recorded): $w"
+          elif [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
             task=$(window_to_task "$w" "$STATE")
             case "$(pause_state_class "$w" "$task")" in
               working)
