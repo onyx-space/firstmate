@@ -1,0 +1,6 @@
+===== live away-mode done: lane observation =====
+doneonly stale marker present: no
+wedge escalations for doneonly: [stale persisted 501s (possible wedge): sess:fm-doneonly
+doneonly.status: done: shipped (catch-all scan)]
+all escalations buffer: [stale persisted 501s (possible wedge): sess:fm-doneonly
+doneonly.status: done: shipped (catch-all scan)]

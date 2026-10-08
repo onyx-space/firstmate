@@ -1,0 +1,13 @@
+===== live away-mode daemon observation =====
+delivered stale marker present:   no
+undelivered stale marker present: no
+escalations buffer: [stale persisted 501s (possible wedge): sess:fm-undelivered
+stale persisted 3s (possible wedge): sess:fm-undelivered]
+wedge alarm log:    []
+-- daemon log (self-handle / wake lines) --
+    [2026-10-08T18:37:48+0800] wake: check: rearm-resurface
+    [2026-10-08T18:37:51+0800] self-handle: stale: sess:fm-delivered -> transient stale (sess:fm-delivered): working: still compiling
+    [2026-10-08T18:37:52+0800] self-handle: stale: sess:fm-undelivered -> transient stale (sess:fm-undelivered): working: still compiling
+    [2026-10-08T18:37:57+0800] wake: signal: /tmp/fm-live-daemon.L4MFcA/delivered.status /tmp/fm-live-daemon.L4MFcA/undelivered.status
+    [2026-10-08T18:37:59+0800] self-handle: signal: /tmp/fm-live-daemon.L4MFcA/delivered.status /tmp/fm-live-daemon.L4MFcA/undelivered.status -> routine signal: delivered.status: working: still compiling | undelivered.status: working: still compiling
+    [2026-10-08T18:37:59+0800] self-handle: signal: /tmp/fm-live-daemon.L4MFcA/delivered.status /tmp/fm-live-daemon.L4MFcA/undelivered.status -> routine signal: delivered.status: working: still compiling | undelivered.status: working: still compiling

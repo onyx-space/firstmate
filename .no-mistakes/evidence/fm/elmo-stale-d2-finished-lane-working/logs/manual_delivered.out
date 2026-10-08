@@ -1,0 +1,31 @@
+================ CASE: delivered ================
+meta:
+    window=test:fm-delivered
+    kind=ship
+    pr=https://github.com/onyx-space/firstmate/pull/999
+status: working: still compiling
+watcher stdout (wake reasons): []
+wake queue present: no
+wedge escalations file: []
+stale-since file present: no
+-- triage log lines for this window --
+    [2026-10-08T18:35:32+0800] absorbed non-terminal stale (delivery already recorded): test:fm-delivered
+    [2026-10-08T18:35:34+0800] absorbed non-terminal stale (delivery already recorded): test:fm-delivered
+    [2026-10-08T18:35:35+0800] absorbed non-terminal stale (delivery already recorded): test:fm-delivered
+-- triage log total lines --
+    4
+
+================ CASE: undelivered ================
+meta:
+    window=test:fm-undelivered
+    kind=ship
+status: working: still compiling
+watcher stdout (wake reasons): [stale: test:fm-undelivered (idle 2s, possible wedge, escalation 1)]
+wake queue present: yes
+wedge escalations file: [1]
+stale-since file present: no
+-- triage log lines for this window --
+    [2026-10-08T18:35:42+0800] absorbed non-terminal stale (provably working): test:fm-undelivered
+-- triage log total lines --
+    2
+

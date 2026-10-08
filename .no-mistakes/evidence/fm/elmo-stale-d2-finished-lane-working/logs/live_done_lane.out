@@ -1,0 +1,4 @@
+===== live away-mode done: lane observation =====
+doneonly stale marker present: no
+wedge escalations for doneonly: [doneonly.status: done: shipped (catch-all scan)]
+all escalations buffer: [doneonly.status: done: shipped (catch-all scan)]
