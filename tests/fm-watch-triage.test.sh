@@ -5035,6 +5035,76 @@ test_crew_stale_three_state_readout() {
   done
   pass "crew_stale_class: busy, the quiet external waits (advancing/monitoring/paused), landed, and the dead/no-progress cases each read as their own state"
 }
+# A ship task's crew can finish while its newest status line still reads
+# working: - the PR it opened is the delivery, and the metadata carries it. Such
+# a lane is finished work, so the non-terminal stale path must absorb it and must
+# not start the wedge ladder: the elmo stale-rate diagnosis measured seven to
+# seventeen escalations in ninety minutes on one completed lane. A lane with no
+# delivery on record keeps the previous path, which the case after this one pins.
+test_delivery_recorded_is_not_wedge_timed() {
+  local dir state fakebin out capture_file window key pane_hash sig pid cycles
+  dir=$(make_case delivery-recorded); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:fm-delivered"
+  printf 'idle building output' > "$capture_file"
+  # The delivery is recorded the way the run records it: the pr= it opened.
+  printf 'window=%s\nkind=ship\npr=https://github.com/onyx-space/firstmate/pull/999\n' "$window" > "$state/delivered.meta"
+  printf 'working: still compiling\n' > "$state/delivered.status"
+  sig=$(seen_sig "$state/delivered.status"); printf '%s' "$sig" > "$state/.seen-delivered_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "idle building output")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  export FM_FAKE_CREW_STATE='state: working · source: run-step · ci running'
+
+  # A one-second escalation threshold would fire the ladder on the second cycle
+  # for any lane the timer keeps. A delivered lane must not reach it.
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=1 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  cycles=0
+  while [ "$cycles" -lt 2 ]; do
+    wait_poll_cycle "$state" "$pid" || { reap "$pid"; fail "watcher exited on a delivered non-terminal stale: $(cat "$out")"; }
+    cycles=$((cycles + 1))
+  done
+  reap "$pid"
+  [ ! -s "$out" ] || fail "a delivered non-terminal stale printed a wake reason"
+  [ ! -s "$state/.wake-queue" ] || fail "a delivered non-terminal stale enqueued a wake"
+  [ ! -e "$state/.wedge-escalations-$key" ] || fail "a delivered lane was wedge-escalated ($(cat "$state/.wedge-escalations-$key" 2>/dev/null))"
+  [ "$(cat "$state/.stale-$key" 2>/dev/null || true)" = "$pane_hash" ] || fail "stale suppressor not advanced on a delivered absorb"
+  pass "a lane whose delivery is already recorded is absorbed, never wedge-timed"
+}
+
+# The other direction: with no delivery on record, a crew whose pipeline is
+# genuinely running is still judged working and its wedge timer still starts, so
+# a run that really froze keeps escalating.
+test_undelivered_nonterminal_stale_still_starts_the_wedge_timer() {
+  local dir state fakebin out capture_file window key pane_hash sig pid
+  dir=$(make_case delivery-absent); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:fm-undelivered"
+  printf 'idle building output' > "$capture_file"
+  printf 'window=%s\nkind=ship\n' "$window" > "$state/undelivered.meta"
+  printf 'working: still compiling\n' > "$state/undelivered.status"
+  sig=$(seen_sig "$state/undelivered.status"); printf '%s' "$sig" > "$state/.seen-undelivered_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "idle building output")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  export FM_FAKE_CREW_STATE='state: working · source: run-step · ci running'
+
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_poll_cycle "$state" "$pid" || { reap "$pid"; fail "watcher exited for an undelivered provably-working stale: $(cat "$out")"; }
+  reap "$pid"
+  [ -s "$state/.stale-since-$key" ] || fail "an undelivered working lane did not start its wedge timer"
+  [ ! -s "$state/.wake-queue" ] || fail "an undelivered working lane enqueued a wake below its threshold"
+  pass "a lane with no delivery on record still takes the working path and keeps its wedge timer"
+}
+
 test_status_span_actionable_classifier
 test_status_span_survives_a_later_routine_append
 test_status_span_respects_decision_closure
@@ -5154,6 +5224,8 @@ test_paused_until_that_passed_is_rechecked_before_the_cadence
 test_crew_stale_three_state_readout
 
 
+test_delivery_recorded_is_not_wedge_timed
+test_undelivered_nonterminal_stale_still_starts_the_wedge_timer
 # A watcher this suite started and never reaped keeps polling a fixture state
 # directory that cleanup is about to remove, which is how an earlier run left
 # orphaned watchers behind. Judge only the pids this shell started.
