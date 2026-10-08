@@ -1080,6 +1080,10 @@ housekeeping() {  # <state>
       reconcile_pause_tracking "$win" "$state" "$last"
       continue
     fi
+    if task_delivery_recorded "$state" "$task"; then
+      stale_marker_remove "$win" "$state"
+      continue
+    fi
     age=$(( now - $(cat "$marker" 2>/dev/null || echo "$now") ))
     [ "$age" -ge "${FM_STALE_ESCALATE_SECS:-$STALE_ESCALATE_SECS_DEFAULT}" ] || continue
     stale_window_is_busy "$win" "$state"
@@ -1463,26 +1467,31 @@ handle_wake() {  # <reason> <state>
       # wake, escalates a wedge.
       if [ "$kind" = "stale" ]; then
         task=$(window_to_task "$arg" "$state")
-        last=$(last_status_line "$state/$task.status")
-        # Clear wedge aging only for terminal (or legacy free-text) captain lines.
-        # Nonterminal progress verbs keep possible-wedge markers even if free text
-        # once looked captain-relevant or was written into a seen marker.
-        _clear_wedge=0
-        if [ -n "$last" ] && status_is_captain_relevant "$last"; then
-          if status_is_terminal_verb "$last"; then
-            _clear_wedge=1
-          else
-            case "$(status_line_verb "$last")" in
-              working|resolved|captain-held) _clear_wedge=0 ;;
-              *) _clear_wedge=1 ;;
-            esac
-          fi
-        fi
-        if [ "$_clear_wedge" = 1 ]; then
+        if task_delivery_recorded "$state" "$task"; then
           stale_marker_remove "$arg" "$state"
-        else
           pause_marker_remove "$arg" "$state"
-          stale_marker_record "$arg" "$state"
+        else
+          last=$(last_status_line "$state/$task.status")
+          # Clear wedge aging only for terminal (or legacy free-text) captain lines.
+          # Nonterminal progress verbs keep possible-wedge markers even if free text
+          # once looked captain-relevant or was written into a seen marker.
+          _clear_wedge=0
+          if [ -n "$last" ] && status_is_captain_relevant "$last"; then
+            if status_is_terminal_verb "$last"; then
+              _clear_wedge=1
+            else
+              case "$(status_line_verb "$last")" in
+                working|resolved|captain-held) _clear_wedge=0 ;;
+                *) _clear_wedge=1 ;;
+              esac
+            fi
+          fi
+          if [ "$_clear_wedge" = 1 ]; then
+            stale_marker_remove "$arg" "$state"
+          else
+            pause_marker_remove "$arg" "$state"
+            stale_marker_record "$arg" "$state"
+          fi
         fi
       fi
       log "self-handle: $reason -> $distilled"

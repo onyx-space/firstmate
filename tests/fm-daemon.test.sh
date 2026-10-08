@@ -720,6 +720,58 @@ test_stale_diagnostic_wedge_survives_busy_housekeeping() {
   pass "enriched stale wedges bypass status absorption except under a declared wait, without disturbing busy workers"
 }
 
+# A lane whose delivery is already on record - the pr= the run opened in its task
+# metadata - is finished work, not a wedge. The away-mode supervisor must absorb
+# it at the same two points the always-on watcher now does: the stale wake must
+# not arm a wedge marker, and housekeeping must drop a marker still aging from
+# before the delivery was recorded, so the ladder never fires on a completed
+# artifact. The elmo stale-rate diagnosis measured 7-17 escalations in 90 minutes
+# on one such lane. The undelivered control keeps the previous path, so a run
+# that really froze is still caught.
+test_away_mode_delivery_recorded_absorbs_the_wedge_ladder() {
+  local case_name dir state fakebin key task win pane reason
+  for case_name in delivered undelivered; do
+    dir=$(make_supercase "away-delivery-$case_name")
+    state="$dir/state"; fakebin="$dir/fakebin"
+    task="delivery-$case_name"; win="sess:fm-$task"; pane="$dir/pane.txt"
+    key=$(printf '%s' "$task" | tr ':/.' '___')
+    fm_write_meta "$state/$task.meta" "window=$win" "backend=tmux"
+    if [ "$case_name" = delivered ]; then
+      printf 'pr=https://github.com/onyx-space/firstmate/pull/999\n' >> "$state/$task.meta"
+    fi
+    printf 'working: still compiling\n' > "$state/$task.status"
+    printf 'idle prompt $\n' > "$pane"
+
+    # The stale wake arrives the way the watcher hands it to the daemon in away
+    # mode: a plain stale reason on a new hash, not an enriched wedge.
+    reason="stale: $win"
+    LOG="$dir/daemon.log" PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+      FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999999 handle_wake "$reason" "$state"
+    if [ "$case_name" = delivered ]; then
+      [ ! -e "$state/.subsuper-stale-$key" ] \
+        || fail "a delivered lane armed a wedge marker in away mode"
+    else
+      [ -e "$state/.subsuper-stale-$key" ] \
+        || fail "an undelivered working lane did not arm its wedge marker"
+    fi
+
+    # Age the marker past the escalation threshold and let housekeeping run, as it
+    # does for a marker that predates the delivery being recorded.
+    echo $(( $(date +%s) - 500 )) > "$state/.subsuper-stale-$key"
+    PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+      FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999999 \
+      FM_STALE_ESCALATE_SECS=240 housekeeping "$state"
+    if [ "$case_name" = delivered ]; then
+      [ ! -s "$state/.subsuper-escalations" ] \
+        || fail "a delivered lane wedge-escalated in away mode: $(cat "$state/.subsuper-escalations")"
+    else
+      [ -s "$state/.subsuper-escalations" ] \
+        || fail "an undelivered working lane did not wedge-escalate in away mode"
+    fi
+  done
+  pass "away mode absorbs a delivered lane's wedge ladder and still escalates an undelivered one"
+}
+
 # The second half of issue #3149. The watcher's wedge timer emits an enriched
 # "idle Ns, possible wedge, escalation N" reason for any pane it reads as frozen -
 # including one whose crew has a CURRENT declared wait, because the watcher's own
@@ -2833,6 +2885,7 @@ test_classify_terminal_signal_escalates
 test_classify_check_and_unknown_escalate
 test_stale_transient_self_records_marker
 test_stale_diagnostic_wedge_survives_busy_housekeeping
+test_away_mode_delivery_recorded_absorbs_the_wedge_ladder
 test_enriched_wedge_under_declared_wait_uses_pause_cadence
 test_stale_terminal_escalates
 test_stale_actionable_wait_escalates_and_keeps_pause_cadence
