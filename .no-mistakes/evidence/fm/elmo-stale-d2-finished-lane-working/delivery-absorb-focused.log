@@ -1,0 +1,3 @@
+ok - a lane whose delivery is already recorded is absorbed, never wedge-timed
+ok - a lane with no delivery on record still takes the working path and keeps its wedge timer
+ok - watcher triage left no process behind: every process this case started was reaped

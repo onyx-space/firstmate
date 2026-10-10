@@ -1,0 +1,2 @@
+ok - a delivered lane announces each distinct stale hash once and keeps the absorb silent across repeats
+ok - changed-hash scenario left no process behind: every process this case started was reaped
