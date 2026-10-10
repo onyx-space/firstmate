@@ -2519,6 +2519,23 @@ stale_is_terminal() {  # <window> <state>
   [ -n "$last" ] && status_is_captain_relevant "$last"
 }
 
+# A task whose delivery is already recorded: its newest status line says done:,
+# or its metadata carries the pr= the delivery was opened as. The wedge ladder
+# exists to catch a run that stopped moving, and a lane whose artifact already
+# exists is not that - the newest line can still read working: while the PR the
+# run opened sits in the forge, so timering it alarms on finished work. Both
+# halves are read from records this endpoint already keeps; nothing here is
+# inferred from a pane.
+task_delivery_recorded() {  # <state> <task>
+  local state=$1 task=$2 last pr
+  last=$(last_status_line "$state/$task.status")
+  case "$last" in
+    done:*) return 0 ;;
+  esac
+  pr=$(grep '^pr=' "$state/$task.meta" 2>/dev/null | tail -1 || true)
+  [ -n "$pr" ]
+}
+
 # --- open handoffs -----------------------------------------------------------
 # A bounded reading of what is promised and not yet delivered, derived from two
 # records this endpoint already keeps: a task's steering inbox, where an
