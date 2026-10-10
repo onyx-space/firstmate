@@ -2624,10 +2624,16 @@ EOF
           # it and clear the timer's bookkeeping, so the wedge ladder never fires on
           # an artifact that already exists.
           if task_delivery_recorded "$STATE" "$(window_to_task "$w" "$STATE")"; then
-            clear_pause_tracking "$key"
-            printf '%s' "$h" > "$sf"
+            # The absorb repeats on every poll of the same stale hash, so the line
+            # is written once per distinct hash rather than once per poll, and the
+            # hash tracker is left holding it: the decision is the same one, and
+            # re-announcing it only grows the log.
+            if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
+              printf '%s' "$h" > "$sf"
+              triage_log "absorbed non-terminal stale (delivery already recorded): $w"
+            fi
+            clear_pause_state "$key"
             rm -f "$ssf" "$ewf"
-            triage_log "absorbed non-terminal stale (delivery already recorded): $w"
           elif [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
             task=$(window_to_task "$w" "$STATE")
             case "$(pause_state_class "$w" "$task")" in
