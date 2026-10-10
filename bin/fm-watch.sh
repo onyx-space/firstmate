@@ -2624,10 +2624,17 @@ EOF
           # it and clear the timer's bookkeeping, so the wedge ladder never fires on
           # an artifact that already exists.
           if task_delivery_recorded "$STATE" "$(window_to_task "$w" "$STATE")"; then
+            # Announce once per distinct stale hash: the absorb repeats on every
+            # poll of the same hash, and repeating the same decision only grows the
+            # log. The full tracker cleanup still runs every poll - it clears the
+            # write-deferral marker as well - and the hash is recorded AFTER that
+            # cleanup, so the cleanup cannot erase the record just decided on.
+            if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
+              triage_log "absorbed non-terminal stale (delivery already recorded): $w"
+            fi
             clear_pause_tracking "$key"
             printf '%s' "$h" > "$sf"
             rm -f "$ssf" "$ewf"
-            triage_log "absorbed non-terminal stale (delivery already recorded): $w"
           elif [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
             task=$(window_to_task "$w" "$STATE")
             case "$(pause_state_class "$w" "$task")" in
