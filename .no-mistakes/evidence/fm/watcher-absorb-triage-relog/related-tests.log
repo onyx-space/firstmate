@@ -1,0 +1,8 @@
+### test_undelivered_nonterminal_stale_still_starts_the_wedge_timer
+ok - a lane with no delivery on record still takes the working path and keeps its wedge timer
+### test_nonterminal_stale_provably_working_absorbed_then_escalated
+ok - provably-working non-terminal stale is absorbed on first sight, then wedge-escalated past the threshold
+### test_timer_repair_drops_a_finished_write_deferral_chain
+ok - an idle-window timer repair drops a finished write-deferral chain, so the next deferral gets a fresh re-surface window
+### test_terminal_first_sight_drops_a_finished_write_deferral_chain
+ok - both first-sight paths through a captain-relevant status drop a finished write-deferral chain with the idle window

@@ -1,0 +1,24 @@
+== phase 1: three static polls of hash H1 (172dde50e5a9fc1ff625d4b78dfcb72e) ==
+triage lines after 3 static polls: 1  (expect 1)
+stale suppressor: 172dde50e5a9fc1ff625d4b78dfcb72e  (expect 172dde50e5a9fc1ff625d4b78dfcb72e)
+
+== phase 2: pane content changes -> new hash H2, two polls ==
+triage lines after H2 stabilizes: 2  (expect 2)
+stale suppressor: b4c3324d0637db580c1dd98178c9b3b5  (expect b4c3324d0637db580c1dd98178c9b3b5)
+
+== phase 3: two more static polls of H2 (must stay 2 lines) ==
+triage lines after 2 more static polls: 2  (expect 2)
+
+== phase 4: pane changes again -> H3 (must announce, 3 lines) ==
+triage lines after H3 stabilizes: 3  (expect 3)
+
+== wedge bookkeeping (unchanged behavior) ==
+no wedge escalation recorded (expect none)
+no wake enqueued (expect none)
+
+== full triage log ==
+[2026-10-10T12:36:55+0800] absorbed non-terminal stale (delivery already recorded): test:fm-delivered
+[2026-10-10T12:37:06+0800] absorbed non-terminal stale (delivery already recorded): test:fm-delivered
+[2026-10-10T12:37:18+0800] absorbed non-terminal stale (delivery already recorded): test:fm-delivered
+
+PASS: once per distinct hash, re-announced only when the hash is new
