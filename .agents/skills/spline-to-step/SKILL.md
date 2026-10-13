@@ -57,7 +57,7 @@ Optional fields:
 | Field | Meaning |
 |---|---|
 | `root_fillet_radius` | round-root fillet radius; defaults to `0.35 * module` when a round root has none, which is an assumption and not a standard value |
-| `form_diameter` | the table's T.I.F. / form diameter: the involute stops there and a straight radial root transition carries the flank out to the root circle. Without it the involute runs the full flank. A value that does not lie between the root and tip diameters is refused. |
+| `form_diameter` | the table's T.I.F. / form diameter: the involute stops there and a straight radial root transition carries the flank to the root circle. Without it the involute runs the full flank. A value that does not lie between the root and tip diameters is refused on a flat root. |
 | `space_width` | mapping with any of `min_act`, `max_act`, `max_eff`, `min_eff`, each a circular space width at the pitch circle |
 | `space_width_basis` | `basic` (default) or one of the `space_width` keys: which space width the geometry is built at |
 | `pin_dimension_basis` | `computed` (default) or `drawing`: which two-pin dimension is the value of record |
@@ -178,10 +178,11 @@ FCGear closes the ends of its flanks with straight chords, and a chord sits
 diameters that mate.
 Both chords are replaced with arcs, so the major and minor diameters are true cylinders.
 When the table names a form diameter, the involute stops on it and a straight radial root
-transition carries the flank out to the root circle.
+transition carries the flank to the root circle.
 On an internal spline the root circle is the major diameter and the tip circle is the minor
-diameter, so there the transition runs from the form diameter out to the major diameter; on
-an external spline the root circle is the minor diameter.
+diameter, so there the transition runs from the form diameter outward to the major diameter.
+On an external spline the root circle is the minor diameter and the tip circle is the major
+diameter, so there it runs from the form diameter inward to the minor diameter.
 A round root is filleted at both root corners.
 An internal spline is the outer cylinder minus the profile prism; an external spline is
 the profile prism itself.
@@ -226,7 +227,8 @@ the formula, and section 2 of the self-check asserts the same identity without F
 
 ## What this skill does not do
 
-It produces zero-backlash nominal geometry and nothing else.
+It produces one nominal solid at the space width the selected basis names, the zero-backlash
+basic value by default, and nothing else.
 Tolerance zones, grade (`6H`, `class 5`), and fit (`大径配合`, major-diameter fit) are a
 separate tolerance system: the ACT/EFF values on a table are limits of a band, not the
 nominal shape, and this skill neither expands them into deviations nor guarantees a
