@@ -5073,6 +5073,11 @@ test_delivery_recorded_is_not_wedge_timed() {
   [ ! -s "$state/.wake-queue" ] || fail "a delivered non-terminal stale enqueued a wake"
   [ ! -e "$state/.wedge-escalations-$key" ] || fail "a delivered lane was wedge-escalated ($(cat "$state/.wedge-escalations-$key" 2>/dev/null))"
   [ "$(cat "$state/.stale-$key" 2>/dev/null || true)" = "$pane_hash" ] || fail "stale suppressor not advanced on a delivered absorb"
+  # The absorb repeats every poll of the same stale hash, so the line is written
+  # once per distinct hash: this case polled twice with a static pane, and a
+  # second line would mean the decision is being re-announced every round.
+  relog_lines=$(grep -c 'delivery already recorded' "$state/.watch-triage.log" 2>/dev/null || echo 0)
+  [ "$relog_lines" -eq 1 ] || fail "the delivery absorb wrote $relog_lines triage line(s) across two rounds of one hash (expected 1)"
   pass "a lane whose delivery is already recorded is absorbed, never wedge-timed"
 }
 
