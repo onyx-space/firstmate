@@ -1,0 +1,126 @@
+# spline-to-step check summary
+
+FreeCAD 1.1.3.  'measured' is read off the built solid and 'computed' is the
+closed-form involute relation.  A pin dimension is compared at the table's own
+space width values, because a table's nominal space width already carries its
+tolerance band.
+
+## P1_neixinglun  (internal, 32 teeth, module 1.031250, pressure angle 45.0000 deg, flat root)
+
+- note: drive conflict: module 1 implies pitch diameter 32.000000, the table states 33.000000; the pitch diameter drives the geometry and the module is treated as nominal
+- note: space width basis is the basic (zero-backlash) value 1.619884
+- note: pin dimension of record is the computed value; the tabulated 27.778000 is compared against it
+
+| item | table | computed | difference | note |
+|---|---|---|---|---|
+| major diameter (midpoint of the table's limits) | 33.452500 | 33.452500 | +0.000000 | measured |
+| minor diameter (midpoint of the table's limits) | 32.296000 | 32.296000 | -0.000000 | measured |
+| space width in force (basis: basic) | 1.619884 | 1.619884 | +0.000001 | measured, arc at the pitch circle |
+| form diameter (T.I.F.) | 33.140000 | 33.140000 | -0.000000 | measured; the involute is truncated there and a root transition runs out to the root circle |
+| space width min_act | 1.611000 | 1.619884 | +0.008884 | measured, arc |
+| space width max_eff | 1.668000 | 1.619884 | -0.048116 | measured, arc |
+| pin dimension (space width in force) | 27.778000 | 27.759842 | -0.018158 | computed |
+| pin dimension (space width = min_act 1.611) | 27.778000 | 27.750111 | -0.027889 | computed |
+| pin dimension (space width = max_eff 1.668) | 27.778000 | 27.812469 | +0.034469 | computed |
+| pin dimension inside the band implied by the table's space widths | 27.778000 | 27.778000 | +0.000000 | band 27.750111 .. 27.812469 |
+| pin dimension of record | - | 27.759842 | - | computed from the geometry in force |
+
+| geometry | value |
+|---|---|
+| minor_diameter | 32.296000 |
+| major_diameter | 33.452500 |
+| involute_form_diameter | 33.140000 |
+| space_width_at_pitch_arc | 1.619884 |
+| space_width_at_pitch_chord | 1.619234 |
+| pin_dim | 27.759842 |
+| pin_tangency_residual | 1.400001 |
+| teeth_in_section | 32 |
+| volume_mm3 | 6684.496458 |
+| flank_vs_involute_median_dev_rad | 1.926e-08 |
+
+STEP round trip: re-imported volume 6684.496 mm3, minor 32.296000, major 33.452500
+
+## P2_maxact  (internal, 18 teeth, module 1.587500, pressure angle 30.0000 deg, round root)
+
+- note: module 1.5875 and pitch diameter 28.575000 agree; both are consistent
+- note: a round root ends the involute with its fillet, so form_diameter is compared against that fillet rather than truncating the flank; root_fillet_radius is what moves the measured form diameter
+- note: space width basis is max_act = 2.563000, so the geometry is built +0.069361 mm wider than the basic value
+- note: pin dimension of record is the computed value; the tabulated 23.832000, 23.761000 is compared against it
+- note: missing_teeth=1: removed consecutively from the tooth a half pitch beyond the tooth space nearest the +X axis, the same position on every run; the table carries no datum for it
+
+| item | table | computed | difference | note |
+|---|---|---|---|---|
+| major diameter (midpoint of the table's limits) | 30.175000 | 30.175000 | +0.000000 | measured |
+| minor diameter (midpoint of the table's limits) | 27.065000 | 27.065000 | -0.000000 | measured |
+| space width in force (basis: max_act) | 2.563000 | 2.563002 | +0.000002 | measured, arc at the pitch circle |
+| form diameter (T.I.F.) | 29.834000 | 30.170207 | +0.336207 | measured; a round root ends the involute with its fillet |
+| space width min_act | 2.532000 | 2.563002 | +0.031002 | measured, arc |
+| space width max_act | 2.563000 | 2.563002 | +0.000002 | measured, arc |
+| space width min_eff | 2.494000 | 2.563002 | +0.069002 | measured, arc |
+| pin dimension (space width in force) | 23.832000 | 23.672659 | -0.159341 | computed |
+| pin dimension (space width in force) | 23.761000 | 23.672659 | -0.088341 | computed |
+| pin dimension (space width = min_act 2.532) | 23.832000 | 23.760809 | -0.071191 | computed |
+| pin dimension (space width = min_act 2.532) | 23.761000 | 23.760809 | -0.000191 | computed |
+| pin dimension (space width = max_act 2.563) | 23.832000 | 23.830809 | -0.001191 | computed |
+| pin dimension (space width = max_act 2.563) | 23.761000 | 23.830809 | +0.069809 | computed |
+| pin dimension (space width = min_eff 2.494) | 23.832000 | 23.673496 | -0.158504 | computed |
+| pin dimension (space width = min_eff 2.494) | 23.761000 | 23.673496 | -0.087504 | computed |
+| pin dimension inside the band implied by the table's space widths | 23.832000 | 23.832000 | +0.000000 | band 23.673496 .. 23.830809 |
+| pin dimension inside the band implied by the table's space widths | 23.761000 | 23.761000 | +0.000000 | band 23.673496 .. 23.830809 |
+| pin dimension of record | - | 23.672659 | - | computed from the geometry in force |
+
+| geometry | value |
+|---|---|
+| minor_diameter | 27.065000 |
+| major_diameter | 30.175000 |
+| involute_form_diameter | 30.170207 |
+| space_width_at_pitch_arc | 2.563002 |
+| space_width_at_pitch_chord | 2.559567 |
+| pin_dim | 23.672659 |
+| pin_tangency_residual | 1.530035 |
+| teeth_in_section | 17 |
+| volume_mm3 | 4854.356261 |
+| flank_vs_involute_median_dev_rad | 2.427e-03 |
+
+STEP round trip: re-imported volume 4854.356 mm3, minor 27.065000, major 30.175000
+
+## P2_outofband  (internal, 18 teeth, module 1.587500, pressure angle 30.0000 deg, round root)
+
+- note: module 1.5875 and pitch diameter 28.575000 agree; both are consistent
+- note: a round root ends the involute with its fillet, so form_diameter is compared against that fillet rather than truncating the flank; root_fillet_radius is what moves the measured form diameter
+- note: space width basis is the basic (zero-backlash) value 2.493639
+- note: the space width in force (2.493639) lies outside the table's own band 2.494000 .. 2.563000
+- note: pin dimension of record is the computed value; the tabulated 25.000000 is compared against it
+- note: missing_teeth=1: removed consecutively from the tooth a half pitch beyond the tooth space nearest the +X axis, the same position on every run; the table carries no datum for it
+
+| item | table | computed | difference | note |
+|---|---|---|---|---|
+| major diameter (midpoint of the table's limits) | 30.175000 | 30.175000 | +0.000000 | measured |
+| minor diameter (midpoint of the table's limits) | 27.065000 | 27.065000 | -0.000000 | measured |
+| space width in force (basis: basic) | 2.493639 | 2.493641 | +0.000002 | measured, arc at the pitch circle |
+| form diameter (T.I.F.) | 29.834000 | 29.722876 | -0.111124 | measured; a round root ends the involute with its fillet |
+| space width min_act | 2.532000 | 2.493641 | -0.038359 | measured, arc |
+| space width max_act | 2.563000 | 2.493641 | -0.069359 | measured, arc |
+| space width min_eff | 2.494000 | 2.493641 | -0.000359 | measured, arc |
+| pin dimension (space width in force) | 25.000000 | 23.672659 | -1.327341 | computed |
+| pin dimension (space width = min_act 2.532) | 25.000000 | 23.760809 | -1.239191 | computed |
+| pin dimension (space width = max_act 2.563) | 25.000000 | 23.830809 | -1.169191 | computed |
+| pin dimension (space width = min_eff 2.494) | 25.000000 | 23.673496 | -1.326504 | computed |
+| pin dimension inside the band implied by the table's space widths | 25.000000 | 25.000000 | +0.000000 | band 23.673496 .. 23.830809 |
+| pin dimension of record | - | 23.672659 | - | computed from the geometry in force |
+
+| geometry | value |
+|---|---|
+| minor_diameter | 27.065000 |
+| major_diameter | 30.175000 |
+| involute_form_diameter | 29.722876 |
+| space_width_at_pitch_arc | 2.493641 |
+| space_width_at_pitch_chord | 2.490477 |
+| pin_dim | 23.672659 |
+| pin_tangency_residual | 1.500001 |
+| teeth_in_section | 17 |
+| volume_mm3 | 4872.776563 |
+| flank_vs_involute_median_dev_rad | 6.615e-08 |
+
+STEP round trip: re-imported volume 4872.777 mm3, minor 27.065000, major 30.175000
+

@@ -1,0 +1,628 @@
+{
+  "freecad_version": "1.1.3",
+  "parts": {
+    "P1_neixinglun": {
+      "build": {
+        "clearance_factor": -0.7806060606060603,
+        "fillet_radius_mm": 0.0,
+        "head_factor": -0.6586666666666664,
+        "numpoints": 160,
+        "removed_tooth_centrelines_deg": [],
+        "uncut_volume_mm3": 6684.606261361057
+      },
+      "check": [
+        {
+          "computed": 33.452500000174055,
+          "difference": 1.7405454855179414e-10,
+          "item": "major diameter (midpoint of the table's limits)",
+          "note": "measured",
+          "table": 33.4525
+        },
+        {
+          "computed": 32.29599999998763,
+          "difference": -1.2370549029583344e-11,
+          "item": "minor diameter (midpoint of the table's limits)",
+          "note": "measured",
+          "table": 32.296
+        },
+        {
+          "computed": 1.6198842672662548,
+          "difference": 5.55259017653853e-07,
+          "item": "space width in force (basis: basic)",
+          "note": "measured, arc at the pitch circle",
+          "table": 1.6198837120072371
+        },
+        {
+          "computed": 33.139999800043626,
+          "difference": -1.9995637501324381e-07,
+          "item": "form diameter (T.I.F.)",
+          "note": "measured; the involute is truncated there and a root transition runs out to the root circle",
+          "table": 33.14
+        },
+        {
+          "computed": 1.6198842672662548,
+          "difference": 0.008884267266254797,
+          "item": "space width min_act",
+          "note": "measured, arc",
+          "table": 1.611
+        },
+        {
+          "computed": 1.6198842672662548,
+          "difference": -0.04811573273374514,
+          "item": "space width max_eff",
+          "note": "measured, arc",
+          "table": 1.668
+        },
+        {
+          "computed": 27.759841784452977,
+          "difference": -0.018158215547021683,
+          "item": "pin dimension (space width in force)",
+          "note": "computed",
+          "table": 27.778
+        },
+        {
+          "computed": 27.750111463992198,
+          "difference": -0.027888536007800724,
+          "item": "pin dimension (space width = min_act 1.611)",
+          "note": "computed",
+          "table": 27.778
+        },
+        {
+          "computed": 27.8124685642632,
+          "difference": 0.03446856426320011,
+          "item": "pin dimension (space width = max_eff 1.668)",
+          "note": "computed",
+          "table": 27.778
+        },
+        {
+          "computed": 27.778,
+          "difference": 0.0,
+          "item": "pin dimension against the band implied by the table's space widths",
+          "note": "band 27.750111 .. 27.812469; a zero difference is inside the band, any other is how far the tabulated value lies outside it",
+          "table": 27.778
+        },
+        {
+          "computed": 27.759841784452977,
+          "difference": null,
+          "item": "pin dimension of record",
+          "note": "computed from the geometry in force",
+          "table": null
+        }
+      ],
+      "measure": {
+        "expected_volume_uncut_mm3": 6684.606261361057,
+        "flank_vs_involute_max_dev_rad": 0.009398311280794484,
+        "flank_vs_involute_median_dev_rad": 1.8275580021542837e-08,
+        "involute_form_diameter": 33.139999800043626,
+        "major_diameter": 33.452500000174055,
+        "minor_diameter": 32.29599999998763,
+        "module_used": 1.03125,
+        "pin_Rc_closed_form": 15.279920892226489,
+        "pin_dim": 27.759841784452977,
+        "pin_tangency_residual": 1.4000005188329254,
+        "space_centreline_deg": 2.833945187310324e-09,
+        "space_width_at_pitch_arc": 1.6198842672662548,
+        "space_width_at_pitch_chord": 1.6192338073949781,
+        "space_width_basic": 1.6198837120072371,
+        "tag": "P1_neixinglun",
+        "teeth_in_section": 32,
+        "volume_mm3": 6684.606261361057,
+        "volume_removed_by_cut_mm3": 0.0
+      },
+      "spec": {
+        "face_width": 10.0,
+        "form_diameter": 33.14,
+        "grade": "6H",
+        "kind": "internal",
+        "major_diameter": [
+          33.44,
+          33.465
+        ],
+        "minor_diameter": [
+          32.216,
+          32.376
+        ],
+        "missing_teeth": 0,
+        "module": 1.03125,
+        "module_stated": 1.0,
+        "name": "P1_neixinglun",
+        "notes": [
+          "drive conflict: module 1 implies pitch diameter 32.000000, the table states 33.000000; the pitch diameter drives the geometry and the module is treated as nominal",
+          "space width basis is the basic (zero-backlash) value 1.619884",
+          "pin dimension of record is the computed value; the tabulated 27.778000 is compared against it"
+        ],
+        "outer_diameter": 44.0,
+        "over_pins": [
+          27.778
+        ],
+        "pin_diameter": 2.8,
+        "pin_dimension_basis": "computed",
+        "pitch_diameter": 33.0,
+        "pressure_angle_deg": 45.0,
+        "root_fillet_radius": 0.0,
+        "root_type": "flat",
+        "space_width": {
+          "max_act": null,
+          "max_eff": 1.668,
+          "min_act": 1.611,
+          "min_eff": null
+        },
+        "space_width_basis": "basic",
+        "space_width_target": 1.6198837120072371,
+        "standard": null,
+        "teeth": 32
+      },
+      "step": "P1_neixinglun.step",
+      "step_header": "ISO-10303-21;",
+      "step_roundtrip": {
+        "major_diameter": 33.45250000017434,
+        "minor_diameter": 32.29599999997321,
+        "volume_mm3": 6684.606261393455
+      }
+    },
+    "P1_neixinglun_mate": {
+      "build": {
+        "clearance_factor": -0.6586666666666664,
+        "fillet_radius_mm": 0.0,
+        "head_factor": -0.9321212121212118,
+        "numpoints": 160,
+        "removed_tooth_centrelines_deg": [],
+        "uncut_volume_mm3": 8446.058163575273
+      },
+      "check": [
+        {
+          "computed": 33.140000000172485,
+          "difference": 1.7248424910576432e-10,
+          "item": "major diameter (midpoint of the table's limits)",
+          "note": "measured",
+          "table": 33.14
+        },
+        {
+          "computed": 32.29599999998764,
+          "difference": -1.2356338174868142e-11,
+          "item": "minor diameter (midpoint of the table's limits)",
+          "note": "measured",
+          "table": 32.296
+        },
+        {
+          "computed": 1.6198837647093973,
+          "difference": 5.270216019148677e-08,
+          "item": "space width in force (basis: basic)",
+          "note": "measured, arc at the pitch circle",
+          "table": 1.6198837120072371
+        },
+        {
+          "computed": 1.6198837647093973,
+          "difference": 0.008883764709397335,
+          "item": "space width min_act",
+          "note": "measured, arc",
+          "table": 1.611
+        },
+        {
+          "computed": 1.6198837647093973,
+          "difference": -0.048116235290602605,
+          "item": "space width max_eff",
+          "note": "measured, arc",
+          "table": 1.668
+        },
+        {
+          "computed": 38.068433085958674,
+          "difference": null,
+          "item": "pin dimension of record",
+          "note": "computed from the geometry in force",
+          "table": null
+        }
+      ],
+      "measure": {
+        "expected_volume_uncut_mm3": 8446.058163575273,
+        "flank_vs_involute_max_dev_rad": 2.650994215813718e-10,
+        "flank_vs_involute_median_dev_rad": 1.6726187795912395e-10,
+        "involute_form_diameter": 32.29962279793189,
+        "major_diameter": 33.140000000172485,
+        "minor_diameter": 32.29599999998764,
+        "module_used": 1.03125,
+        "pin_Rc_closed_form": 17.63421654297934,
+        "pin_dim": 38.068433085958674,
+        "pin_tangency_residual": 1.4013110258417956,
+        "space_centreline_deg": 5.625000000000042,
+        "space_width_at_pitch_arc": 1.6198837647093973,
+        "space_width_at_pitch_chord": 1.6192333054434724,
+        "space_width_basic": 1.6198837120072371,
+        "tag": "P1_neixinglun_mate",
+        "teeth_in_section": 32,
+        "volume_mm3": 8446.058163575273,
+        "volume_removed_by_cut_mm3": 0.0
+      },
+      "spec": {
+        "face_width": 10.0,
+        "form_diameter": null,
+        "grade": null,
+        "kind": "external",
+        "major_diameter": [
+          33.14,
+          33.14
+        ],
+        "minor_diameter": [
+          32.296,
+          32.296
+        ],
+        "missing_teeth": 0,
+        "module": 1.03125,
+        "module_stated": 1.0,
+        "name": "P1_neixinglun_mate",
+        "notes": [
+          "drive conflict: module 1 implies pitch diameter 32.000000, the table states 33.000000; the pitch diameter drives the geometry and the module is treated as nominal",
+          "space width basis is the basic (zero-backlash) value 1.619884"
+        ],
+        "outer_diameter": null,
+        "over_pins": [],
+        "pin_diameter": 2.8,
+        "pin_dimension_basis": "computed",
+        "pitch_diameter": 33.0,
+        "pressure_angle_deg": 45.0,
+        "root_fillet_radius": 0.0,
+        "root_type": "flat",
+        "space_width": {
+          "max_act": null,
+          "max_eff": 1.668,
+          "min_act": 1.611,
+          "min_eff": null
+        },
+        "space_width_basis": "basic",
+        "space_width_target": 1.6198837120072371,
+        "standard": null,
+        "teeth": 32
+      },
+      "step": "P1_neixinglun_mate.step",
+      "step_header": "ISO-10303-21;",
+      "step_roundtrip": {
+        "major_diameter": 33.14000000017291,
+        "minor_diameter": 32.295999999968416,
+        "volume_mm3": 8446.058163593418
+      }
+    },
+    "P2_huataoguan": {
+      "build": {
+        "clearance_factor": -0.49606299212598376,
+        "fillet_radius_mm": 0.555625,
+        "head_factor": -0.5244094488188974,
+        "numpoints": 160,
+        "removed_tooth_centrelines_deg": [
+          29.999999999999833
+        ],
+        "uncut_volume_mm3": 4912.765914564506
+      },
+      "check": [
+        {
+          "computed": 30.175000124463594,
+          "difference": 1.2446359320961164e-07,
+          "item": "major diameter (midpoint of the table's limits)",
+          "note": "measured",
+          "table": 30.175
+        },
+        {
+          "computed": 27.064999999052688,
+          "difference": -9.473097861700808e-10,
+          "item": "minor diameter (midpoint of the table's limits)",
+          "note": "measured",
+          "table": 27.064999999999998
+        },
+        {
+          "computed": 2.4936409011866885,
+          "difference": 1.7323997902884969e-06,
+          "item": "space width in force (basis: basic)",
+          "note": "measured, arc at the pitch circle",
+          "table": 2.493639168786898
+        },
+        {
+          "computed": 29.72287615589034,
+          "difference": -0.11112384410965959,
+          "item": "form diameter (T.I.F.)",
+          "note": "measured; a round root ends the involute with its fillet",
+          "table": 29.834
+        },
+        {
+          "computed": 2.4936409011866885,
+          "difference": -0.038359098813311565,
+          "item": "space width min_act",
+          "note": "measured, arc",
+          "table": 2.532
+        },
+        {
+          "computed": 2.4936409011866885,
+          "difference": -0.0693590988133117,
+          "item": "space width max_act",
+          "note": "measured, arc",
+          "table": 2.563
+        },
+        {
+          "computed": 2.4936409011866885,
+          "difference": -0.0003590988133117534,
+          "item": "space width min_eff",
+          "note": "measured, arc",
+          "table": 2.494
+        },
+        {
+          "computed": 23.672658934452127,
+          "difference": -0.1593410655478742,
+          "item": "pin dimension (space width in force)",
+          "note": "computed",
+          "table": 23.832
+        },
+        {
+          "computed": 23.672658934452127,
+          "difference": -0.08834106554787269,
+          "item": "pin dimension (space width in force)",
+          "note": "computed",
+          "table": 23.761
+        },
+        {
+          "computed": 23.760809268064516,
+          "difference": -0.07119073193548431,
+          "item": "pin dimension (space width = min_act 2.532)",
+          "note": "computed",
+          "table": 23.832
+        },
+        {
+          "computed": 23.760809268064516,
+          "difference": -0.00019073193548280187,
+          "item": "pin dimension (space width = min_act 2.532)",
+          "note": "computed",
+          "table": 23.761
+        },
+        {
+          "computed": 23.83080921605423,
+          "difference": -0.00119078394576988,
+          "item": "pin dimension (space width = max_act 2.563)",
+          "note": "computed",
+          "table": 23.832
+        },
+        {
+          "computed": 23.83080921605423,
+          "difference": 0.06980921605423163,
+          "item": "pin dimension (space width = max_act 2.563)",
+          "note": "computed",
+          "table": 23.761
+        },
+        {
+          "computed": 23.673496404787258,
+          "difference": -0.1585035952127427,
+          "item": "pin dimension (space width = min_eff 2.494)",
+          "note": "computed",
+          "table": 23.832
+        },
+        {
+          "computed": 23.673496404787258,
+          "difference": -0.0875035952127412,
+          "item": "pin dimension (space width = min_eff 2.494)",
+          "note": "computed",
+          "table": 23.761
+        },
+        {
+          "computed": 23.83080921605423,
+          "difference": -0.00119078394576988,
+          "item": "pin dimension against the band implied by the table's space widths",
+          "note": "band 23.673496 .. 23.830809; a zero difference is inside the band, any other is how far the tabulated value lies outside it",
+          "table": 23.832
+        },
+        {
+          "computed": 23.761,
+          "difference": 0.0,
+          "item": "pin dimension against the band implied by the table's space widths",
+          "note": "band 23.673496 .. 23.830809; a zero difference is inside the band, any other is how far the tabulated value lies outside it",
+          "table": 23.761
+        },
+        {
+          "computed": 23.672658934452127,
+          "difference": null,
+          "item": "pin dimension of record",
+          "note": "computed from the geometry in force",
+          "table": null
+        }
+      ],
+      "measure": {
+        "expected_volume_uncut_mm3": 4912.765914564506,
+        "flank_vs_involute_max_dev_rad": 0.020081412911899334,
+        "flank_vs_involute_median_dev_rad": 6.615413072896814e-08,
+        "involute_form_diameter": 29.72287615589034,
+        "major_diameter": 30.175000124463594,
+        "minor_diameter": 27.064999999052688,
+        "module_used": 1.5875,
+        "pin_Rc_closed_form": 13.336329467226063,
+        "pin_dim": 23.672658934452127,
+        "pin_tangency_residual": 1.50000102317015,
+        "space_centreline_deg": 59.99999999999983,
+        "space_width_at_pitch_arc": 2.4936409011866885,
+        "space_width_at_pitch_chord": 2.4904770748218135,
+        "space_width_basic": 2.493639168786898,
+        "tag": "P2_huataoguan",
+        "teeth_in_section": 17,
+        "volume_mm3": 4872.776562550551,
+        "volume_removed_by_cut_mm3": 39.989352013954885
+      },
+      "spec": {
+        "face_width": 10.0,
+        "form_diameter": 29.834,
+        "grade": "5",
+        "kind": "internal",
+        "major_diameter": [
+          30.16,
+          30.19
+        ],
+        "minor_diameter": [
+          27.0,
+          27.13
+        ],
+        "missing_teeth": 1,
+        "module": 1.5875,
+        "module_stated": 1.5875,
+        "name": "P2_huataoguan",
+        "notes": [
+          "module 1.5875 and pitch diameter 28.575000 agree; both are consistent",
+          "a round root ends the involute with its fillet, so form_diameter is compared against that fillet rather than truncating the flank; root_fillet_radius is what moves the measured form diameter",
+          "space width basis is the basic (zero-backlash) value 2.493639",
+          "the space width in force (2.493639) lies outside the table's own band 2.494000 .. 2.563000",
+          "pin dimension of record is the computed value; the tabulated 23.832000, 23.761000 is compared against it",
+          "missing_teeth=1: removed consecutively from the tooth a half pitch beyond the tooth space nearest the +X axis, the same position on every run; the table carries no datum for it"
+        ],
+        "outer_diameter": 38.0,
+        "over_pins": [
+          23.832,
+          23.761
+        ],
+        "pin_diameter": 3.0,
+        "pin_dimension_basis": "computed",
+        "pitch_diameter": 28.575,
+        "pressure_angle_deg": 30.0,
+        "root_fillet_radius": 0.555625,
+        "root_type": "round",
+        "space_width": {
+          "max_act": 2.563,
+          "max_eff": null,
+          "min_act": 2.532,
+          "min_eff": 2.494
+        },
+        "space_width_basis": "basic",
+        "space_width_target": 2.493639168786898,
+        "standard": "ANSI B92.1b",
+        "teeth": 18
+      },
+      "step": "P2_huataoguan.step",
+      "step_header": "ISO-10303-21;",
+      "step_roundtrip": {
+        "major_diameter": 30.175000124463832,
+        "minor_diameter": 27.064999999039763,
+        "volume_mm3": 4872.776562567982
+      }
+    },
+    "P2_huataoguan_mate": {
+      "build": {
+        "clearance_factor": -0.5244094488188985,
+        "fillet_radius_mm": 0.555625,
+        "head_factor": -0.6034645669291337,
+        "numpoints": 160,
+        "removed_tooth_centrelines_deg": [],
+        "uncut_volume_mm3": 6388.562852158807
+      },
+      "check": [
+        {
+          "computed": 29.834000000920312,
+          "difference": 9.203127149248758e-10,
+          "item": "major diameter (midpoint of the table's limits)",
+          "note": "measured",
+          "table": 29.834
+        },
+        {
+          "computed": 27.06499986307255,
+          "difference": -1.36927450711255e-07,
+          "item": "minor diameter (midpoint of the table's limits)",
+          "note": "measured",
+          "table": 27.065
+        },
+        {
+          "computed": 2.4936393154372216,
+          "difference": 1.466503234404115e-07,
+          "item": "space width in force (basis: basic)",
+          "note": "measured, arc at the pitch circle",
+          "table": 2.493639168786898
+        },
+        {
+          "computed": 2.4936393154372216,
+          "difference": -0.03836068456277841,
+          "item": "space width min_act",
+          "note": "measured, arc",
+          "table": 2.532
+        },
+        {
+          "computed": 2.4936393154372216,
+          "difference": -0.06936068456277855,
+          "item": "space width max_act",
+          "note": "measured, arc",
+          "table": 2.563
+        },
+        {
+          "computed": 2.4936393154372216,
+          "difference": -0.0003606845627786015,
+          "item": "space width min_eff",
+          "note": "measured, arc",
+          "table": 2.494
+        },
+        {
+          "computed": 33.139668301596856,
+          "difference": null,
+          "item": "pin dimension of record",
+          "note": "computed from the geometry in force",
+          "table": null
+        }
+      ],
+      "measure": {
+        "expected_volume_uncut_mm3": 6388.562852158807,
+        "flank_vs_involute_max_dev_rad": 0.02481432003950737,
+        "flank_vs_involute_median_dev_rad": 2.166217510923829e-09,
+        "involute_form_diameter": 27.60048073454396,
+        "major_diameter": 29.834000000920312,
+        "minor_diameter": 27.06499986307255,
+        "module_used": 1.5875,
+        "pin_Rc_closed_form": 15.069834150798428,
+        "pin_dim": 33.139668301596856,
+        "pin_tangency_residual": 1.5000002898022198,
+        "space_centreline_deg": 10.000000000008148,
+        "space_width_at_pitch_arc": 2.4936393154372216,
+        "space_width_at_pitch_chord": 2.4904754951066064,
+        "space_width_basic": 2.493639168786898,
+        "tag": "P2_huataoguan_mate",
+        "teeth_in_section": 18,
+        "volume_mm3": 6388.562852158807,
+        "volume_removed_by_cut_mm3": 0.0
+      },
+      "spec": {
+        "face_width": 10.0,
+        "form_diameter": null,
+        "grade": "5",
+        "kind": "external",
+        "major_diameter": [
+          29.834,
+          29.834
+        ],
+        "minor_diameter": [
+          27.065,
+          27.065
+        ],
+        "missing_teeth": 0,
+        "module": 1.5875,
+        "module_stated": 1.5875,
+        "name": "P2_huataoguan_mate",
+        "notes": [
+          "module 1.5875 and pitch diameter 28.575000 agree; both are consistent",
+          "space width basis is the basic (zero-backlash) value 2.493639",
+          "the space width in force (2.493639) lies outside the table's own band 2.494000 .. 2.563000"
+        ],
+        "outer_diameter": null,
+        "over_pins": [],
+        "pin_diameter": 3.0,
+        "pin_dimension_basis": "computed",
+        "pitch_diameter": 28.575,
+        "pressure_angle_deg": 30.0,
+        "root_fillet_radius": 0.555625,
+        "root_type": "round",
+        "space_width": {
+          "max_act": 2.563,
+          "max_eff": null,
+          "min_act": 2.532,
+          "min_eff": 2.494
+        },
+        "space_width_basis": "basic",
+        "space_width_target": 2.493639168786898,
+        "standard": "ANSI B92.1b",
+        "teeth": 18
+      },
+      "step": "P2_huataoguan_mate.step",
+      "step_header": "ISO-10303-21;",
+      "step_roundtrip": {
+        "major_diameter": 29.834000000920458,
+        "minor_diameter": 27.06499986307244,
+        "volume_mm3": 6388.562852156896
+      }
+    }
+  }
+}

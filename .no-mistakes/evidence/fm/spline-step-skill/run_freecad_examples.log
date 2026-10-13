@@ -1,0 +1,88 @@
+=== P1_neixinglun : internal spline, 32 teeth
+    note: drive conflict: module 1 implies pitch diameter 32.000000, the table states 33.000000; the pitch diameter drives the geometry and the module is treated as nominal
+    note: space width basis is the basic (zero-backlash) value 1.619884
+    note: pin dimension of record is the computed value; the tabulated 27.778000 is compared against it
+FreeCAD 1.1.3, Libs: 1.1.3R20260725 (Git shallow)
+(C) 2001-2026 FreeCAD contributors
+FreeCAD is free and open-source software licensed under the terms of LGPL2+ license.
+
+Recompute......
+						(100 %)									Recompute......
+						(100 %)									Recompute......
+						(100 %)									
+*******************************************************************
+******        Statistics on Transfer (Write)                 ******
+
+*******************************************************************
+******        Transfer Mode = 0  I.E.  As Is       ******
+******        Transferring Shape, ShapeType = 0                      ******
+** WorkSession : Sending all data
+ Step File Name : C:\Users\Onyx\AppData\Local\Temp\spline-to-step\out\P1_neixinglun.step(29071 ents)  Write  Done
+    module=1.031250  minor=32.296000  major=33.452500  fillet=0.0000 mm
+    space@PCD=1.619884  form=33.140000  pin=27.759842  teeth=32
+    step round trip: volume 6684.606 mm3 (solid 6684.606 mm3)
+    wrote C:\Users\Onyx\AppData\Local\Temp\spline-to-step\out\P1_neixinglun.step
+=== P1_neixinglun_mate : external spline, 32 teeth
+    note: drive conflict: module 1 implies pitch diameter 32.000000, the table states 33.000000; the pitch diameter drives the geometry and the module is treated as nominal
+    note: space width basis is the basic (zero-backlash) value 1.619884
+Recompute......
+						(100 %)									Recompute......
+						(100 %)									Recompute......
+						(100 %)									
+*******************************************************************
+******        Statistics on Transfer (Write)                 ******
+
+*******************************************************************
+******        Transfer Mode = 0  I.E.  As Is       ******
+******        Transferring Shape, ShapeType = 2                      ******
+** WorkSession : Sending all data
+ Step File Name : C:\Users\Onyx\AppData\Local\Temp\spline-to-step\out\P1_neixinglun_mate.step(35046 ents)  Write  Done
+    module=1.031250  minor=32.296000  major=33.140000  fillet=0.0000 mm
+    space@PCD=1.619884  form=32.299623  pin=38.068433  teeth=32
+    step round trip: volume 8446.058 mm3 (solid 8446.058 mm3)
+    wrote C:\Users\Onyx\AppData\Local\Temp\spline-to-step\out\P1_neixinglun_mate.step
+=== P2_huataoguan : internal spline, 18 teeth
+    note: module 1.5875 and pitch diameter 28.575000 agree; both are consistent
+    note: a round root ends the involute with its fillet, so form_diameter is compared against that fillet rather than truncating the flank; root_fillet_radius is what moves the measured form diameter
+    note: space width basis is the basic (zero-backlash) value 2.493639
+    note: the space width in force (2.493639) lies outside the table's own band 2.494000 .. 2.563000
+    note: pin dimension of record is the computed value; the tabulated 23.832000, 23.761000 is compared against it
+    note: missing_teeth=1: removed consecutively from the tooth a half pitch beyond the tooth space nearest the +X axis, the same position on every run; the table carries no datum for it
+Recompute......
+						(100 %)									Recompute......
+						(100 %)									Recompute......
+						(100 %)									
+*******************************************************************
+******        Statistics on Transfer (Write)                 ******
+
+*******************************************************************
+******        Transfer Mode = 0  I.E.  As Is       ******
+******        Transferring Shape, ShapeType = 0                      ******
+** WorkSession : Sending all data
+ Step File Name : C:\Users\Onyx\AppData\Local\Temp\spline-to-step\out\P2_huataoguan.step(23204 ents)  Write  Done
+    module=1.587500  minor=27.065000  major=30.175000  fillet=0.5556 mm
+    space@PCD=2.493641  form=29.722876  pin=23.672659  teeth=17
+    step round trip: volume 4872.777 mm3 (solid 4872.777 mm3)
+    wrote C:\Users\Onyx\AppData\Local\Temp\spline-to-step\out\P2_huataoguan.step
+=== P2_huataoguan_mate : external spline, 18 teeth
+    note: module 1.5875 and pitch diameter 28.575000 agree; both are consistent
+    note: space width basis is the basic (zero-backlash) value 2.493639
+    note: the space width in force (2.493639) lies outside the table's own band 2.494000 .. 2.563000
+Recompute......
+						(100 %)									Recompute......
+						(100 %)									Recompute......
+						(100 %)									
+*******************************************************************
+******        Statistics on Transfer (Write)                 ******
+
+*******************************************************************
+******        Transfer Mode = 0  I.E.  As Is       ******
+******        Transferring Shape, ShapeType = 2                      ******
+** WorkSession : Sending all data
+ Step File Name : C:\Users\Onyx\AppData\Local\Temp\spline-to-step\out\P2_huataoguan_mate.step(20990 ents)  Write  Done
+    module=1.587500  minor=27.065000  major=29.834000  fillet=0.5556 mm
+    space@PCD=2.493639  form=27.600481  pin=33.139668  teeth=18
+    step round trip: volume 6388.563 mm3 (solid 6388.563 mm3)
+    wrote C:\Users\Onyx\AppData\Local\Temp\spline-to-step\out\P2_huataoguan_mate.step
+wrote check.json and check.txt
+run_freecad.sh: freecadcmd exit=0; artifacts copied to /tmp/spline-out
