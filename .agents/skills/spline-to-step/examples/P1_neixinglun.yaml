@@ -1,0 +1,37 @@
+# Part 1 of the drawing pair: 主减速端 内星轮 (internal spline).
+#
+# This is the table whose printed "MODULE 1.0" disagrees with everything else it
+# prints.  Driving the geometry from the pitch diameter 33.000 over 32 teeth gives
+# module 1.03125, base circle 23.3345 (the table says 23.335) and a pitch-circle
+# space width of 1.61988 (the table's own band is 1.611..1.668).  Driving it from
+# the printed module instead gives base circle 22.627 and space width 1.57080,
+# which contradicts the table on both counts.  Both fields are given here on
+# purpose: the check summary reports the conflict rather than hiding it.
+#
+# space_width_basis: basic     the captain's D1 - zero-backlash nominal geometry.
+# pin_dimension_basis: computed the captain's D6 - the computed 27.759843 is the
+#                              value of record, and the table's single 27.778 is
+#                              compared against it.
+# form_diameter: 33.140        the captain's D3 - the involute stops at the T.I.F.
+#                              and a root transition runs out to the major diameter.
+name: P1_neixinglun
+kind: internal
+teeth: 32
+module: 1.0
+pitch_diameter: 33.000
+pressure_angle_deg: 45.0
+root_type: flat
+major_diameter: [33.440, 33.465]
+minor_diameter: [32.216, 32.376]
+form_diameter: 33.140
+space_width:
+  min_act: 1.611
+  max_eff: 1.668
+space_width_basis: basic
+pin_diameter: 2.800
+over_pins: 27.778
+pin_dimension_basis: computed
+missing_teeth: 0
+face_width: 10.0
+outer_diameter: 44.0
+grade: 6H

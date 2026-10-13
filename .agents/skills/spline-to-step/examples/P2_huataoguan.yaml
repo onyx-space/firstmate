@@ -1,0 +1,37 @@
+# Part 2 of the drawing pair: 变速器端 花键套管 (internal spline, ANSI B92.1b).
+#
+# The table says "18(缺一齿)" - eighteen tooth positions with one tooth missing, so
+# the model keeps 17.  It prints a two-pin dimension as a pair (MAX ACT / MIN ACT),
+# which is what the check summary reproduces: substituting the table's own 2.563 and
+# 2.532 space widths into the pin relation lands on 23.830809 and 23.760809, within
+# 2 um of the printed 23.832 and 23.761.
+#
+# space_width_basis: basic      the captain's D1.
+# root_fillet_radius: 0.555625  the captain's D4 - 0.35 * module, overridable.
+# pin_dimension_basis: computed the captain's D6.
+# The one missing tooth is removed at the position a half pitch beyond the tooth
+# space nearest the +X axis, which is the same place on every run.
+name: P2_huataoguan
+kind: internal
+teeth: 18
+module: 1.5875
+pitch_diameter: 28.575
+pressure_angle_deg: 30.0
+root_type: round
+root_fillet_radius: 0.555625
+major_diameter: [30.19, 30.16]
+minor_diameter: [27.13, 27.00]
+form_diameter: 29.834
+space_width:
+  min_act: 2.532
+  max_act: 2.563
+  min_eff: 2.494
+space_width_basis: basic
+pin_diameter: 3.0
+over_pins: [23.832, 23.761]
+pin_dimension_basis: computed
+missing_teeth: 1
+face_width: 10.0
+outer_diameter: 38.0
+standard: ANSI B92.1b
+grade: "5"

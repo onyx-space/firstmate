@@ -1,0 +1,30 @@
+# The mating external spline shaft for P1_neixinglun (the captain's D5).
+#
+# Diameters, on the basic (zero-clearance) basis, from the internal part's own
+# limiting diameters:
+#   tip   = the internal's form diameter 33.140, because that is exactly the limit
+#           the mating tip may not cross (past it the internal flank is no longer
+#           an involute);
+#   root  = the internal's minor diameter 32.296, so the shaft root clears the
+#           internal tooth tips at zero clearance.
+# Teeth, pitch, pressure angle, and root type follow the internal part.
+# No two-pin value is carried over: the drawing has none for a shaft, and an
+# external spline's two-pin dimension is measured differently from an internal
+# one.  pin_diameter is given so the computed value is still reported.
+name: P1_neixinglun_mate
+kind: external
+teeth: 32
+module: 1.0
+pitch_diameter: 33.000
+pressure_angle_deg: 45.0
+root_type: flat
+major_diameter: 33.140
+minor_diameter: 32.296
+space_width:
+  min_act: 1.611
+  max_eff: 1.668
+space_width_basis: basic
+pin_diameter: 2.800
+pin_dimension_basis: computed
+missing_teeth: 0
+face_width: 10.0

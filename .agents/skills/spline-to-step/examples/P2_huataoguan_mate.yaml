@@ -1,0 +1,41 @@
+# The mating external spline shaft for P2_huataoguan (the captain's D5).
+#
+# Diameters, on the basic (zero-clearance) basis, from the internal part's own
+# limiting diameters:
+#   tip   = the internal's form diameter 29.834, because that is exactly the limit
+#           the mating tip may not cross;
+#   root  = the internal's minor diameter 27.065, so the shaft root clears the
+#           internal tooth tips at zero clearance.
+#
+# missing_teeth is 0 on purpose, and this is the pairing decision the captain asked
+# to have stated: the sleeve's absent tooth removes material, so it only widens the
+# void by one pitch.  The shaft keeps all eighteen teeth and the extra void becomes
+# clearance at that position; nothing about the mesh requires the shaft to lose a
+# tooth.  Because FCGear centres the shaft's first tooth and the sleeve's first
+# space on +X, the shaft's tooth k already sits in the sleeve's space k, and the
+# sleeve's absent tooth is the one a half pitch beyond the space nearest +X, so the
+# two parts are in phase by construction.
+#
+# No two-pin value is carried over: the drawing has none for a shaft, and an
+# external spline's two-pin dimension is measured differently from an internal one.
+name: P2_huataoguan_mate
+kind: external
+teeth: 18
+module: 1.5875
+pitch_diameter: 28.575
+pressure_angle_deg: 30.0
+root_type: round
+root_fillet_radius: 0.555625
+major_diameter: 29.834
+minor_diameter: 27.065
+space_width:
+  min_act: 2.532
+  max_act: 2.563
+  min_eff: 2.494
+space_width_basis: basic
+pin_diameter: 3.0
+pin_dimension_basis: computed
+missing_teeth: 0
+face_width: 10.0
+standard: ANSI B92.1b
+grade: "5"
