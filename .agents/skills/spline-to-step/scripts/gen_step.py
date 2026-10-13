@@ -224,9 +224,10 @@ def _cut_at_radius(points, form_radius, tip_side):
     kept = []
     previous = None
     for point in points:
-        if tip_side(_radius(point)):
-            if previous is not None and not tip_side(_radius(previous)):
-                kept.append(_crossing(previous, point, form_radius))
+        on_tip = tip_side(_radius(point))
+        if previous is not None and on_tip != tip_side(_radius(previous)):
+            kept.append(_crossing(previous, point, form_radius))
+        if on_tip:
             kept.append(point)
         previous = point
     if not kept:
@@ -580,7 +581,7 @@ def measure(tag, solid, spec, build_info):
     pin_residual = None
     if pin_radius:
         pin_closed = sm.pin_measurement(
-            z, module, alpha, 0.5 * math.pi * module, spec["pin_diameter"], spec["kind"])
+            z, module, alpha, spec["space_width_target"], spec["pin_diameter"], spec["kind"])
         selected = []
         for x, y in points:
             xr, yr = x * ct - y * st, x * st + y * ct
@@ -656,10 +657,13 @@ def comparison(spec, measured):
                             table_pin, pin_at(value), "computed"))
     band = [sm.pin_measurement(z, module, alpha, e, pin_dia, spec["kind"])["M"]
             for e in [v for _, v in sc.space_width_limits(spec)] or [spec["space_width_target"]]]
+    band_lo, band_hi = min(band), max(band)
     for table_pin in spec["over_pins"]:
-        rows.append(row("pin dimension inside the band implied by the table's space widths",
-                        table_pin, table_pin,
-                        "band %.6f .. %.6f" % (min(band), max(band))))
+        nearest = min(max(table_pin, band_lo), band_hi)
+        rows.append(row("pin dimension against the band implied by the table's space widths",
+                        table_pin, nearest,
+                        "band %.6f .. %.6f; a zero difference is inside the band, any other is "
+                        "how far the tabulated value lies outside it" % (band_lo, band_hi)))
     if spec["pin_dimension_basis"] == "drawing":
         rows.append(row("pin dimension of record", None, spec["over_pins"][0],
                         "the table's own value; it lists %s"

@@ -179,6 +179,9 @@ diameters that mate.
 Both chords are replaced with arcs, so the major and minor diameters are true cylinders.
 When the table names a form diameter, the involute stops on it and a straight radial root
 transition carries the flank out to the root circle.
+On an internal spline the root circle is the major diameter and the tip circle is the minor
+diameter, so there the transition runs from the form diameter out to the major diameter; on
+an external spline the root circle is the minor diameter.
 A round root is filleted at both root corners.
 An internal spline is the outer cylinder minus the profile prism; an external spline is
 the profile prism itself.
