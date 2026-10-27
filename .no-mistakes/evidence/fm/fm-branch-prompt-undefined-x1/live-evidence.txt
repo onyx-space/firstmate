@@ -1,0 +1,100 @@
+Live drive: real `pi` (1.3.0) in RPC mode, firstmate extension code loaded with -e,
+programmatic (custom-message) runs triggered the way the branch delivers its hidden request.
+====================================================================================================
+
+Why this drives the product: pi.sendMessage(..., {triggerTurn:true}) while idle makes Pi start a
+run whose before_agent_start carries messageType=custom and NO prompt field. Pi catches handler
+throws and reports them as `extension_error` events (console.error in print mode). Each block
+below is one real pi process; the driver extension records the event shape Pi actually raised.
+
+----------------------------------------------------------------------------------------------------
+01 PRE-FIX branch supervision (base 452749b) + programmatic run
+----------------------------------------------------------------------------------------------------
+extension under test: /tmp/fm-live-1/base/.pi/extensions/fm-branch-supervision.ts
+invocation: pi --mode rpc -ne --no-tools --no-session -e <driver>.ts -e <extension>
+
+driver observation (what Pi actually raised):
+  driver: loaded
+  driver: wrote fleet lock pid=2473489
+  driver: sending promptless custom run
+  driver: before_agent_start messageType=custom hasPrompt=false keys=messageType,message,type,systemPromptOptions,systemPrompt
+
+events=298 settled=True end=True extension_errors=1
+  !! before_agent_start: Cannot read properties of undefined (reading 'trim')
+  assistant reply: '这个会话里我只挂了一个工具 `web_search`，没有 shell、文件读取或 git 访问，所以分支里的内容我读不到——看不到「hidden programmatic request」指的是什么。\n\n要我做的话，请把那条请求贴出来，或者说明它在哪里（仓库路径、文件、提交），以及希望我用它做什么。'
+
+----------------------------------------------------------------------------------------------------
+02 FIXED branch supervision (target 794d6cb) + programmatic run
+----------------------------------------------------------------------------------------------------
+extension under test: /home/onyx/.no-mistakes/worktrees/e7f71fdfbe8f/01M5XPQW1KE16NRH4EPDGJ9TCM/.pi/extensions/fm-branch-supervision.ts
+invocation: pi --mode rpc -ne --no-tools --no-session -e <driver>.ts -e <extension>
+
+driver observation (what Pi actually raised):
+  driver: loaded
+  driver: wrote fleet lock pid=2465462
+  driver: sending promptless custom run
+  driver: before_agent_start messageType=custom hasPrompt=false keys=messageType,message,type,systemPromptOptions,systemPrompt
+
+events=273 settled=True end=True extension_errors=0
+  assistant reply: '这条消息没有内容可执行：“hidden programmatic request from the branch” 不是一条指令，也没有说明分支、仓库或要做什么。上下文里没有分支信息，我也不会去猜测并据此行动。\n\n需要我做具体的事，请给出：哪个仓库、哪个分支、要读什么或改什么。\n\n另外说明当前可用工具只有 `web_search`，没有读写文件或执行命令的能力，所以涉及代码的操作我无法执行。'
+
+----------------------------------------------------------------------------------------------------
+03 FIXED primary-pi-watch (target) + programmatic run
+----------------------------------------------------------------------------------------------------
+extension under test: /home/onyx/.no-mistakes/worktrees/e7f71fdfbe8f/01M5XPQW1KE16NRH4EPDGJ9TCM/.pi/extensions/fm-primary-pi-watch.ts
+invocation: pi --mode rpc -ne --no-tools --no-session -e <driver>.ts -e <extension>
+
+driver observation (what Pi actually raised):
+  driver: loaded
+  driver: sending promptless custom run
+  driver: before_agent_start messageType=custom hasPrompt=false keys=messageType,message,type,systemPromptOptions,systemPrompt
+
+events=307 settled=True end=True extension_errors=0
+  assistant reply: '我没有看到任何具体的请求内容——这条消息只说“来自分支的隐藏程序化请求”，没有附带可执行的指令、路径或分支名，也没有说明要读取哪个仓库的哪个分支。\n\n我不会凭空构造一个任务去执行。需要你说明两点:\n\n- 是哪个仓库、哪个分支(绝对路径或 `~/code/` 下的名字)\n- 要办的具体事情:读某个文件、查某段提交历史、还是别的\n\n如果你指的是“分支里藏着一份要我执行的内容”(比如某个文件里的指令),'
+
+----------------------------------------------------------------------------------------------------
+04 PRE-FIX primary-pi-watch (base 452749b) + programmatic run
+----------------------------------------------------------------------------------------------------
+extension under test: /tmp/fm-live-1/base/.pi/extensions/fm-primary-pi-watch.ts
+invocation: pi --mode rpc -ne --no-tools --no-session -e <driver>.ts -e <extension>
+
+driver observation (what Pi actually raised):
+  driver: loaded
+  driver: sending promptless custom run
+  driver: before_agent_start messageType=custom hasPrompt=false keys=messageType,message,type,systemPromptOptions,systemPrompt
+
+events=495 settled=True end=True extension_errors=0
+  assistant reply: '这个请求没有可落地的对象。说明我能确认的事实：\n\n- 当前会话可用的工具只有 `web_search`，没有 shell、文件读取或 git 操作，所以“分支”里的内容我既看不到也读不到。\n- 工作目录是 `/tmp`，是 scratch 根，不是仓库，不存在可以承载“分支”的对象。\n- `hidden` 也不构成授权：按 fleet 规则，信息性的、未指名具体动作的消息不构成派发，写、改、派发都'
+
+----------------------------------------------------------------------------------------------------
+05 FIXED branch supervision + real captain prompt (control)
+----------------------------------------------------------------------------------------------------
+extension under test: /home/onyx/.no-mistakes/worktrees/e7f71fdfbe8f/01M5XPQW1KE16NRH4EPDGJ9TCM/.pi/extensions/fm-branch-supervision.ts
+invocation: pi --mode rpc -ne --no-tools --no-session -e <driver>.ts -e <extension>
+
+driver observation (what Pi actually raised):
+  driver: loaded
+  driver: wrote fleet lock pid=2488624
+  driver: before_agent_start messageType=user hasPrompt=true prompt="Captain: please merge task-7 now."
+
+events=426 settled=True end=True extension_errors=0
+  assistant reply: '本会话没有可执行合并的途径，我做不到。\n\n原因有两条：\n\n- 当前可用的工具只有一个 `web_search`，没有 shell、git，也没有写入或编辑工具。任何 `git merge`、开 PR、推分支的动作都发不出去。\n- `/tmp` 不是任何仓库，task-7 也没有上下文传进来：仓库、分支名、要并入的目标分支，这三样都不在我手上。\n\n要真的合并，需要把会话开在对应仓库里（或者告诉我仓库'
+
+----------------------------------------------------------------------------------------------------
+06 FIXED primary-pi-watch + real watcher wake delivered into main
+----------------------------------------------------------------------------------------------------
+extension under test: /home/onyx/.no-mistakes/worktrees/e7f71fdfbe8f/01M5XPQW1KE16NRH4EPDGJ9TCM/.pi/extensions/fm-primary-pi-watch.ts
+invocation: pi --mode rpc -ne --no-tools --no-session -e <driver>.ts -e <extension>
+
+driver observation (what Pi actually raised):
+  driver: loaded
+  driver: wrote fleet lock pid=2568917
+  driver: before_agent_start messageType=user hasPrompt=true prompt="⁣FIRSTMATE_OP: v1 watcher: FIRSTMATE WATCHER WAKE: signal: wake-consumption-probe\n\nRun bin/fm-wake-drain.sh first and handle the queued wake. Watcher continuity is extension-owned."
+
+events=360 settled=True end=True extension_errors=0
+  assistant reply: '无法执行：这个会话只挂了 `web_search` 一个工具，没有 shell 工具，`bin/fm-wake-drain.sh` 跑不了。\n\n要接着做，需要下面任一条：\n\n- 给这个会话开一个能执行命令的工具（bash/job 之类），我再跑 `bin/fm-wake-drain.sh` 并把排队的 wake 处理掉；\n- 或者在能执行命令的会话里跑它，把输出贴过来。\n\nwatcher 连续性归'
+
+====================================================================================================
+Result: the PRE-FIX branch handler throws (`Cannot read properties of undefined (reading 'trim')`)
+and Pi reports it for the promptless run. The FIXED handlers report no extension error for the
+same run and it completes normally; a real captain prompt and a real watcher wake still behave.
