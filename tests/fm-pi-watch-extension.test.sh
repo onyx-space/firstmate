@@ -2394,6 +2394,111 @@ EOF
   pass "Pi replacement replays a streaming follow-up before consumption"
 }
 
+# A programmatic run (the supervision branch delivering its own hidden request
+# through sendCustomMessage) raises before_agent_start with no prompt field.
+# Such a run never reads a follow-up, so it must neither throw there nor consume
+# the delivered-but-unread wake a replacement still has to replay.
+test_pi_programmatic_before_agent_start_consumes_nothing() {
+  local repo home plugin trigger out status
+  repo="$TMP_ROOT/pi-promptless-run-root"
+  home="$TMP_ROOT/pi-promptless-run-home"
+  trigger="$TMP_ROOT/pi-promptless-run.trigger"
+  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  install_pi_watch_extension_fixture "$repo"
+  plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+trap 'exit 0' TERM INT
+printf 'watcher: started pid=%s\n' "$$"
+while :; do
+  if [ -e "$FM_TRIGGER_FILE" ]; then
+    rm -f "$FM_TRIGGER_FILE"
+    printf 'signal: promptless run wake\n'
+    exit 0
+  fi
+  sleep 0.02
+done
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_TRIGGER_FILE="$trigger" node --input-type=module 2>&1 <<'EOF'
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+function makePi() {
+  const handlers = new Map();
+  const prompts = [];
+  const pi = {
+    on(event, handler) {
+      handlers.set(event, handler);
+    },
+    registerCommand() {},
+    registerTool() {},
+    // A follow-up sent while main is streaming joins the running run and
+    // raises no before_agent_start, so the wake stays unconsumed here.
+    sendUserMessage: async (message) => {
+      prompts.push(message);
+    },
+    events: { on() {}, emit() {} },
+  };
+  return { pi, handlers, prompts };
+}
+
+async function waitFor(pred, label) {
+  for (let i = 0; i < 500; i += 1) {
+    if (pred()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`timeout waiting for ${label}`);
+}
+
+const handoffPath = `${process.env.FM_HOME}/state/extensions/pi-primary-watch/session-replacement-actionable.json`;
+const handoffPending = () => (existsSync(handoffPath) ? JSON.parse(readFileSync(handoffPath, "utf8")).pending : []);
+
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+const session = makePi();
+mod.default(session.pi);
+await session.handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, {});
+writeFileSync(process.env.FM_TRIGGER_FILE, "trigger\n");
+await waitFor(() => session.prompts.length === 1, "delivered wake");
+
+// Pi's before_agent_start payload for a programmatic run: no prompt at all, and
+// the shapes a malformed one can take. None may throw or consume the wake.
+for (const payload of [{}, { prompt: undefined }, { prompt: null }, { prompt: 42 }]) {
+  try {
+    await session.handlers.get("before_agent_start")?.(payload, {});
+  } catch (error) {
+    throw new Error(`before_agent_start threw on ${JSON.stringify(payload)}: ${error && error.message}`);
+  }
+}
+await session.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "new" }, {});
+const carried = handoffPending();
+if (carried.length !== 1 || carried[0].delivered) {
+  throw new Error(`a promptless run consumed the unread wake instead of leaving it for the replacement: ${JSON.stringify(carried)}`);
+}
+
+// The same run in the replacement session: a real prompt for that exact wake
+// does consume it, so nothing rides the next handoff.
+const replacementMod = await import(`${pathToFileURL(process.env.PLUGIN).href}?replacement=promptless-run`);
+const replacement = makePi();
+replacementMod.default(replacement.pi);
+await replacement.handlers.get("session_start")?.({ type: "session_start", reason: "new" }, {});
+await waitFor(() => replacement.prompts.length === 1, "replacement replay of the unread wake");
+await replacement.handlers.get("before_agent_start")?.({ prompt: replacement.prompts[0] }, {});
+await replacement.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "new" }, {});
+const remaining = handoffPending();
+if (remaining.length !== 0) {
+  throw new Error(`the run that read the wake still left it for another replacement: ${JSON.stringify(remaining)}`);
+}
+process.exit(0);
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "a promptless before_agent_start must not throw or consume a delivered wake"
+  [ -z "$out" ] || fail "promptless before_agent_start test printed output: $out"
+  pass "a promptless before_agent_start neither throws nor consumes a delivered wake"
+}
+
 # The 2026-09-02 incident: a wake delivered while main was mid-turn never raised
 # before_agent_start, the extension waited for it, and every later actionable
 # close was dropped. Continuity must settle on Pi accepting the follow-up, while
@@ -4011,6 +4116,7 @@ test_pi_arm_distinguishes_session_lock_ownership
 test_pi_session_transition_generation_owner
 test_pi_session_replacement_carries_inflight_actionable_close
 test_pi_streaming_followup_is_replayed_after_replacement
+test_pi_programmatic_before_agent_start_consumes_nothing
 test_pi_streaming_time_delivery_keeps_the_successor_chain
 test_pi_successor_failure_during_delivery_is_retried_after_delivery
 test_pi_late_retiring_actionable_reaches_replacement

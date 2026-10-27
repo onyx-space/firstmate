@@ -2397,6 +2397,76 @@ EOF
   pass "dialog mirror filters tool and operational traffic, lands before wakes, and keeps a durable cursor"
 }
 
+# The branch delivers its own hidden processing requests with
+# sendCustomMessage, so Pi raises before_agent_start for that run WITHOUT a
+# prompt field. Reading it unguarded threw once per delivery (#1605) and cost
+# the mirror its dedupe anchor for that turn.
+test_branch_promptless_programmatic_run_is_not_captain_dialog() {
+  local repo home out status
+  repo="$TMP_ROOT/promptless-run-root"
+  home="$TMP_ROOT/promptless-run-home"
+  mkdir -p "$home/state" "$home/config"
+  install_pi_branch_extension_fixture "$repo"
+  PLUGIN="$repo/.pi/extensions/fm-branch-supervision.ts" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    DRIVER_PRELUDE="$DRIVER_PRELUDE" node --input-type=module > "$TMP_ROOT/node-output" 2>&1 <<'EOF'
+const prelude = process.env.DRIVER_PRELUDE;
+await eval(`(async () => { ${prelude}; globalThis.__t = { fire, dispatch, settle, home }; })()`);
+const { fire, dispatch, settle, home } = globalThis.__t;
+
+const entries = [];
+const mainCtx = {
+  model: { provider: "anthropic", id: "main-model" },
+  sessionManager: {
+    getSessionFile: () => `${home}/main.jsonl`,
+    getEntries: () => entries,
+  },
+};
+const mirrorOps = () => (globalThis.__fmSessions?.[0]?.ops ?? [])
+  .filter((op) => op.kind === "custom" && op.message.customType === "fm-main-mirror")
+  .map((op) => op.message.content);
+
+// Every shape a programmatic run can hand this hook: no event field at all,
+// and a prompt that is not a string. None of them is captain input.
+for (const payload of [{}, { prompt: undefined }, { prompt: null }, { prompt: 42 }, { prompt: { text: "x" } }]) {
+  try {
+    await fire("before_agent_start", payload, mainCtx);
+  } catch (error) {
+    throw new Error(`before_agent_start threw on ${JSON.stringify(payload)}: ${error && error.message}`);
+  }
+}
+
+// A promptless run staged nothing: the next wake reaches the branch with no
+// captain entry in front of it.
+if (!dispatch("signal: promptless run reached the branch").accepted) {
+  throw new Error("branch did not accept the wake following a promptless run");
+}
+await settle(() => (globalThis.__fmPrompts ?? []).length === 1, "promptless-run wake prompt");
+if (mirrorOps().length !== 0) {
+  throw new Error(`a promptless run appended mirror records: ${JSON.stringify(mirrorOps())}`);
+}
+
+// The control: a real captain prompt is still staged once and deduped against
+// its own persisted entry.
+const captain = "Please merge task-7 as soon as its checks are green.";
+await fire("before_agent_start", { prompt: captain }, mainCtx);
+entries.push({ type: "message", message: { role: "user", content: captain } });
+await fire("agent_start", {}, mainCtx);
+if (!dispatch("signal: captain prompt reached the branch").accepted) {
+  throw new Error("branch did not accept the wake following a captain prompt");
+}
+await settle(() => (globalThis.__fmPrompts ?? []).length === 2, "captain-prompt wake prompt");
+const mirrored = mirrorOps();
+if (mirrored.length !== 1 || mirrored[0] !== `[captain] ${captain}`) {
+  throw new Error(`the captain prompt was not mirrored exactly once after a promptless run: ${JSON.stringify(mirrored)}`);
+}
+process.exit(0);
+EOF
+  status=$?
+  out=$(cat "$TMP_ROOT/node-output")
+  expect_code 0 "$status" "a promptless programmatic main run must neither throw nor mirror: $out"
+  pass "a promptless programmatic main run neither throws nor enters the captain mirror"
+}
+
 test_branch_mirror_reanchors_for_the_new_session_branch_conversation() {
   local repo home out status
   repo="$TMP_ROOT/mirror-reanchor-root"
@@ -4947,6 +5017,7 @@ test_selection_change_does_not_corrupt_inflight_provider_state
 test_main_owned_grant_result_falls_back_to_main
 test_branch_predrain_recheck_noops_already_drained_wake
 test_branch_mirror_filters_order_and_cursor
+test_branch_promptless_programmatic_run_is_not_captain_dialog
 test_branch_mirror_reanchors_for_the_new_session_branch_conversation
 test_branch_session_is_new_at_every_main_session_start
 test_branch_model_pin_applies_and_absent_pin_keeps_the_default

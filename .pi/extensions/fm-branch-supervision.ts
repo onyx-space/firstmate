@@ -1602,7 +1602,10 @@ ${context.command}
     // getEntries() here loses the captain request that the next wake may answer.
     // Stage it verbatim and remember the future persisted index for turn_end's
     // duplicate suppression. Operational extension injections are not dialog.
-    const prompt = event.prompt.trim();
+    // A programmatic run (the branch delivering its own hidden request through
+    // sendCustomMessage) starts with no prompt at all, so there is no captain
+    // input to mirror and this staging is skipped rather than failing on it.
+    const prompt = typeof event.prompt === "string" ? event.prompt.trim() : "";
     if (!prompt || isOperationalUserText(prompt)) return;
     const file = currentMainSession.getSessionFile() ?? "";
     const index = mirrorCollection.collectAnchor?.index ?? currentMainSession.getEntries().length;

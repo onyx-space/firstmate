@@ -1110,6 +1110,9 @@ export default function (pi: ExtensionAPI) {
   }
 
   pi.on?.("before_agent_start", (event) => {
+    // A programmatic run (the branch delivering its own hidden request) carries
+    // no prompt, and no delivered follow-up can be consumed by one.
+    if (typeof event.prompt !== "string") return;
     consumeWake(generation, event.prompt);
   });
   pi.on?.("message_start", (event) => {
