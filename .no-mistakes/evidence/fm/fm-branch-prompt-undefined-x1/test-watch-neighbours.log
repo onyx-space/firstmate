@@ -1,0 +1,4 @@
+ok - Pi session replacement auto-arms and carries its in-flight actionable close
+ok - Pi replacement replays a streaming follow-up before consumption
+ok - a promptless before_agent_start neither throws nor consumes a delivered wake
+exit=0

@@ -1,0 +1,67 @@
+LOADED extensions=["/home/onyx/.no-mistakes/worktrees/e7f71fdfbe8f/01M5XN6RHB365J3Q9YF6V1KQCR/.pi/extensions/fm-branch-supervision.ts","<inline:fm-before-agent-start-probe>"] errors=[]
+PROBE before_agent_start keys=messageType,prompt,images,type,systemPromptOptions,systemPrompt
+PROBE before_agent_start keys=messageType,message,type,systemPromptOptions,systemPrompt
+{
+  "completions": 2,
+  "events": [
+    {
+      "type": "before_agent_start",
+      "hasPrompt": true,
+      "prompt": "Please send the branch a normal captain request.",
+      "messageType": "user"
+    },
+    {
+      "type": "agent_start"
+    },
+    {
+      "type": "message_start",
+      "role": "system"
+    },
+    {
+      "type": "message_start",
+      "role": "user"
+    },
+    {
+      "type": "message_start",
+      "role": "assistant"
+    },
+    {
+      "type": "agent_settled"
+    },
+    {
+      "type": "before_agent_start",
+      "hasPrompt": false,
+      "messageType": "custom"
+    },
+    {
+      "type": "agent_start"
+    },
+    {
+      "type": "message_start",
+      "role": "custom",
+      "customType": "fm-branch-processing"
+    },
+    {
+      "type": "message_start",
+      "role": "assistant"
+    },
+    {
+      "type": "agent_settled"
+    }
+  ],
+  "promptEvents": [
+    {
+      "type": "before_agent_start",
+      "hasPrompt": true,
+      "prompt": "Please send the branch a normal captain request.",
+      "messageType": "user"
+    },
+    {
+      "type": "before_agent_start",
+      "hasPrompt": false,
+      "messageType": "custom"
+    }
+  ],
+  "extensionErrors": []
+}
+--- probe exit=0 root=/tmp/fm-live-probe/live-fixed-plain.UdvhBK

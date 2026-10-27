@@ -1,0 +1,9 @@
+not ok - a promptless programmatic main run must neither throw nor mirror: file:///home/onyx/.no-mistakes/worktrees/e7f71fdfbe8f/01M5XN6RHB365J3Q9YF6V1KQCR/[eval1]:23
+    throw new Error(`before_agent_start threw on ${JSON.stringify(payload)}: ${error && error.message}`);
+          ^
+
+Error: before_agent_start threw on {}: Cannot read properties of undefined (reading 'trim')
+    at file:///home/onyx/.no-mistakes/worktrees/e7f71fdfbe8f/01M5XN6RHB365J3Q9YF6V1KQCR/[eval1]:23:11
+
+Node.js v22.23.1: expected exit 0, got 1
+exit=1

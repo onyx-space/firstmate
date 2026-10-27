@@ -1,0 +1,5 @@
+ok - dialog mirror filters tool and operational traffic, lands before wakes, and keeps a durable cursor
+ok - a promptless programmatic main run neither throws nor enters the captain mirror
+ok - the dialog mirror re-anchors for each session's new branch conversation and stays incremental within it
+ok - an extension rebind re-mirrors undelivered dialog instead of dropping it
+exit=0

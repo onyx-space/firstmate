@@ -1,0 +1,73 @@
+LOADED extensions=["/tmp/fm-prefix/ext/fm-branch-supervision.ts","<inline:fm-before-agent-start-probe>"] errors=[]
+PROBE before_agent_start keys=messageType,prompt,images,type,systemPromptOptions,systemPrompt
+PROBE before_agent_start keys=messageType,message,type,systemPromptOptions,systemPrompt
+{
+  "completions": 2,
+  "events": [
+    {
+      "type": "before_agent_start",
+      "hasPrompt": true,
+      "prompt": "Please send the branch a normal captain request.",
+      "messageType": "user"
+    },
+    {
+      "type": "agent_start"
+    },
+    {
+      "type": "message_start",
+      "role": "system"
+    },
+    {
+      "type": "message_start",
+      "role": "user"
+    },
+    {
+      "type": "message_start",
+      "role": "assistant"
+    },
+    {
+      "type": "agent_settled"
+    },
+    {
+      "type": "before_agent_start",
+      "hasPrompt": false,
+      "messageType": "custom"
+    },
+    {
+      "type": "agent_start"
+    },
+    {
+      "type": "message_start",
+      "role": "custom",
+      "customType": "fm-branch-processing"
+    },
+    {
+      "type": "message_start",
+      "role": "assistant"
+    },
+    {
+      "type": "agent_settled"
+    }
+  ],
+  "promptEvents": [
+    {
+      "type": "before_agent_start",
+      "hasPrompt": true,
+      "prompt": "Please send the branch a normal captain request.",
+      "messageType": "user"
+    },
+    {
+      "type": "before_agent_start",
+      "hasPrompt": false,
+      "messageType": "custom"
+    }
+  ],
+  "extensionErrors": [
+    {
+      "path": "/tmp/fm-prefix/ext/fm-branch-supervision.ts",
+      "event": "before_agent_start",
+      "message": "Cannot read properties of undefined (reading 'trim')"
+    }
+  ]
+}
+--- probe exit=0 root=/tmp/fm-live-probe/live-prefix-plain.OQuaYs
