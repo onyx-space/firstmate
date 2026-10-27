@@ -1,0 +1,6 @@
+$ /tmp/fm-bash32/bash-3.2.57/bash --version | head -1
+GNU bash, version 3.2.57(2)-release (aarch64-unknown-linux-gnu)
+$ git show 170d0b8 (BASE) > /tmp/fm-base.sh; /tmp/fm-bash32/bash-3.2.57/bash -n /tmp/fm-base.sh
+/tmp/fm-base.sh: line 4040: unexpected EOF while looking for matching `''
+/tmp/fm-base.sh: line 4142: syntax error: unexpected end of file
+exit=2

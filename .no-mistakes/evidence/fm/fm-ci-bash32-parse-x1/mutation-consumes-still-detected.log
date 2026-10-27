@@ -1,0 +1,10 @@
+DRIVER-OUT: file:///tmp/fm-pi-watch-extension.rCW7l0/pi-promptless-run.mjs:54
+  throw new Error(`a promptless run consumed the unread wake instead of leaving it for the replacement: ${JSON.stringify(carried)}`);
+        ^
+
+Error: a promptless run consumed the unread wake instead of leaving it for the replacement: []
+    at file:///tmp/fm-pi-watch-extension.rCW7l0/pi-promptless-run.mjs:54:9
+
+Node.js v22.23.1
+DRIVER-STATUS: 1
+not ok - a promptless before_agent_start must not throw or consume a delivered wake: expected exit 0, got 1

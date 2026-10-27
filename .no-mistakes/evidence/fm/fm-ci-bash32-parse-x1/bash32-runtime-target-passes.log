@@ -1,0 +1,4 @@
+$ /tmp/fm-bash32/bash-3.2.57/bash tests/one-target.test.sh   # harness root symlinks the real repo, runs only test_pi_programmatic_before_agent_start_consumes_nothing
+ok - a promptless before_agent_start neither throws nor consumes a delivered wake
+HARNESS-DONE tests/one-target.test.sh
+exit=0

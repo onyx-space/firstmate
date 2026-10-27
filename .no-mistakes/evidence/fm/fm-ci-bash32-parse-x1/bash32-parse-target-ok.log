@@ -1,0 +1,4 @@
+$ /tmp/fm-bash32/bash-3.2.57/bash --version | head -1
+GNU bash, version 3.2.57(2)-release (aarch64-unknown-linux-gnu)
+$ git show 957fe95 (TARGET) > /tmp/fm-target.sh; /tmp/fm-bash32/bash-3.2.57/bash -n /tmp/fm-target.sh
+exit=0

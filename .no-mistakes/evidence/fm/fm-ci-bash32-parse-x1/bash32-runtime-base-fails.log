@@ -1,0 +1,4 @@
+$ /tmp/fm-bash32/bash-3.2.57/bash tests/one-base.test.sh   # base (pre-fix) version of the same test, same harness
+tests/one-base.test.sh: line 4040: unexpected EOF while looking for matching `''
+tests/one-base.test.sh: line 4096: syntax error: unexpected end of file
+exit=2

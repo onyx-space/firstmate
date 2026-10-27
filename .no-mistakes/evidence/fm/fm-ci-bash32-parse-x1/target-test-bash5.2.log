@@ -1,0 +1,2 @@
+ok - a promptless before_agent_start neither throws nor consumes a delivered wake
+HARNESS-DONE tests/one-target.test.sh
