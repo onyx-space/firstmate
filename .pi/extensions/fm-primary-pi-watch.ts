@@ -20,7 +20,10 @@
 // not consumed. An idle main consumes at before_agent_start; a streaming main
 // consumes at the user message_start carrying the exact wake text; either
 // event finishes the pending record, and a still-unconsumed record rides the
-// replacement handoff.
+// replacement handoff. A before_agent_start that carries no prompt text is not
+// a consumption point: the branch's own hidden requests start runs that way,
+// and none of them reads a follow-up, so it must leave every pending record
+// untouched instead of comparing against absent text.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
