@@ -2399,7 +2399,7 @@ EOF
 # Such a run never reads a follow-up, so it must neither throw there nor consume
 # the delivered-but-unread wake a replacement still has to replay.
 test_pi_programmatic_before_agent_start_consumes_nothing() {
-  local repo home plugin trigger out status
+  local repo home plugin trigger script out status
   repo="$TMP_ROOT/pi-promptless-run-root"
   home="$TMP_ROOT/pi-promptless-run-home"
   trigger="$TMP_ROOT/pi-promptless-run.trigger"
@@ -2420,7 +2420,12 @@ while :; do
 done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_TRIGGER_FILE="$trigger" node --input-type=module 2>&1 <<'EOF'
+  # The driver runs from its own file rather than from a $( ) heredoc. Stock
+  # macOS Bash 3.2 scans a command substitution's body for quotes without
+  # skipping the heredoc, so one apostrophe in a comment inside the script (as
+  # in the "Pi's" comment below) makes the whole file unparseable there.
+  script="$TMP_ROOT/pi-promptless-run.mjs"
+  cat > "$script" <<'JS'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -2491,8 +2496,8 @@ if (remaining.length !== 0) {
   throw new Error(`the run that read the wake still left it for another replacement: ${JSON.stringify(remaining)}`);
 }
 process.exit(0);
-EOF
-)
+JS
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_TRIGGER_FILE="$trigger" node "$script" 2>&1)
   status=$?
   expect_code 0 "$status" "a promptless before_agent_start must not throw or consume a delivered wake"
   [ -z "$out" ] || fail "promptless before_agent_start test printed output: $out"
